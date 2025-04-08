@@ -1,0 +1,54 @@
+[tool.poetry]
+# TODO ⚡ Change the name, version, description, authors, and license of the project
+name = "Safe Trade MarketPlace API"
+version = "0.0.1"
+description =" A Django REST API for a safe trade marketplace"
+authors = ["Jajjage <mustaphajajjage@gmail.com>"]
+readme = "README.md"
+
+packages = [
+    { include = "scripts" }
+]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+django = "^5.1.2"
+django-environ = "^0.12.0"
+django-cors-headers = "^4.5.0"
+django-filter = "^24.3"
+djangorestframework = "^3.15.2"
+psycopg2 = "^2.9.10"
+whitenoise = "^6.7.0"
+gunicorn = "^23.0.0"
+redis = "^5.1.1"
+celery = "^5.4.0"
+django-celery-beat = "^2.7.0"
+django-celery-results = "^2.5.1"
+sentry-sdk = {extras = ["django"], version = "^2.17.0"}
+django-redis = "^5.4.0"
+drf-spectacular = "^0.28.0"
+djangorestframework-simplejwt = "^5.5.0"
+djoser = "^2.3.1"
+
+
+[tool.poetry.group.dev.dependencies]
+django-debug-toolbar = "^5.0.0"
+pytest = "^8.3.3"
+django-extensions = "^3.2.3"
+pytest-django = "^4.9.0"
+ipykernel = "^6.29.5"
+pytest-mock = "^3.14.0"
+pytest-cov = "^6.0.0"
+
+[tool.poetry.scripts]
+server = "scripts.django:runserver"
+makemigrations = "scripts.django:makemigrations"
+migrate = "scripts.django:migrate"
+worker = "scripts.celery:run_worker"
+beat = "scripts.celery:run_beat"
+bump = "scripts.bump:bum_version"
+create_dev_env = "scripts.django:create_dev_env"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
