@@ -17,6 +17,7 @@ from rest_framework_simplejwt.views import (
 )
 from apps.users.signals import user_activated_signal
 from djoser.views import UserViewSet
+from djoser.social.views import ProviderAuthView
 from djoser import signals
 
 
@@ -31,34 +32,7 @@ from apps.users.schema import (
 logger = logging.getLogger(__name__)
 
 
-@extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
-class CookieTokenObtainPairView(TokenObtainPairView):
-    def post(self, request, *args, **kwargs):
-        try:
-            response = super().post(request, *args, **kwargs)
-            if response.status_code == status.HTTP_200_OK:
-                user = self.get_user(request)
-                if user:
-                    update_last_login(None, user)
-                    return self.set_token_cookies(response)
-            return response
-        except (TokenError, ValidationError) as e:
-            logger.exception("Token generation failed: %s", e)
-            return Response(
-                {"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED
-            )
-
-    def get_user(self, request):
-        """
-        Retrieve the user object from the validated token or serializer data.
-        """
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return serializer.user
-
-    def _validate_token_data(self, data):
-        if "access" not in data or "refresh" not in data:
-            raise ValueError("Token data missing from response")
+class CookieSet:
 
     def set_token_cookies(self, response):
         try:
@@ -99,12 +73,104 @@ class CookieTokenObtainPairView(TokenObtainPairView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    def _set_token_cookies(self, response):
+        if "access" in response.data:
+            response.set_cookie(
+                settings.JWT_AUTH_COOKIE,
+                response.data["access"],
+                max_age=settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds(),
+                httponly=settings.JWT_AUTH_HTTPONLY,
+                secure=settings.JWT_AUTH_SECURE,
+                samesite=settings.JWT_AUTH_SAMESITE,
+                path=settings.JWT_AUTH_PATH,
+            )
+            response.data.pop("access")
+
+        if "refresh" in response.data:
+            response.set_cookie(
+                settings.JWT_AUTH_REFRESH_COOKIE,
+                response.data["refresh"],
+                max_age=settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds(),
+                httponly=settings.JWT_AUTH_HTTPONLY,
+                secure=settings.JWT_AUTH_SECURE,
+                samesite=settings.JWT_AUTH_SAMESITE,
+                path=settings.JWT_AUTH_PATH,
+            )
+            response.data.pop("refresh")
+
+    def _validate_token_data(self, data):
+        if "access" not in data or "refresh" not in data:
+            raise ValueError("Token data missing from response")
+
+
+# @extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
+class CustomSocialProviderView(ProviderAuthView, CookieSet):
+    def post(self, request, *args, **kwargs):
+        try:
+            response = super().post(request, *args, **kwargs)
+            if response.status_code == status.HTTP_201_CREATED:
+                user = self.get_user(response)
+                if user:
+                    update_last_login(None, user)
+                    self.set_token_cookies(response)
+            return response
+        except (TokenError, ValidationError) as e:
+            logger.exception("Token generation failed: %s", e)
+            return Response(
+                {"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED
+            )
+
+    def get_user(self, response):
+        """
+        Retrieve the user object from the validated token or serializer data.
+        """
+        user_email = response.data.get("user", {})
+
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        try:
+            user = User.objects.get(email=user_email)
+        except User.DoesNotExist:
+            pass
+
+        return user
+
+
+@extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
+class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
+    def post(self, request, *args, **kwargs):
+        try:
+            response = super().post(request, *args, **kwargs)
+            if response.status_code == status.HTTP_200_OK:
+                user = self.get_user(request)
+                if user:
+                    update_last_login(None, user)
+                    return self.set_token_cookies(response)
+            return response
+        except (TokenError, ValidationError) as e:
+            logger.exception("Token generation failed: %s", e)
+            return Response(
+                {"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED
+            )
+
+    def get_user(self, request):
+        """
+        Retrieve the user object from the validated token or serializer data.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return serializer.user
+
 
 @extend_schema(responses=TOKEN_REFRESH_SCHEMA)
-class CookieTokenRefreshView(TokenRefreshView):
+class CookieTokenRefreshView(TokenRefreshView, CookieSet):
+    """
+    Custom TokenRefreshView to handle refresh tokens in cookies.
+    """
+
     def post(self, request, *args, **kwargs):
         refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
-        print(refresh_token)
 
         if not refresh_token:
             return Response(
@@ -155,31 +221,6 @@ class CookieTokenRefreshView(TokenRefreshView):
 
         cache.set(cache_key, attempts + 1, timeout)
         return True
-
-    def _set_token_cookies(self, response):
-        if "access" in response.data:
-            response.set_cookie(
-                settings.JWT_AUTH_COOKIE,
-                response.data["access"],
-                max_age=settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds(),
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                secure=settings.JWT_AUTH_SECURE,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-            response.data.pop("access")
-
-        if "refresh" in response.data:
-            response.set_cookie(
-                settings.JWT_AUTH_REFRESH_COOKIE,
-                response.data["refresh"],
-                max_age=settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds(),
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                secure=settings.JWT_AUTH_SECURE,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-            response.data.pop("refresh")
 
 
 @extend_schema(responses=TOKEN_VERIFY_SCHEMA)
@@ -263,3 +304,15 @@ class CustomUserViewSet(UserViewSet):
         #     settings.EMAIL.confirmation(self.request, context).send(to)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(["post"], detail=False)
+    def reset_email(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )
+
+    @action(["post"], detail=False)
+    def set_email(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )

@@ -75,7 +75,7 @@ class CustomUser(AbstractUser, BaseModel):
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(email__isnull=False), name="staff_email_not_null"
+                condition=models.Q(email__isnull=False), name="staff_email_not_null"
             )
         ]
 

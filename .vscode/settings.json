@@ -57,6 +57,7 @@
         "logoutall",
         "Mailgun",
         "makemigrations",
+        "Mustapha",
         "nostatic",
         "psycopg",
         "pycache",

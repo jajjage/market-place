@@ -14,7 +14,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # -----------------------------------------------------------------------------
 ROOT_URLCONF = "conf.urls"
 WSGI_APPLICATION = "conf.wsgi.application"
-
+SECRET_KEY = env(
+    "DJANGO_SECRET_KEY", default="django-insecure-development-key-change-me"
+)
 # -----------------------------------------------------------------------------
 # Time & Language
 # -----------------------------------------------------------------------------
@@ -58,6 +60,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "django_extensions",
     "djoser",
+    "social_django",
     # local apps
     "apps.users",
     "apps.core",
@@ -72,6 +75,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "social_django.middleware.SocialAuthExceptionMiddleware",
 ]
 
 TEMPLATES = [
@@ -89,6 +93,19 @@ TEMPLATES = [
         },
     },
 ]
+
+DJANGO_DATABASE_URL = env.db("DATABASE_URL", default="sqlite:///db.sqlite3")
+DATABASES = {"default": DJANGO_DATABASE_URL}
+
+
+# -----------------------------------------------------------------------------
+# Auth Backends
+# -----------------------------------------------------------------------------
+AUTHENTICATION_BACKENDS = [
+    "social_core.backends.google.GoogleOAuth2",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
 
 # -----------------------------------------------------------------------------
 # Rest Framework
@@ -117,23 +134,22 @@ DJOSER = {
     "ACTIVATION_URL": "/activate/{uid}/{token}",
     "USER_CREATE_PASSWORD_RETYPE": True,
     "SEND_ACTIVATION_EMAIL": True,
+    "SET_PASSWORD_RETYPE": True,
     "PASSWORD_RESET_CONFIRM_RETYPE": True,
     "TOKEN_MODEL": None,
+    "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": env.list(
+        "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS", default=""
+    ),
     "SERIALIZERS": {
         "current_user": "apps.users.serializers.UserSerializer",
     },
     "VIEWS": {
         "users": "apps.users.views.CustomUserViewSet",
         "user_list": "apps.users.views.CustomUserViewSet",
-        "user_delete": "apps.users.views.CustomUserViewSet",
         "activation": "apps.users.views.CustomUserViewSet",
-        "set_username": "apps.users.views.CustomUserViewSet",
-        "reset_username": "apps.users.views.CustomUserViewSet",
         "set_password": "apps.users.views.CustomUserViewSet",
         "reset_password": "apps.users.views.CustomUserViewSet",
         "reset_password_confirm": "apps.users.views.CustomUserViewSet",
-        "set_username": "apps.users.views.CustomUserViewSet",
-        "reset_username_confirm": "apps.users.views.CustomUserViewSet",
         "me": "apps.users.views.CustomUserViewSet",
     },
 }
@@ -178,7 +194,52 @@ JWT_AUTH_SAMESITE = "Lax"
 JWT_AUTH_HTTPONLY = True
 JWT_AUTH_PATH = "/"
 
+# -----------------------------------------------------------------------------
+# Google OAuth
+# -----------------------------------------------------------------------------
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = env("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = env("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "openid",
+]
+SOCIAL_AUTH_GOOGLE_OAUTH2_EXTRA_DATA = ["first_name", "last_name"]
+
+# -----------------------------------------------------------------------------
+# CORS Settings
+# -----------------------------------------------------------------------------
+CORS_ALLOW_CREDENTIALS = True
+
+
+# -----------------------------------------------------------------------------
+# Email Template
+# -----------------------------------------------------------------------------
+
+DOMAIN = env("DOMAIN", default="localhost:8000")
+SITE = "Safe Trade MarketPlace"
+
+# -----------------------------------------------------------------------------
+# Social Auth Pipeline
+# -----------------------------------------------------------------------------
+SOCIAL_AUTH_PIPELINE = (
+    "social_core.pipeline.social_auth.social_details",
+    "social_core.pipeline.social_auth.social_uid",
+    "social_core.pipeline.social_auth.auth_allowed",
+    "apps.users.social_auth_pipeline.set_user_type",  # Your custom function
+    "social_core.pipeline.social_auth.social_user",
+    "social_core.pipeline.user.get_username",
+    "social_core.pipeline.social_auth.associate_by_email",
+    "social_core.pipeline.user.create_user",
+    "social_core.pipeline.social_auth.associate_user",
+    "social_core.pipeline.social_auth.load_extra_data",
+    "social_core.pipeline.user.user_details",
+    "apps.users.social_auth_pipeline.activate_social_user",  # Your activation function
+    "apps.users.social_auth_pipeline.create_user_profile",  # Add this after user creation
+)
+# -----------------------------------------------------------------------------
 # DRF Spectacular Settings
+# -----------------------------------------------------------------------------
 SPECTACULAR_SETTINGS = {
     "TITLE": "Safe Trade MarketPlace API",
     "DESCRIPTION": "A comprehensive starting point for your new API with Django and DRF",
