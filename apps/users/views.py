@@ -19,7 +19,7 @@ from apps.users.signals import user_activated_signal
 from djoser.views import UserViewSet
 from djoser.social.views import ProviderAuthView
 from djoser import signals
-
+from apps.users.utils import CookieSet
 
 from apps.users.schema import (
     LOGIN_RESPONSE_SCHEMA,
@@ -32,80 +32,17 @@ from apps.users.schema import (
 logger = logging.getLogger(__name__)
 
 
-class CookieSet:
-
-    def set_token_cookies(self, response):
-        try:
-            logger.debug(f"Setting cookies with data: {response.data}")
-            self._validate_token_data(response.data)
-            # Set access token cookie
-            response.set_cookie(
-                settings.JWT_AUTH_COOKIE,
-                response.data["access"],
-                max_age=settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds(),
-                secure=settings.JWT_AUTH_SECURE,
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-
-            # Set refresh token cookie
-            response.set_cookie(
-                settings.JWT_AUTH_REFRESH_COOKIE,
-                response.data["refresh"],
-                max_age=settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds(),
-                secure=settings.JWT_AUTH_SECURE,
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-
-            # Remove tokens from response data for security
-            response.data.pop("access")
-            response.data.pop("refresh")
-            logger.info("Cookies set successfully")
-            return response
-
-        except Exception as e:
-            logger.exception("Failed to set cookies: %s", e)
-            return Response(
-                {"error": "Failed to set authentication cookies"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    def _set_token_cookies(self, response):
-        if "access" in response.data:
-            response.set_cookie(
-                settings.JWT_AUTH_COOKIE,
-                response.data["access"],
-                max_age=settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds(),
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                secure=settings.JWT_AUTH_SECURE,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-            response.data.pop("access")
-
-        if "refresh" in response.data:
-            response.set_cookie(
-                settings.JWT_AUTH_REFRESH_COOKIE,
-                response.data["refresh"],
-                max_age=settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds(),
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                secure=settings.JWT_AUTH_SECURE,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-            response.data.pop("refresh")
-
-    def _validate_token_data(self, data):
-        if "access" not in data or "refresh" not in data:
-            raise ValueError("Token data missing from response")
-
-
-# @extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
 class CustomSocialProviderView(ProviderAuthView, CookieSet):
+    """
+    Custom social provider view to handle authentication with social providers.
+    Extends ProviderAuthView and adds cookie support for tokens.
+    """
+
     def post(self, request, *args, **kwargs):
+        """
+        Handle POST request for social authentication.
+        Sets token cookies if authentication is successful.
+        """
         try:
             response = super().post(request, *args, **kwargs)
             if response.status_code == status.HTTP_201_CREATED:
@@ -123,6 +60,12 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet):
     def get_user(self, response):
         """
         Retrieve the user object from the validated token or serializer data.
+
+        Args:
+            response (Response): The response object containing user data.
+
+        Returns:
+            User instance or None if not found.
         """
         user_email = response.data.get("user", {})
 
@@ -132,14 +75,23 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet):
         try:
             user = User.objects.get(email=user_email)
         except User.DoesNotExist:
-            pass
+            user = None
 
         return user
 
 
 @extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
 class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
+    """
+    Custom view to obtain token pairs with cookie support.
+    Extends TokenObtainPairView and sets tokens in cookies on successful authentication.
+    """
+
     def post(self, request, *args, **kwargs):
+        """
+        Handle POST request to obtain token pair.
+        Sets token cookies and updates last login on success.
+        """
         try:
             response = super().post(request, *args, **kwargs)
             if response.status_code == status.HTTP_200_OK:
@@ -156,7 +108,13 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
 
     def get_user(self, request):
         """
-        Retrieve the user object from the validated token or serializer data.
+        Retrieve the user object from the validated serializer data.
+
+        Args:
+            request (Request): The request object containing user credentials.
+
+        Returns:
+            User instance.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -167,9 +125,14 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
 class CookieTokenRefreshView(TokenRefreshView, CookieSet):
     """
     Custom TokenRefreshView to handle refresh tokens in cookies.
+    Handles rate limiting and blacklist checks for refresh tokens.
     """
 
     def post(self, request, *args, **kwargs):
+        """
+        Handle POST request to refresh tokens using the refresh token from cookies.
+        Applies rate limiting and blacklist checks.
+        """
         refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
 
         if not refresh_token:
@@ -209,10 +172,31 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet):
             )
 
     def _is_token_blacklisted(self, token, cache_timeout=300):
+        """
+        Check if a token is blacklisted using cache.
+
+        Args:
+            token (str): The token to check.
+            cache_timeout (int): Cache timeout in seconds.
+
+        Returns:
+            bool: True if token is blacklisted, False otherwise.
+        """
         cache_key = f"blacklist_token_{token}"
         return cache.get(cache_key, False)
 
     def _check_rate_limit(self, token, max_attempts=5, timeout=300):
+        """
+        Check and increment the rate limit for token refresh attempts.
+
+        Args:
+            token (str): The token to check.
+            max_attempts (int): Maximum allowed attempts.
+            timeout (int): Cache timeout in seconds.
+
+        Returns:
+            bool: True if under rate limit, False otherwise.
+        """
         cache_key = f"refresh_attempt_{token}"
         attempts = cache.get(cache_key, 0)
 
@@ -225,7 +209,20 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet):
 
 @extend_schema(responses=TOKEN_VERIFY_SCHEMA)
 class CookieTokenVerifyView(TokenVerifyView):
+    """
+    Custom TokenVerifyView to verify JWT tokens from cookies.
+    """
+
     def post(self, request, *args, **kwargs):
+        """
+        Handle POST request to verify the JWT token from cookies.
+
+        Args:
+            request (Request): The request object.
+
+        Returns:
+            Response: Verification result.
+        """
         token = request.COOKIES.get(settings.JWT_AUTH_COOKIE)
 
         if not token:
@@ -245,7 +242,20 @@ class CookieTokenVerifyView(TokenVerifyView):
 
 @extend_schema(responses=LOGOUT_SCHEMA)
 class LogoutView(APIView):
+    """
+    API view to handle user logout by deleting authentication cookies.
+    """
+
     def post(self, request, *args, **kwargs):
+        """
+        Handle POST request to log out the user and delete authentication cookies.
+
+        Args:
+            request (Request): The request object.
+
+        Returns:
+            Response: Logout result.
+        """
         try:
             response = Response({"detail": "Successfully logged out."})
             response.delete_cookie(settings.JWT_AUTH_COOKIE)
@@ -262,15 +272,25 @@ class LogoutView(APIView):
 class CustomUserViewSet(UserViewSet):
     """
     Custom user viewset to handle user activation and other user-related actions.
+    Extends Djoser's UserViewSet.
     """
 
     def get_serializer_class(self):
+        """
+        Return the serializer class to be used for the request.
+        """
         return super().get_serializer_class()
 
     @action(["post"], detail=False)
     def activation(self, request, *args, **kwargs):
         """
-        Activate a user account.
+        Activate a user account if not already activated or verified.
+
+        Args:
+            request (Request): The request object.
+
+        Returns:
+            Response: Activation result.
         """
         # Check if the user is already activated
         if request.user.is_active:
@@ -307,12 +327,30 @@ class CustomUserViewSet(UserViewSet):
 
     @action(["post"], detail=False)
     def reset_email(self, request, *args, **kwargs):
+        """
+        Disallow resetting email via this endpoint.
+
+        Args:
+            request (Request): The request object.
+
+        Returns:
+            Response: Method not allowed.
+        """
         return Response(
             {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
         )
 
     @action(["post"], detail=False)
     def set_email(self, request, *args, **kwargs):
+        """
+        Disallow setting email via this endpoint.
+
+        Args:
+            request (Request): The request object.
+
+        Returns:
+            Response: Method not allowed.
+        """
         return Response(
             {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
         )

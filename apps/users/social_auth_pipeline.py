@@ -1,4 +1,6 @@
 def set_user_type(strategy, details, backend, user=None, *args, **kwargs):
+    """Set the user_type based on the request parameters."""
+
     # Extract user_type from the request parameters
     request = strategy.request
     user_type = request.GET.get("user_type")
@@ -16,6 +18,8 @@ def set_user_type(strategy, details, backend, user=None, *args, **kwargs):
 
 
 def activate_social_user(backend, user, response, *args, **kwargs):
+    """Activate the user and set their verification status."""
+
     if kwargs.get("is_new", False):
         user.is_active = True
         user.verification_status = "VERIFIED"
@@ -26,6 +30,8 @@ def activate_social_user(backend, user, response, *args, **kwargs):
 
 
 def create_user_profile(backend, user, response, *args, **kwargs):
+    """If the user is new, create a UserProfile instance."""
+
     # Only run this for newly created users
     if kwargs.get("is_new", False):
         # Import your Profile model
