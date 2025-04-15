@@ -15,11 +15,10 @@ class TestUsersManagers:
         assert user.username is None
         # username is None for the AbstractUser option
         # username does not exist for the AbstractBaseUser option
-        assert user.username is None
 
         with pytest.raises(TypeError):
             User.objects.create_user()
-        with pytest.raises(TypeError):
+        with pytest.raises(ValueError):
             User.objects.create_user(email="")
         with pytest.raises(ValueError):
             User.objects.create_user(email="", password="foo")

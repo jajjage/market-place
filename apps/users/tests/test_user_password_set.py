@@ -31,7 +31,7 @@ def test_set_password_authenticated(api_client, create_user):
     create_user.set_password(old_password)
     create_user.save()
 
-    url = reverse("customuser-set-password")
+    url = reverse("user-set-password")
     data = {
         "current_password": old_password,
         "new_password": "newSecurePassword123!",
@@ -50,7 +50,7 @@ def test_set_password_authenticated(api_client, create_user):
 @pytest.mark.django_db
 def test_set_password_unauthenticated(api_client):
     """Test setting a password without authentication."""
-    url = reverse("customuser-set-password")
+    url = reverse("user-set-password")
     data = {
         "current_password": "old_password",
         "new_password": "newSecurePassword123!",
@@ -70,7 +70,7 @@ def test_set_password_wrong_current_password(api_client, create_user):
     create_user.set_password("correct_password")
     create_user.save()
 
-    url = reverse("customuser-set-password")
+    url = reverse("user-set-password")
     data = {
         "current_password": "wrongpassword",
         "new_password": "newSecurePassword123!",
@@ -95,7 +95,7 @@ def test_set_password_password_mismatch(api_client, create_user):
     create_user.set_password("current_password")
     create_user.save()
 
-    url = reverse("customuser-set-password")
+    url = reverse("user-set-password")
     data = {
         "current_password": "current_password",
         "new_password": "newSecurePassword123!",
@@ -120,7 +120,7 @@ def test_set_password_weak_password(api_client, create_user):
     create_user.set_password("current_password")
     create_user.save()
 
-    url = reverse("customuser-set-password")
+    url = reverse("user-set-password")
     data = {
         "current_password": "current_password",
         "new_password": "weak",  # Too short/simple

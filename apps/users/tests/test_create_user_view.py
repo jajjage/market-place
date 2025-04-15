@@ -21,7 +21,7 @@ def create_user():
 
 @pytest.mark.django_db
 def test_create_user_success(api_client, create_user):
-    url = reverse("customuser-list")
+    url = reverse("user-list")
     api_client.force_authenticate(user=create_user)
     data = {
         "email": "newuser@example.com",
@@ -38,7 +38,7 @@ def test_create_user_success(api_client, create_user):
 
 @pytest.mark.django_db
 def test_create_user_missing_fields(api_client, create_user):
-    url = reverse("customuser-list")
+    url = reverse("user-list")
     api_client.force_authenticate(user=create_user)
     data = {
         "email": "newuser@example.com"
@@ -50,7 +50,7 @@ def test_create_user_missing_fields(api_client, create_user):
 
 @pytest.mark.django_db
 def test_create_user_invalid_data(api_client, create_user):
-    url = reverse("customuser-list")
+    url = reverse("user-list")
     api_client.force_authenticate(user=create_user)
     data = {
         "email": "not-an-email@mail.com",
@@ -66,7 +66,7 @@ def test_create_user_invalid_data(api_client, create_user):
 
 @pytest.mark.django_db
 def test_create_user_put_not_allowed(api_client, create_user):
-    url = reverse("customuser-list")
+    url = reverse("user-list")
     api_client.force_authenticate(user=create_user)
     data = {
         "email": "newuser@example.com",
@@ -82,7 +82,7 @@ def test_create_user_put_not_allowed(api_client, create_user):
 
 @pytest.mark.django_db
 def test_create_user_patch_not_allowed(api_client, create_user):
-    url = reverse("customuser-list")
+    url = reverse("user-list")
     api_client.force_authenticate(user=create_user)
     data = {
         "email": "newuser@example.com",
@@ -98,7 +98,7 @@ def test_create_user_patch_not_allowed(api_client, create_user):
 
 @pytest.mark.django_db
 def test_create_user_delete_not_allowed(api_client, create_user):
-    url = reverse("customuser-list")
+    url = reverse("user-list")
     api_client.force_authenticate(user=create_user)
     response = api_client.delete(url)
     assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED

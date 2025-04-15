@@ -285,7 +285,7 @@ class TestCustomUserViewSet:
                 with patch(
                     "apps.users.views.user_activated_signal.send"
                 ) as mock_custom_signal:
-                    url = reverse("customuser-activation")
+                    url = reverse("user-activation")
                     response = api_client.post(
                         url, {"uid": "abc", "token": "123"}, format="json"
                     )
@@ -301,7 +301,7 @@ class TestCustomUserViewSet:
         # Set up authenticated client with already active user
         api_client.force_authenticate(user=create_user)
 
-        url = reverse("customuser-activation")
+        url = reverse("user-activation")
         response = api_client.post(url, {"uid": "abc", "token": "123"}, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -324,7 +324,7 @@ class TestCustomUserViewSet:
             # Mock the signals
             with patch("apps.users.views.signals.user_activated.send"):
                 with patch("apps.users.views.user_activated_signal.send"):
-                    url = reverse("customuser-activation")
+                    url = reverse("user-activation")
                     response = api_client.post(
                         url, {"uid": "abc", "token": "123"}, format="json"
                     )

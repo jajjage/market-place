@@ -21,7 +21,7 @@ def create_user():
 
 @pytest.mark.django_db
 def test_retrieve_user_profile(api_client, create_user):
-    url = reverse("customuser-me")
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     response = api_client.get(url)
     assert response.status_code == status.HTTP_200_OK
@@ -36,7 +36,7 @@ def test_retrieve_user_profile(api_client, create_user):
 
 @pytest.mark.django_db
 def test_update_user_profile(api_client, create_user):
-    url = reverse("customuser-me")
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
 
     data = {
@@ -54,7 +54,7 @@ def test_update_user_profile(api_client, create_user):
 
 @pytest.mark.django_db
 def test_update_user_profile_invalid_data(api_client, create_user):
-    url = reverse("customuser-me")
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     data = {"email": "not-an-email"}
     response = api_client.put(url, data, format="json")
@@ -63,7 +63,7 @@ def test_update_user_profile_invalid_data(api_client, create_user):
 
 @pytest.mark.django_db
 def test_user_profile_unauthorized(api_client):
-    url = reverse("customuser-me")
+    url = reverse("user-me")
     response = api_client.get(url)
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -71,7 +71,7 @@ def test_user_profile_unauthorized(api_client):
 # i MAY ENABLE THE DELETE LATTER
 # @pytest.mark.django_db
 # def test_delete_user_profile(api_client, create_user):
-#     url = reverse("customuser-me")
+#     url = reverse("user-me")
 #     api_client.force_authenticate(user=create_user)
 #     response = api_client.delete(url)
 #     assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
@@ -79,7 +79,7 @@ def test_user_profile_unauthorized(api_client):
 
 @pytest.mark.django_db
 def test_user_profile_put_allowed(api_client, create_user):
-    url = reverse("customuser-me")
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     data = {
         "email": "updateduser@example.com",
@@ -99,7 +99,7 @@ def test_user_profile_put_allowed(api_client, create_user):
 
 @pytest.mark.django_db
 def test_user_profile_patch_allowed(api_client, create_user):
-    url = reverse("customuser-me")
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     data = {
         "first_name": "UpdatedFirstName",
