@@ -1,6 +1,8 @@
 from datetime import timedelta
 from pathlib import Path
 
+from corsheaders.defaults import default_headers
+
 import environ
 
 # Initialize environment variables
@@ -67,6 +69,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -130,8 +133,8 @@ REST_FRAMEWORK = {
 # -----------------------------------------------------------------------------
 
 DJOSER = {
-    "PASSWORD_RESET_CONFIRM_URL": "/password/reset/confirm/{uid}/{token}",
-    "ACTIVATION_URL": "/activate/{uid}/{token}",
+    "PASSWORD_RESET_CONFIRM_URL": "password/reset/confirm/{uid}/{token}",
+    "ACTIVATION_URL": "auth/activate/{uid}/{token}",
     "USER_CREATE_PASSWORD_RETYPE": True,
     "SEND_ACTIVATION_EMAIL": True,
     "SET_PASSWORD_RETYPE": True,
@@ -211,13 +214,17 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_EXTRA_DATA = ["first_name", "last_name"]
 # -----------------------------------------------------------------------------
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "cache-control",
+]
+
 
 # -----------------------------------------------------------------------------
 # Email Template
 # -----------------------------------------------------------------------------
 
-DOMAIN = env("DOMAIN", default="localhost:8000")
-SITE = "Safe Trade MarketPlace"
+DOMAIN = env("DOMAIN", default="localhost:3000")
+SITE_NAME = "Safe Trade MarketPlace"
 
 # -----------------------------------------------------------------------------
 # Social Auth Pipeline

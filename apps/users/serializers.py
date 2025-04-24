@@ -23,8 +23,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "total_reviews",
             "is_featured",
             "social_links",
-            "created_at",
-            "updated_at",
         ]
         read_only_fields = ["id", "rating", "total_reviews", "created_at", "updated_at"]
 
@@ -44,8 +42,6 @@ class UserSerializer(serializers.ModelSerializer):
             "user_type",
             "verification_status",
             "profile",
-            "created_at",
-            "updated_at",
         ]
         read_only_fields = ["id", "verification_status", "created_at", "updated_at"]
 
@@ -66,14 +62,6 @@ class UserSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
-
-
-class UserProfileUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating user profile."""
-
-    class Meta:
-        model = UserProfile
-        fields = ["bio", "address", "social_links"]
 
 
 class CustomTokenObtainSerializer(TokenObtainPairSerializer):

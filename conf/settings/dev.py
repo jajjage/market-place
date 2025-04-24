@@ -37,8 +37,7 @@ EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 # -----------------------------------------------------------------------------
 # CORS Settings - Development
 # -----------------------------------------------------------------------------
-CORS_ALLOW_ALL_ORIGINS = True
-
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
 
 # -----------------------------------------------------------------------------
 # Cache - Development

@@ -21,5 +21,5 @@ class CookieJWTAuthentication(JWTAuthentication):
         # Fall back to header authentication if no cookie is present
         return super().authenticate(request)
 
-    def authenticate_header(self, request):
-        return "Bearer"
+    # def authenticate_header(self, request):
+    #     return "Bearer"

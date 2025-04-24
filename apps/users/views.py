@@ -275,6 +275,8 @@ class CustomUserViewSet(UserViewSet):
     Extends Djoser's UserViewSet.
     """
 
+    lookup_field = "id"
+
     def get_serializer_class(self):
         """
         Return the serializer class to be used for the request.
@@ -306,6 +308,7 @@ class CustomUserViewSet(UserViewSet):
 
         # Add your custom verification status update here
         user.verification_status = "VERIFIED"  # Adjust based on your field's choices
+        # we need to figure out either we need to allow the creation of staff user from public endpoint
         if user.user_type == "ADMIN":
             user.is_staff = True
 
