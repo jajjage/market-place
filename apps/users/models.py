@@ -38,9 +38,7 @@ class CustomUser(AbstractUser, BaseModel):
     email = models.EmailField(_("email address"), unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
-    user_type = models.CharField(
-        max_length=10, choices=UserType.choices, default=UserType.BUYER
-    )
+    user_type = models.CharField(max_length=10, choices=UserType.choices)
     verification_status = models.CharField(
         max_length=10,
         choices=VerificationStatus.choices,

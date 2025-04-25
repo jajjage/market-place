@@ -50,6 +50,9 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet):
                 if user:
                     update_last_login(None, user)
                     self.set_token_cookies(response)
+
+                    # Update response data with complete user information
+                    response.data = self.get_user_data(user)
             return response
         except (TokenError, ValidationError) as e:
             logger.exception("Token generation failed: %s", e)
@@ -78,6 +81,63 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet):
             user = None
 
         return user
+
+    def get_user_data(self, user):
+        """
+        Creates a complete user data dictionary that matches the frontend User interface.
+
+        Args:
+            user: The user model instance
+
+        Returns:
+            dict: Complete user data matching the frontend User interface
+        """
+        user_data = {
+            "id": str(user.id),
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "user_type": (
+                user.user_type
+                if hasattr(user, "user_type")
+                and user.user_type not in ["undefined", None, ""]
+                else None
+            ),
+        }
+
+        # Add verification status if it exists
+        if hasattr(user, "verification_status"):
+            user_data["verification_status"] = user.verification_status
+
+        # Add profile data if user has an associated profile
+        if hasattr(user, "profile"):
+            profile = user.profile
+            profile_data = {
+                "id": str(profile.id),
+            }
+
+            # Add optional profile fields if they exist
+            for field in [
+                "bio",
+                "profile_picture",
+                "phone_number",
+                "rating",
+                "total_reviews",
+                "is_featured",
+            ]:
+                if hasattr(profile, field):
+                    profile_data[field] = getattr(profile, field)
+
+            # Handle complex fields like address and social links
+            if hasattr(profile, "address"):
+                profile_data["address"] = profile.address
+
+            if hasattr(profile, "social_links"):
+                profile_data["social_links"] = profile.social_links
+
+            user_data["profile"] = profile_data
+
+        return user_data
 
 
 @extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
