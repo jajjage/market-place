@@ -1,5 +1,5 @@
 from django.urls import path, include, re_path
-from rest_framework.routers import DefaultRouter
+
 from apps.users.views import (
     CookieTokenObtainPairView,
     CookieTokenRefreshView,
@@ -7,14 +7,10 @@ from apps.users.views import (
     CustomSocialProviderView,
     LogoutView,
 )
-from apps.users.views import CustomUserViewSet
-
-router = DefaultRouter()
-router.register("users", CustomUserViewSet, basename="user")
 
 urlpatterns = [
     # Your other URL patterns
-    path("auth/", include(router.urls)),
+    path("auth/", include("djoser.urls")),
     re_path(
         r"auth/o/(?P<provider>\S+)/$",
         CustomSocialProviderView.as_view(),

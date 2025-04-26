@@ -133,10 +133,8 @@ REST_FRAMEWORK = {
 # -----------------------------------------------------------------------------
 
 DJOSER = {
-    "PASSWORD_RESET_CONFIRM_URL": "password/reset/confirm/{uid}/{token}",
-    "ACTIVATION_URL": "auth/activate/{uid}/{token}",
+    "PASSWORD_RESET_CONFIRM_URL": "auth/password-reset-confirm/{uid}/{token}",
     "USER_CREATE_PASSWORD_RETYPE": True,
-    "SEND_ACTIVATION_EMAIL": True,
     "SET_PASSWORD_RETYPE": True,
     "PASSWORD_RESET_CONFIRM_RETYPE": True,
     "TOKEN_MODEL": None,
@@ -146,15 +144,15 @@ DJOSER = {
     "SERIALIZERS": {
         "current_user": "apps.users.serializers.UserSerializer",
     },
-    "VIEWS": {
-        "users": "apps.users.views.CustomUserViewSet",
-        "user_list": "apps.users.views.CustomUserViewSet",
-        "activation": "apps.users.views.CustomUserViewSet",
-        "set_password": "apps.users.views.CustomUserViewSet",
-        "reset_password": "apps.users.views.CustomUserViewSet",
-        "reset_password_confirm": "apps.users.views.CustomUserViewSet",
-        "me": "apps.users.views.CustomUserViewSet",
-    },
+    # "VIEWS": {
+    #     "users": "apps.users.views.CustomUserViewSet",
+    #     "user_list": "apps.users.views.CustomUserViewSet",
+    #     "activation": "apps.users.views.CustomUserViewSet",
+    #     "set_password": "apps.users.views.CustomUserViewSet",
+    #     "reset_password": "apps.users.views.CustomUserViewSet",
+    #     "reset_password_confirm": "apps.users.views.CustomUserViewSet",
+    #     "me": "apps.users.views.CustomUserViewSet",
+    # },
 }
 
 # -----------------------------------------------------------------------------

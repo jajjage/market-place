@@ -1,7 +1,6 @@
 import logging
 
 from django.conf import settings
-from rest_framework.decorators import action
 from drf_spectacular.utils import extend_schema
 from django.contrib.auth.models import update_last_login
 from django.core.cache import cache
@@ -15,10 +14,8 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenVerifyView,
 )
-from apps.users.signals import user_activated_signal
-from djoser.views import UserViewSet
+
 from djoser.social.views import ProviderAuthView
-from djoser import signals
 from apps.users.utils import CookieSet
 
 from apps.users.schema import (
@@ -26,7 +23,6 @@ from apps.users.schema import (
     LOGOUT_SCHEMA,
     TOKEN_REFRESH_SCHEMA,
     TOKEN_VERIFY_SCHEMA,
-    USER_ACTIVATION_SCHEMA,
 )
 
 logger = logging.getLogger(__name__)
@@ -328,92 +324,92 @@ class LogoutView(APIView):
             )
 
 
-@extend_schema(responses=USER_ACTIVATION_SCHEMA)
-class CustomUserViewSet(UserViewSet):
-    """
-    Custom user viewset to handle user activation and other user-related actions.
-    Extends Djoser's UserViewSet.
-    """
+# @extend_schema(responses=USER_ACTIVATION_SCHEMA)
+# class CustomUserViewSet(UserViewSet):
+#     """
+#     Custom user viewset to handle user activation and other user-related actions.
+#     Extends Djoser's UserViewSet.
+#     """
 
-    lookup_field = "id"
+#     lookup_field = "id"
 
-    def get_serializer_class(self):
-        """
-        Return the serializer class to be used for the request.
-        """
-        return super().get_serializer_class()
+#     def get_serializer_class(self):
+#         """
+#         Return the serializer class to be used for the request.
+#         """
+#         return super().get_serializer_class()
 
-    @action(["post"], detail=False)
-    def activation(self, request, *args, **kwargs):
-        """
-        Activate a user account if not already activated or verified.
+#     @action(["post"], detail=False)
+#     def activation(self, request, *args, **kwargs):
+#         """
+#         Activate a user account if not already activated or verified.
 
-        Args:
-            request (Request): The request object.
+#         Args:
+#             request (Request): The request object.
 
-        Returns:
-            Response: Activation result.
-        """
-        # Check if the user is already activated
-        if request.user.is_active:
-            return Response(
-                {"detail": "User is already activated."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        # Check if the user is already verified
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.user
-        user.is_active = True
+#         Returns:
+#             Response: Activation result.
+#         """
+#         # Check if the user is already activated
+#         if request.user.is_active:
+#             return Response(
+#                 {"detail": "User is already activated."},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+#         # Check if the user is already verified
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         user = serializer.user
+#         user.is_active = True
 
-        # Add your custom verification status update here
-        user.verification_status = "VERIFIED"  # Adjust based on your field's choices
-        # we need to figure out either we need to allow the creation of staff user from public endpoint
-        if user.user_type == "ADMIN":
-            user.is_staff = True
+#         # Add your custom verification status update here
+#         user.verification_status = "VERIFIED"  # Adjust based on your field's choices
+#         # we need to figure out either we need to allow the creation of staff user from public endpoint
+#         if user.user_type == "ADMIN":
+#             user.is_staff = True
 
-        user.save()
+#         user.save()
 
-        signals.user_activated.send(
-            sender=self.__class__, user=user, request=self.request
-        )
+#         signals.user_activated.send(
+#             sender=self.__class__, user=user, request=self.request
+#         )
 
-        # Fire your custom signal
-        user_activated_signal.send(sender=self.__class__, user=user)
+#         # Fire your custom signal
+#         user_activated_signal.send(sender=self.__class__, user=user)
 
-        # if settings.SEND_CONFIRMATION_EMAIL:
-        #     context = {"user": user}
-        #     to = [get_user_email(user)]
-        #     settings.EMAIL.confirmation(self.request, context).send(to)
+#         # if settings.SEND_CONFIRMATION_EMAIL:
+#         #     context = {"user": user}
+#         #     to = [get_user_email(user)]
+#         #     settings.EMAIL.confirmation(self.request, context).send(to)
 
-        return Response(status=status.HTTP_204_NO_CONTENT)
+#         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @action(["post"], detail=False)
-    def reset_email(self, request, *args, **kwargs):
-        """
-        Disallow resetting email via this endpoint.
+#     @action(["post"], detail=False)
+#     def reset_email(self, request, *args, **kwargs):
+#         """
+#         Disallow resetting email via this endpoint.
 
-        Args:
-            request (Request): The request object.
+#         Args:
+#             request (Request): The request object.
 
-        Returns:
-            Response: Method not allowed.
-        """
-        return Response(
-            {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+#         Returns:
+#             Response: Method not allowed.
+#         """
+#         return Response(
+#             {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
+#         )
 
-    @action(["post"], detail=False)
-    def set_email(self, request, *args, **kwargs):
-        """
-        Disallow setting email via this endpoint.
+#     @action(["post"], detail=False)
+#     def set_email(self, request, *args, **kwargs):
+#         """
+#         Disallow setting email via this endpoint.
 
-        Args:
-            request (Request): The request object.
+#         Args:
+#             request (Request): The request object.
 
-        Returns:
-            Response: Method not allowed.
-        """
-        return Response(
-            {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+#         Returns:
+#             Response: Method not allowed.
+#         """
+#         return Response(
+#             {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
+#         )

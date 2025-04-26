@@ -42,11 +42,11 @@ class CustomUser(AbstractUser, BaseModel):
     verification_status = models.CharField(
         max_length=10,
         choices=VerificationStatus.choices,
-        default=VerificationStatus.UNVERIFIED,
+        default=VerificationStatus.VERIFIED,
     )
 
     # Additional fields for Django's authentication system
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
     # Specifies the field to be used as the unique identifier for the user.
