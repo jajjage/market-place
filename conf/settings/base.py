@@ -206,6 +206,10 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     "openid",
 ]
 SOCIAL_AUTH_GOOGLE_OAUTH2_EXTRA_DATA = ["first_name", "last_name"]
+SOCIAL_AUTH_GOOGLE_OAUTH2_AUTH_EXTRA_ARGUMENTS = {
+    "redirect_uri": "http://localhost:3000/auth/google/",
+}
+
 
 # -----------------------------------------------------------------------------
 # CORS Settings

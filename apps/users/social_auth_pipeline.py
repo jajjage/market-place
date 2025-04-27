@@ -1,3 +1,9 @@
+from django.db import transaction, IntegrityError
+
+
+from apps.users.models import UserProfile
+
+
 def set_user_type(strategy, details, backend, user=None, *args, **kwargs):
     """Set the user_type based on the request parameters."""
 
@@ -86,30 +92,16 @@ def activate_social_user(backend, user, response, *args, **kwargs):
     return {"user": user}
 
 
-def create_user_profile(backend, user, response, *args, **kwargs):
-    """If the user doesn't have a profile, create a UserProfile instance."""
-
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    # Import your Profile model
-    from apps.users.models import UserProfile
-
-    # Check if profile already exists
+def create_user_profile(backend, user, is_new=False, *args, **kwargs):
+    # Only create a profile for newly registered users
+    if not user or not is_new:
+        return
     try:
+        with transaction.atomic():
+            # Attempt to fetch or create the profile atomically
+            profile, created = UserProfile.objects.get_or_create(user=user)
+    except IntegrityError:
+        # In case of a race, another thread created it; fetch it now
         profile = UserProfile.objects.get(user=user)
-        logger.info(
-            f"User profile already exists for user: {user.first_name or user.email}"
-        )
-    except UserProfile.DoesNotExist:
-        # Create UserProfile
-        profile = UserProfile(
-            user=user,
-            # Set default profile values here
-            # You can also extract data from the OAuth response if needed
-        )
-        profile.save()
-        logger.info(f"Created new profile for user: {user.first_name or user.email}")
-
-    return {"profile": profile}
+    # (Optional) return data to the pipeline or perform additional setup
+    return {"user_profile": profile}
