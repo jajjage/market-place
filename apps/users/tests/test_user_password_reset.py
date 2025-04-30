@@ -25,7 +25,7 @@ def create_user():
 @pytest.mark.django_db
 def test_reset_password_request(api_client, create_user):
     """Test requesting a password reset email."""
-    url = reverse("user-reset-password")
+    url = reverse("users-reset-password")
     data = {"email": create_user.email}
 
     # Directly call the endpoint without mocking
@@ -38,7 +38,7 @@ def test_reset_password_request(api_client, create_user):
 @pytest.mark.django_db
 def test_reset_password_request_invalid_email(api_client):
     """Test requesting a password reset with an invalid email."""
-    url = reverse("user-reset-password")
+    url = reverse("users-reset-password")
     data = {"email": "nonexistent@example.com"}
 
     response = api_client.post(url, data, format="json")
@@ -54,7 +54,7 @@ def test_reset_password_confirm(api_client, create_user):
     uid = urlsafe_base64_encode(force_bytes(create_user.pk))
     token = default_token_generator.make_token(create_user)
 
-    url = reverse("user-reset-password-confirm")
+    url = reverse("users-reset-password-confirm")
     data = {
         "uid": uid,
         "token": token,
@@ -75,7 +75,7 @@ def test_reset_password_confirm_invalid_token(api_client, create_user):
     """Test confirming a password reset with an invalid token."""
     uid = urlsafe_base64_encode(force_bytes(create_user.pk))
 
-    url = reverse("user-reset-password-confirm")
+    url = reverse("users-reset-password-confirm")
     data = {
         "uid": uid,
         "token": "invalid-token",
@@ -97,7 +97,7 @@ def test_reset_password_confirm_password_mismatch(api_client, create_user):
     uid = urlsafe_base64_encode(force_bytes(create_user.pk))
     token = default_token_generator.make_token(create_user)
 
-    url = reverse("user-reset-password-confirm")
+    url = reverse("users-reset-password-confirm")
     data = {
         "uid": uid,
         "token": token,

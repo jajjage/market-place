@@ -9,7 +9,7 @@ class TestUsersManagers:
         User = get_user_model()
         user = User.objects.create_user(email="normal@user.com", password="foo")
         assert user.email == "normal@user.com"
-        assert not user.is_active
+        assert user.is_active
         assert not user.is_staff
         assert not user.is_superuser
         assert user.username is None

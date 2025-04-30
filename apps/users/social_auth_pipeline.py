@@ -1,67 +1,31 @@
-from django.db import transaction, IntegrityError
+from apps.users.models.user_profile import UserProfile
+import logging
 
-
-from apps.users.models import UserProfile
+logger = logging.getLogger(__name__)
 
 
 def set_user_type(strategy, details, backend, user=None, *args, **kwargs):
-    """Set the user_type based on the request parameters."""
+    """Set the user type based on request parameters or return None for normal flow"""
+    if not user:
+        return None
 
-    # Extract user_type from the request parameters
+    # Get the user type from request parameters
     request = strategy.request
+    if request:
+        user_type = request.GET.get("user_type")
+        logger.info(f"Found user_type: {user_type}")
 
-    # Try to get user_type from different possible sources
-    user_type = None
+        if user_type:
+            user.user_type = user_type
+            user.save()
+        else:
+            logger.warning("No user_type parameter found in request")
 
-    # Check GET parameters
-    user_type = request.GET.get("user_type")
-
-    # If not found in GET, check POST data
-    if not user_type and hasattr(request, "POST"):
-        user_type = request.POST.get("user_type")
-
-    # If not found in POST, try to parse it from the URL
-    if not user_type and request.path:
-        # Log the URL to debug
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info(f"Auth URL: {request.path}")
-        logger.info(
-            f"Full request data: GET={request.GET}, POST={getattr(request, 'POST', {})}"
-        )
-
-    # Debug logging
-    logger.info(f"Found user_type: {user_type}")
-
-    if user_type:
-        # For new users, add it to the details dict
-        if not user:
-            details["user_type"] = user_type
-            logger.info(f"Setting user_type for new user to: {user_type}")
-        # For existing users, update the field if needed
-        elif user and hasattr(user, "user_type"):
-            # Log before update
-            logger.info(f"Existing user current user_type: {user.user_type}")
-
-            if user.user_type != user_type:
-                user.user_type = user_type
-                user.save()
-                logger.info(f"Updated user_type to: {user_type}")
-            else:
-                logger.info(f"User already has correct user_type: {user_type}")
-    else:
-        logger.warning("No user_type parameter found in request")
-
-    return {"details": details}
+    return {"user": user}
 
 
 def activate_social_user(backend, user, response, *args, **kwargs):
     """Activate the user and set their verification status."""
-
-    import logging
-
-    logger = logging.getLogger(__name__)
 
     # Always check and set these fields, not just for new users
     was_updated = False
@@ -92,16 +56,50 @@ def activate_social_user(backend, user, response, *args, **kwargs):
     return {"user": user}
 
 
+def store_oauth_data(strategy, details, backend, user=None, *args, **kwargs):
+    """Store OAuth data like profile picture URL for later use"""
+    if not user:
+        return None
+
+    if backend.name == "google-oauth2":
+        response = kwargs.get("response", {})
+        if "picture" in response:
+            # Store the profile picture URL temporarily
+            user.temp_profile_picture_url = response["picture"]
+            user.save(update_fields=["temp_profile_picture_url"])
+
+    return {"user": user}
+
+
 def create_user_profile(backend, user, is_new=False, *args, **kwargs):
-    # Only create a profile for newly registered users
-    if not user or not is_new:
-        return
-    try:
-        with transaction.atomic():
-            # Attempt to fetch or create the profile atomically
+    # Check if a profile already exists
+    profile_exists = UserProfile.objects.filter(user=user).exists()
+
+    # Only proceed if a profile doesn't exist and the user is either new or a SELLER
+    if not profile_exists and (is_new or user.user_type == "SELLER"):
+        try:
+            # Use get_or_create to avoid race conditions
             profile, created = UserProfile.objects.get_or_create(user=user)
-    except IntegrityError:
-        # In case of a race, another thread created it; fetch it now
-        profile = UserProfile.objects.get(user=user)
-    # (Optional) return data to the pipeline or perform additional setup
-    return {"user_profile": profile}
+
+            # Process profile picture from social auth if available
+            if backend.name == "google-oauth2" and "picture" in kwargs.get(
+                "response", {}
+            ):
+                try:
+                    import requests
+                    from django.core.files.base import ContentFile
+
+                    picture_url = kwargs["response"]["picture"]
+                    img_response = requests.get(picture_url)
+
+                    if img_response.status_code == 200:
+                        file_name = f"profile_{user.id}.jpg"
+                        profile.profile_picture.save(
+                            file_name, ContentFile(img_response.content), save=True
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to save OAuth profile picture: {e}")
+        except Exception as e:
+            logger.error(f"Failed to create user profile: {e}")
+
+    return {"profile_exists": profile_exists}

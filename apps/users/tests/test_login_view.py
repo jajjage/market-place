@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APIClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from django.core.cache import cache
 
 User = get_user_model()
@@ -266,71 +266,3 @@ class TestLogoutView:
 
         with pytest.raises(Exception):
             authenticated_client.post(url)
-
-
-@pytest.mark.django_db
-class TestCustomUserViewSet:
-    def test_activation_success(self, api_client, inactive_user):
-        # Mock the serializer behavior
-        with patch(
-            "apps.users.views.CustomUserViewSet.get_serializer"
-        ) as mock_get_serializer:
-            mock_serializer = MagicMock()
-            mock_serializer.is_valid.return_value = True
-            mock_serializer.user = inactive_user
-            mock_get_serializer.return_value = mock_serializer
-
-            # Mock the signal
-            with patch("apps.users.views.signals.user_activated.send") as mock_signal:
-                with patch(
-                    "apps.users.views.user_activated_signal.send"
-                ) as mock_custom_signal:
-                    url = reverse("user-activation")
-                    response = api_client.post(
-                        url, {"uid": "abc", "token": "123"}, format="json"
-                    )
-
-                    assert response.status_code == status.HTTP_204_NO_CONTENT
-                    inactive_user.refresh_from_db()
-                    assert inactive_user.is_active
-                    assert inactive_user.verification_status == "VERIFIED"
-                    mock_signal.assert_called_once()
-                    mock_custom_signal.assert_called_once()
-
-    def test_activation_already_active(self, api_client, create_user):
-        # Set up authenticated client with already active user
-        api_client.force_authenticate(user=create_user)
-
-        url = reverse("user-activation")
-        response = api_client.post(url, {"uid": "abc", "token": "123"}, format="json")
-
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.data == {"detail": "User is already activated."}
-
-    def test_admin_user_activation(self, api_client, inactive_user):
-        # Set user_type to ADMIN
-        inactive_user.user_type = "ADMIN"
-        inactive_user.save()
-
-        # Mock the serializer behavior
-        with patch(
-            "apps.users.views.CustomUserViewSet.get_serializer"
-        ) as mock_get_serializer:
-            mock_serializer = MagicMock()
-            mock_serializer.is_valid.return_value = True
-            mock_serializer.user = inactive_user
-            mock_get_serializer.return_value = mock_serializer
-
-            # Mock the signals
-            with patch("apps.users.views.signals.user_activated.send"):
-                with patch("apps.users.views.user_activated_signal.send"):
-                    url = reverse("user-activation")
-                    response = api_client.post(
-                        url, {"uid": "abc", "token": "123"}, format="json"
-                    )
-
-                    assert response.status_code == status.HTTP_204_NO_CONTENT
-                    inactive_user.refresh_from_db()
-                    assert inactive_user.is_active
-                    assert inactive_user.is_staff  # Admin users should become staff
-                    assert inactive_user.verification_status == "VERIFIED"

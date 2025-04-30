@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from django.db.models.signals import post_delete, pre_delete
 from django.utils import timezone
@@ -6,10 +7,7 @@ from .managers import SoftDeleteModelManager
 
 
 class BaseModel(models.Model):
-    """
-    An abstract base class that provides created_at and updated_at fields
-    """
-
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

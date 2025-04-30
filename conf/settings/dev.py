@@ -62,10 +62,6 @@ CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="django-db")
 # -----------------------------------------------------------------------------
 # REST Framework - Development Settings
 # -----------------------------------------------------------------------------
-REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] += (
-    "rest_framework.authentication.BasicAuthentication",
-)
-
 REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] += (
     "rest_framework.renderers.BrowsableAPIRenderer",
 )
@@ -81,6 +77,8 @@ STATIC_ROOT = tempfile.mkdtemp()
 INSTALLED_APPS += ["debug_toolbar"]
 INTERNAL_IPS = ["127.0.0.1"]
 MIDDLEWARE.insert(0, "debug_toolbar.middleware.DebugToolbarMiddleware")
+
+FRONTEND_DOMAIN = "http://localhost:3000"  # or whatever port you use for your frontend
 
 
 # -----------------------------------------------------------------------------

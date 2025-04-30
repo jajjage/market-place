@@ -29,6 +29,7 @@ django-redis = "^5.4.0"
 drf-spectacular = "^0.28.0"
 djangorestframework-simplejwt = "^5.5.0"
 djoser = "^2.3.1"
+pillow = "^11.2.1"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -15,8 +15,9 @@ urlpatterns = [
     path("admin-panel/", admin.site.urls, name="admin"),
     # TODO ⚡ Disable the auth endpoints you don't need.
     # Enabled: create, profile, login, logout, logoutall
-    path("api/v1/", include("apps.users.urls")),
     path("core/", include("apps.core.urls")),
+    path("api/v1/", include("apps.users.urls")),
+    path("api/v1/", include("apps.products.urls")),
 ]
 
 if env("DEBUG") == "True":

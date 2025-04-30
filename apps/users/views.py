@@ -16,6 +16,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from djoser.social.views import ProviderAuthView
+from apps.users.models.base import CustomUser
 from apps.users.utils import CookieSet
 
 from apps.users.schema import (
@@ -24,6 +25,17 @@ from apps.users.schema import (
     TOKEN_REFRESH_SCHEMA,
     TOKEN_VERIFY_SCHEMA,
 )
+
+from rest_framework import viewsets, permissions
+from apps.users.serializers import (
+    PublicUserSerializer,
+    UserRatingSerializer,
+    UserStoreSerializer,
+    UserAddressSerializer,
+)
+from apps.users.models.user_rating import UserRating
+from apps.users.models.user_store import UserStore
+from apps.users.models.user_address import UserAddress
 
 logger = logging.getLogger(__name__)
 
@@ -324,92 +336,59 @@ class LogoutView(APIView):
             )
 
 
-# @extend_schema(responses=USER_ACTIVATION_SCHEMA)
-# class CustomUserViewSet(UserViewSet):
-#     """
-#     Custom user viewset to handle user activation and other user-related actions.
-#     Extends Djoser's UserViewSet.
-#     """
+@extend_schema(tags=["User Ratings"])
+class UserRatingViewSet(viewsets.ModelViewSet):
+    queryset = UserRating.objects.all()
+    serializer_class = UserRatingSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-#     lookup_field = "id"
+    def get_queryset(self):
+        # Only allow users to see ratings about themselves or given by themselves
+        user = self.request.user
+        return UserRating.objects.filter(to_user=user) | UserRating.objects.filter(
+            from_user=user
+        )
 
-#     def get_serializer_class(self):
-#         """
-#         Return the serializer class to be used for the request.
-#         """
-#         return super().get_serializer_class()
+    def perform_create(self, serializer):
+        serializer.save(from_user=self.request.user)
 
-#     @action(["post"], detail=False)
-#     def activation(self, request, *args, **kwargs):
-#         """
-#         Activate a user account if not already activated or verified.
 
-#         Args:
-#             request (Request): The request object.
+@extend_schema(tags=["User Store"])
+class UserStoreViewSet(viewsets.ModelViewSet):
+    queryset = UserStore.objects.all()
+    serializer_class = UserStoreSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-#         Returns:
-#             Response: Activation result.
-#         """
-#         # Check if the user is already activated
-#         if request.user.is_active:
-#             return Response(
-#                 {"detail": "User is already activated."},
-#                 status=status.HTTP_400_BAD_REQUEST,
-#             )
-#         # Check if the user is already verified
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.user
-#         user.is_active = True
+    def get_queryset(self):
+        # Only allow users to see or edit their own store
+        user = self.request.user
+        return UserStore.objects.filter(user=user)
 
-#         # Add your custom verification status update here
-#         user.verification_status = "VERIFIED"  # Adjust based on your field's choices
-#         # we need to figure out either we need to allow the creation of staff user from public endpoint
-#         if user.user_type == "ADMIN":
-#             user.is_staff = True
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
-#         user.save()
 
-#         signals.user_activated.send(
-#             sender=self.__class__, user=user, request=self.request
-#         )
+@extend_schema(tags=["User Address"])
+class UserAddressViewSet(viewsets.ModelViewSet):
+    queryset = UserAddress.objects.all()
+    serializer_class = UserAddressSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-#         # Fire your custom signal
-#         user_activated_signal.send(sender=self.__class__, user=user)
+    def get_queryset(self):
+        # Only allow users to see or edit their own addresses
+        user = self.request.user
+        return UserAddress.objects.filter(user=user)
 
-#         # if settings.SEND_CONFIRMATION_EMAIL:
-#         #     context = {"user": user}
-#         #     to = [get_user_email(user)]
-#         #     settings.EMAIL.confirmation(self.request, context).send(to)
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
-#         return Response(status=status.HTTP_204_NO_CONTENT)
 
-#     @action(["post"], detail=False)
-#     def reset_email(self, request, *args, **kwargs):
-#         """
-#         Disallow resetting email via this endpoint.
+@extend_schema(tags=["User Profile"])
+class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for viewing other users' profiles. Read-only access.
+    """
 
-#         Args:
-#             request (Request): The request object.
-
-#         Returns:
-#             Response: Method not allowed.
-#         """
-#         return Response(
-#             {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
-#         )
-
-#     @action(["post"], detail=False)
-#     def set_email(self, request, *args, **kwargs):
-#         """
-#         Disallow setting email via this endpoint.
-
-#         Args:
-#             request (Request): The request object.
-
-#         Returns:
-#             Response: Method not allowed.
-#         """
-#         return Response(
-#             {"detail": "Not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED
-#         )
+    queryset = CustomUser.objects.filter(is_active=True)
+    serializer_class = PublicUserSerializer
+    permission_classes = [permissions.IsAuthenticated]

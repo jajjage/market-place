@@ -1,11 +1,10 @@
-import uuid
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from apps.core.models import BaseModel, SoftDeleteBaseModel
+from apps.core.models import BaseModel
 
-from .managers import CustomUserManager
+from apps.users.managers import CustomUserManager
 
 
 class UserType(models.TextChoices):
@@ -30,7 +29,6 @@ class CustomUser(AbstractUser, BaseModel):
     It uses email as the unique identifier instead of the username.
     """
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # The username field is set to None to disable it.
     username = None
 
@@ -44,6 +42,9 @@ class CustomUser(AbstractUser, BaseModel):
         choices=VerificationStatus.choices,
         default=VerificationStatus.VERIFIED,
     )
+    temp_profile_picture_url = models.URLField(
+        null=True, blank=True
+    )  # Temporary storage for OAuth profile pic URL
 
     # Additional fields for Django's authentication system
     is_active = models.BooleanField(default=True)
@@ -51,18 +52,12 @@ class CustomUser(AbstractUser, BaseModel):
 
     # Specifies the field to be used as the unique identifier for the user.
     USERNAME_FIELD = "email"
-
-    # A list of fields that will be prompted for when creating a user
-    # via the createsuperuser command. If empty, the USERNAME_FIELD is
-    # the only required.
     REQUIRED_FIELDS = [
         "first_name",
         "last_name",
         "user_type",
     ]
 
-    # The CustomUserManager allows the creation of a user where email
-    # is the unique identifier.
     objects = CustomUserManager()
 
     class Meta:
@@ -85,24 +80,3 @@ class CustomUser(AbstractUser, BaseModel):
 
     def get_short_name(self):
         return self.first_name or self.email.split("@")[0]
-
-
-class UserProfile(SoftDeleteBaseModel):
-    """Extended profile information for users."""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.OneToOneField(
-        CustomUser, on_delete=models.CASCADE, related_name="profile"
-    )
-    bio = models.TextField(blank=True)
-    address = models.JSONField(default=dict, blank=True)
-    profile_picture = models.CharField(max_length=255, blank=True)
-    phone_number = models.CharField(max_length=20, blank=True)
-    id_verification_documents = models.JSONField(default=dict, blank=True)
-    rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)
-    total_reviews = models.IntegerField(default=0)
-    is_featured = models.BooleanField(default=False)
-    social_links = models.JSONField(default=dict, blank=True)
-
-    def __str__(self):
-        return f"Profile for {self.user.email}"

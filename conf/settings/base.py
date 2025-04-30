@@ -66,6 +66,8 @@ INSTALLED_APPS = [
     # local apps
     "apps.users",
     "apps.core",
+    "apps.products",
+    "apps.transactions",
 ]
 
 MIDDLEWARE = [
@@ -142,17 +144,13 @@ DJOSER = {
         "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS", default=""
     ),
     "SERIALIZERS": {
+        "user": "apps.users.serializers.PublicUserSerializer",
         "current_user": "apps.users.serializers.UserSerializer",
     },
-    # "VIEWS": {
-    #     "users": "apps.users.views.CustomUserViewSet",
-    #     "user_list": "apps.users.views.CustomUserViewSet",
-    #     "activation": "apps.users.views.CustomUserViewSet",
-    #     "set_password": "apps.users.views.CustomUserViewSet",
-    #     "reset_password": "apps.users.views.CustomUserViewSet",
-    #     "reset_password_confirm": "apps.users.views.CustomUserViewSet",
-    #     "me": "apps.users.views.CustomUserViewSet",
-    # },
+    "PERMISSIONS": {
+        "user": ["rest_framework.permissions.IsAuthenticated"],
+        "user_list": ["rest_framework.permissions.IsAuthenticated"],
+    },
 }
 
 # -----------------------------------------------------------------------------
@@ -235,16 +233,12 @@ SOCIAL_AUTH_PIPELINE = (
     "social_core.pipeline.social_auth.social_details",
     "social_core.pipeline.social_auth.social_uid",
     "social_core.pipeline.social_auth.auth_allowed",
-    "apps.users.social_auth_pipeline.set_user_type",  # Your custom function
+    "apps.users.social_auth_pipeline.set_user_type",  # Set user type from request
+    "apps.users.social_auth_pipeline.store_oauth_data",  # Store OAuth data like profile picture URL
     "social_core.pipeline.social_auth.social_user",
     "social_core.pipeline.user.get_username",
-    "social_core.pipeline.social_auth.associate_by_email",
     "social_core.pipeline.user.create_user",
-    "social_core.pipeline.social_auth.associate_user",
-    "social_core.pipeline.social_auth.load_extra_data",
-    "social_core.pipeline.user.user_details",
-    "apps.users.social_auth_pipeline.activate_social_user",  # Your activation function
-    "apps.users.social_auth_pipeline.create_user_profile",  # Add this after user creation
+    "apps.users.social_auth_pipeline.activate_social_user",  # Activate and verify the user
 )
 # -----------------------------------------------------------------------------
 # DRF Spectacular Settings
