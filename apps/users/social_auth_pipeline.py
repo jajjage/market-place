@@ -24,6 +24,36 @@ def set_user_type(strategy, details, backend, user=None, *args, **kwargs):
     return {"user": user}
 
 
+def store_user_details(
+    backend, strategy, details, response, user=None, *args, **kwargs
+):
+    """Store user details from OAuth response"""
+    if not user:
+        return None
+
+    changed = False
+
+    # Store first and last name if available
+    if backend.name == "google-oauth2":
+        if details.get("first_name") and not user.first_name:
+            user.first_name = details["first_name"]
+            changed = True
+
+        if details.get("last_name") and not user.last_name:
+            user.last_name = details["last_name"]
+            changed = True
+
+        # Store profile picture URL temporarily
+        if response.get("picture"):
+            user.temp_profile_picture_url = response["picture"]
+            changed = True
+
+        if changed:
+            user.save()
+
+    return {"user": user}
+
+
 def activate_social_user(backend, user, response, *args, **kwargs):
     """Activate the user and set their verification status."""
 
@@ -88,14 +118,23 @@ def create_user_profile(backend, user, is_new=False, *args, **kwargs):
                 try:
                     import requests
                     from django.core.files.base import ContentFile
+                    from urllib3.util.retry import Retry
+                    from requests.adapters import HTTPAdapter
+
+                    # Configure session with retries
+                    session = requests.Session()
+                    retries = Retry(total=3, backoff_factor=0.1)
+                    session.mount("http://", HTTPAdapter(max_retries=retries))
+                    session.mount("https://", HTTPAdapter(max_retries=retries))
 
                     picture_url = kwargs["response"]["picture"]
-                    img_response = requests.get(picture_url)
+                    img_response = session.get(picture_url, stream=True)
 
                     if img_response.status_code == 200:
+                        # Don't try to decode the binary content
                         file_name = f"profile_{user.id}.jpg"
                         profile.profile_picture.save(
-                            file_name, ContentFile(img_response.content), save=True
+                            file_name, ContentFile(img_response.raw.read()), save=True
                         )
                 except Exception as e:
                     logger.error(f"Failed to save OAuth profile picture: {e}")

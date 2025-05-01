@@ -16,6 +16,8 @@ from rest_framework_simplejwt.views import (
 )
 
 from djoser.social.views import ProviderAuthView
+
+# from apps.core.permissions import IsOwnerOrReadOnly
 from apps.users.models.base import CustomUser
 from apps.users.utils import CookieSet
 
@@ -28,8 +30,8 @@ from apps.users.schema import (
 
 from rest_framework import viewsets, permissions
 from apps.users.serializers import (
-    PublicUserSerializer,
     UserRatingSerializer,
+    UserSerializer,
     UserStoreSerializer,
     UserAddressSerializer,
 )
@@ -53,99 +55,94 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet):
         """
         try:
             response = super().post(request, *args, **kwargs)
-            if response.status_code == status.HTTP_201_CREATED:
-                user = self.get_user(response)
-                if user:
-                    update_last_login(None, user)
-                    self.set_token_cookies(response)
+            logger.info(f"Initial response data: {response.data}")
 
-                    # Update response data with complete user information
-                    response.data = self.get_user_data(user)
+            if response.status_code == status.HTTP_201_CREATED:
+                # Get the user's email from the response data
+                user_email = response.data.get("user")
+                logger.info(f"Response data: {response.data}")
+                logger.info(f"Found user email: {user_email}")
+
+                if user_email:
+                    from django.contrib.auth import get_user_model
+
+                    User = get_user_model()
+                    try:
+                        user = User.objects.get(email=user_email)
+                        update_last_login(None, user)
+
+                        # Store tokens temporarily
+                        tokens = {
+                            "access": response.data.get("access"),
+                            "refresh": response.data.get("refresh"),
+                        }
+
+                        logger.info(f"Tokens before setting cookies: {tokens}")
+
+                        # Update user data
+                        user_data = {
+                            "id": str(user.id),
+                            "email": user.email,
+                            "first_name": user.first_name,
+                            "last_name": user.last_name,
+                            "user_type": (
+                                user.user_type
+                                if user.user_type not in ["undefined", None, ""]
+                                else None
+                            ),
+                            "verification_status": (
+                                user.verification_status
+                                if hasattr(user, "verification_status")
+                                else None
+                            ),
+                        }
+
+                        # Add profile data if user has an associated profile
+                        if hasattr(user, "profile"):
+                            profile = user.profile
+                            profile_data = {
+                                "id": str(profile.id),
+                                "display_name": profile.display_name,
+                                "bio": profile.bio,
+                                "phone_number": profile.phone_number,
+                                "country": profile.country,
+                                "city": profile.city,
+                                "email_verified": profile.email_verified,
+                                "phone_verified": profile.phone_verified,
+                            }
+
+                            # Handle profile picture URL
+                            if profile.profile_picture:
+                                profile_data["profile_picture"] = (
+                                    profile.profile_picture.url
+                                )
+                            else:
+                                profile_data["profile_picture"] = None
+
+                            user_data["profile"] = profile_data
+
+                        # Restore tokens to response data for cookie setting
+                        response.data.update(tokens)
+                        response = self.set_token_cookies(response)
+
+                        # Set final response data
+                        response.data = user_data
+
+                        logger.info(f"Final response data: {response.data}")
+
+                    except User.DoesNotExist:
+                        logger.error(f"User with email {user_email} not found")
+                        return Response(
+                            {"error": "User not found"},
+                            status=status.HTTP_404_NOT_FOUND,
+                        )
+
             return response
         except (TokenError, ValidationError) as e:
             logger.exception("Token generation failed: %s", e)
             return Response(
                 {"error": "Authentication failed"}, status=status.HTTP_401_UNAUTHORIZED
             )
-
-    def get_user(self, response):
-        """
-        Retrieve the user object from the validated token or serializer data.
-
-        Args:
-            response (Response): The response object containing user data.
-
-        Returns:
-            User instance or None if not found.
-        """
-        user_email = response.data.get("user", {})
-
-        from django.contrib.auth import get_user_model
-
-        User = get_user_model()
-        try:
-            user = User.objects.get(email=user_email)
-        except User.DoesNotExist:
-            user = None
-
-        return user
-
-    def get_user_data(self, user):
-        """
-        Creates a complete user data dictionary that matches the frontend User interface.
-
-        Args:
-            user: The user model instance
-
-        Returns:
-            dict: Complete user data matching the frontend User interface
-        """
-        user_data = {
-            "id": str(user.id),
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "user_type": (
-                user.user_type
-                if hasattr(user, "user_type")
-                and user.user_type not in ["undefined", None, ""]
-                else None
-            ),
-        }
-
-        # Add verification status if it exists
-        if hasattr(user, "verification_status"):
-            user_data["verification_status"] = user.verification_status
-
-        # Add profile data if user has an associated profile
-        if hasattr(user, "profile"):
-            profile = user.profile
-            profile_data = {
-                "id": str(profile.id),
-            }
-
-            # Add optional profile fields if they exist
-            for field in [
-                "bio",
-                "profile_picture",
-                "phone_number",
-                "rating",
-                "total_reviews",
-                "is_featured",
-            ]:
-                if hasattr(profile, field):
-                    profile_data[field] = getattr(profile, field)
-
-            # Handle complex fields like address and social links
-            if hasattr(profile, "address"):
-                profile_data["address"] = profile.address
-
-            if hasattr(profile, "social_links"):
-                profile_data["social_links"] = profile.social_links
-
-            user_data["profile"] = profile_data
-
-        return user_data
 
 
 @extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
@@ -389,6 +386,11 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
     ViewSet for viewing other users' profiles. Read-only access.
     """
 
-    queryset = CustomUser.objects.filter(is_active=True)
-    serializer_class = PublicUserSerializer
+    queryset = CustomUser.objects.all()
+    serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["is_owner"] = False
+        return context
