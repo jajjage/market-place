@@ -240,6 +240,9 @@ SOCIAL_AUTH_PIPELINE = (
     "social_core.pipeline.user.create_user",
     "apps.users.social_auth_pipeline.activate_social_user",  # Activate and verify the user
     "apps.users.social_auth_pipeline.create_user_profile",  # Create profile if needed
+    "apps.users.social_auth_pipeline.store_user_details",
+    "apps.users.social_auth_pipeline.set_user_type",
+    "apps.users.social_auth_pipeline.store_oauth_data",
 )
 # -----------------------------------------------------------------------------
 # DRF Spectacular Settings

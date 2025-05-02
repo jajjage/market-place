@@ -33,23 +33,27 @@ def store_user_details(
 
     changed = False
 
-    # Store first and last name if available
     if backend.name == "google-oauth2":
-        if details.get("first_name") and not user.first_name:
+        # Always update first and last name if they exist in the response
+        if "first_name" in details:
             user.first_name = details["first_name"]
             changed = True
+            logger.info(f"Updated first name for user: {user.email}")
 
-        if details.get("last_name") and not user.last_name:
+        if "last_name" in details:
             user.last_name = details["last_name"]
             changed = True
+            logger.info(f"Updated last name for user: {user.email}")
 
         # Store profile picture URL temporarily
         if response.get("picture"):
             user.temp_profile_picture_url = response["picture"]
             changed = True
+            logger.info(f"Updated profile picture URL for user: {user.email}")
 
         if changed:
             user.save()
+            logger.info(f"Saved user details for: {user.email}")
 
     return {"user": user}
 
