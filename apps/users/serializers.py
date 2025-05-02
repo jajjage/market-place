@@ -59,13 +59,15 @@ class UserStoreSerializer(TimestampedModelSerializer):
             "return_policy",
             "shipping_policy",
             "website",
+            "is_active",
         ] + get_timestamp_fields(UserStore)
         read_only_fields = ["id", "slug"] + get_timestamp_fields(UserStore)
 
 
 class UserRatingSerializer(TimestampedModelSerializer):
     from_user = serializers.PrimaryKeyRelatedField(read_only=True)
-    to_user = serializers.PrimaryKeyRelatedField(read_only=True)
+    # to_user = serializers.PrimaryKeyRelatedField(read_only=True)
+    # transaction = serializers.PrimaryKeyRelatedField(reread_only=True)
 
     class Meta:
         model = UserRating
@@ -77,12 +79,7 @@ class UserRatingSerializer(TimestampedModelSerializer):
             "rating",
             "comment",
         ] + get_timestamp_fields(UserRating)
-        read_only_fields = [
-            "id",
-            "transaction",
-            "from_user",
-            "to_user",
-        ] + get_timestamp_fields(UserRating)
+        read_only_fields = ["id", "created_at"] + get_timestamp_fields(UserRating)
 
 
 class UserProfileSerializer(TimestampedModelSerializer):

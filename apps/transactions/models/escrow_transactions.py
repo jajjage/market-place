@@ -1,9 +1,10 @@
 from django.db import models
 from django.conf import settings
+from apps.core.models import BaseModel
 from apps.products.models import Product
 
 
-class EscrowTransaction(models.Model):
+class EscrowTransaction(BaseModel):
     STATUS_CHOICES = [
         ("initiated", "Initiated"),
         ("payment_received", "Payment Received"),
@@ -28,8 +29,6 @@ class EscrowTransaction(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default="initiated"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
     inspection_period_days = models.PositiveSmallIntegerField(default=3)
     inspection_end_date = models.DateTimeField(null=True, blank=True)
     tracking_number = models.CharField(max_length=100, blank=True)

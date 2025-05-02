@@ -144,7 +144,7 @@ DJOSER = {
         "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS", default=""
     ),
     "SERIALIZERS": {
-        "user": "apps.users.serializers.PublicUserSerializer",
+        "user": "apps.users.serializers.UserSerializer",
         "current_user": "apps.users.serializers.UserSerializer",
     },
     "PERMISSIONS": {

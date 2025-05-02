@@ -18,7 +18,7 @@ def create_user():
         password="testpassword123",
         first_name="Test",
         last_name="User",
-        user_type="BUYER",
+        user_type="SELLER",
     )
     return user
 
@@ -26,7 +26,7 @@ def create_user():
 @pytest.mark.django_db
 def test_retrieve_user_profile(api_client, create_user):
     """Test retrieving user profile"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     response = api_client.get(url)
     assert response.status_code == status.HTTP_200_OK
@@ -38,7 +38,7 @@ def test_retrieve_user_profile(api_client, create_user):
 @pytest.mark.django_db
 def test_update_user_profile(api_client, create_user):
     """Test updating user profile"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     data = {
         "first_name": "Updated",
@@ -61,7 +61,7 @@ def test_update_user_profile(api_client, create_user):
 @pytest.mark.django_db
 def test_update_user_profile_invalid_data(api_client, create_user):
     """Test updating user profile with invalid data"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     data = {
         "email": "invalid-email",  # Invalid email format
@@ -74,15 +74,15 @@ def test_update_user_profile_invalid_data(api_client, create_user):
 @pytest.mark.django_db
 def test_user_profile_unauthorized(api_client, create_user):
     """Test accessing profile without authentication"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     response = api_client.get(url)
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.django_db
-def test_user_profile_put_allowed(api_client, create_user):
+def test_user_profile_patch_allowed(api_client, create_user):
     """Test full profile update with PUT method"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     data = {
         "first_name": "Complete",
@@ -94,7 +94,7 @@ def test_user_profile_put_allowed(api_client, create_user):
             "notification_sms": False,
         },
     }
-    response = api_client.put(url, data, format="json")
+    response = api_client.patch(url, data, format="json")
     assert response.status_code == status.HTTP_200_OK
     assert response.data["first_name"] == "Complete"
     assert response.data["last_name"] == "Update"
@@ -104,7 +104,7 @@ def test_user_profile_put_allowed(api_client, create_user):
 @pytest.mark.django_db
 def test_user_profile_with_address(api_client, create_user):
     """Test profile update with address"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     data = {
         "addresses": [
@@ -129,7 +129,7 @@ def test_user_profile_with_address(api_client, create_user):
 @pytest.mark.django_db
 def test_user_profile_verification_status(api_client, create_user):
     """Test profile verification status display"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
     response = api_client.get(url)
     assert response.status_code == status.HTTP_200_OK
@@ -149,7 +149,7 @@ def test_user_profile_list(api_client, create_user):
 @pytest.mark.django_db
 def test_user_profile_full_data(api_client, create_user):
     """Test retrieving full profile data including ratings and store"""
-    url = reverse("user-profile-detail", kwargs={"pk": create_user.id})
+    url = reverse("user-me")
     api_client.force_authenticate(user=create_user)
 
     # Create a store for the user
@@ -157,7 +157,7 @@ def test_user_profile_full_data(api_client, create_user):
     store_data = {
         "name": "Test Store",
         "description": "Test store description",
-        "is_active": True,
+        "is_active": False,
     }
     api_client.post(store_url, store_data)
 

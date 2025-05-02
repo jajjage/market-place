@@ -17,19 +17,24 @@ from djoser.urls.base import router as djoser_base_router
 
 class UserBaseNameRouter(DefaultRouter):
     def get_default_basename(self, viewset):
-        # Detect any Djoser viewset whose queryset's model is CustomUser
+        """Always return 'user' as basename for user-related viewsets"""
         queryset = getattr(viewset, "queryset", None)
-        model = getattr(queryset, "model", None)
-        if model is not None and model.__name__ == "CustomUser":
-            return "user"
+        if queryset is not None:
+            model = getattr(queryset, "model", None)
+            if model and hasattr(model, "_meta"):
+                app_label = model._meta.app_label
+                if app_label == "users" or getattr(
+                    viewset, "__module__", ""
+                ).startswith("djoser."):
+                    return "user"
         return super().get_default_basename(viewset)
 
 
 router = UserBaseNameRouter()
 
-# Re-register Djoser's base endpoints at root level
+# Re-register Djoser's base endpoints with 'user' basename
 for prefix, viewset, basename in djoser_base_router.registry:
-    router.register("auth/" + prefix, viewset, basename=basename)
+    router.register("auth/" + prefix, viewset, basename="user")
 
 # Register our custom viewsets
 router.register(r"users/ratings", UserRatingViewSet, basename="user-rating")

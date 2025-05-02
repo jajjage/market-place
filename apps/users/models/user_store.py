@@ -18,6 +18,7 @@ class UserStore(BaseModel):
     logo = models.ImageField(upload_to="store_logos/", null=True, blank=True)
     banner = models.ImageField(upload_to="store_banners/", null=True, blank=True)
     description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
 
     # Store policies
     return_policy = models.TextField(blank=True)

@@ -28,7 +28,19 @@ def create_user():
 
 
 @pytest.fixture
-def create_transaction(create_user):
+def create_rate_user():
+    User = get_user_model()
+    user = User.objects.create_user(
+        email="testuserrate@example.com",
+        password="testpassword123",
+        first_name="Test",
+        last_name="User",
+    )
+    return user
+
+
+@pytest.fixture
+def create_transaction(create_user, create_rate_user):
     # Create a test transaction
     product = Product.objects.create(
         seller=create_user,
@@ -43,11 +55,11 @@ def create_transaction(create_user):
     # Create the transaction with the required product
     return EscrowTransaction.objects.create(
         product=product,
-        buyer=create_user,
+        buyer=create_rate_user,
         seller=create_user,
         amount=100.00,
         currency="USD",
-        status="COMPLETED",
+        status="completed",
         shipping_address={
             "address": "123 Test St",
             "city": "Test City",
@@ -65,9 +77,12 @@ class TestUserRatingEndpoints:
         assert response.status_code == status.HTTP_200_OK
 
     @pytest.mark.django_db
-    def test_create_rating(self, api_client, create_user, create_transaction):
-        api_client.force_authenticate(user=create_user)
+    def test_create_rating(
+        self, api_client, create_user, create_rate_user, create_transaction
+    ):
+        api_client.force_authenticate(user=create_rate_user)
         url = reverse("user-rating-list")
+
         data = {
             "to_user": create_user.id,
             "rating": 5,
@@ -75,7 +90,7 @@ class TestUserRatingEndpoints:
             "transaction": create_transaction.id,
         }
         response = api_client.post(url, data)
-        assert response.status_code == status.HTTP_201_CREATED
+        assert response.status_code == status.HTTP_201_CREATED, response.data
         assert UserRating.objects.count() == 1
         assert UserRating.objects.first().rating == 5
 
@@ -85,6 +100,7 @@ class TestUserRatingEndpoints:
     ):
         api_client.force_authenticate(user=create_user)
         url = reverse("user-rating-list")
+
         data = {
             "to_user": create_user.id,
             "rating": 6,  # Invalid rating > 5
@@ -168,7 +184,8 @@ class TestUserAddressEndpoints:
         api_client.force_authenticate(user=create_user)
         url = reverse("user-address-list")
         data = {
-            "address_type": "HOME",
+            "user": create_user,
+            "address_type": "shipping",
             "name": "Home",
             "street_address": "123 Test St",
             "city": "Test City",

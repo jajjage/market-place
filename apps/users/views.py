@@ -1,6 +1,7 @@
 import logging
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema
 from django.contrib.auth.models import update_last_login
 from django.core.cache import cache
@@ -17,7 +18,7 @@ from rest_framework_simplejwt.views import (
 
 from djoser.social.views import ProviderAuthView
 
-# from apps.core.permissions import IsOwnerOrReadOnly
+# from apps.transactions.models.escrow_transactions import EscrowTransaction
 from apps.users.models.base import CustomUser
 from apps.users.utils import CookieSet
 
@@ -30,8 +31,8 @@ from apps.users.schema import (
 
 from rest_framework import viewsets, permissions
 from apps.users.serializers import (
+    PublicUserSerializer,
     UserRatingSerializer,
-    UserSerializer,
     UserStoreSerializer,
     UserAddressSerializer,
 )
@@ -40,6 +41,8 @@ from apps.users.models.user_store import UserStore
 from apps.users.models.user_address import UserAddress
 
 logger = logging.getLogger(__name__)
+
+User = get_user_model()
 
 
 class CustomSocialProviderView(ProviderAuthView, CookieSet):
@@ -347,6 +350,12 @@ class UserRatingViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
+        # to_user_id = self.request.data.get("to_user")
+        # transaction_id = self.request.data.get("transaction")
+
+        # to_user = User.objects.get(id=to_user_id)
+        # transaction = EscrowTransaction.objects.get(transaction_id)
+
         serializer.save(from_user=self.request.user)
 
 
@@ -383,14 +392,19 @@ class UserAddressViewSet(viewsets.ModelViewSet):
 @extend_schema(tags=["User Profile"])
 class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    ViewSet for viewing other users' profiles. Read-only access.
+    ViewSet for viewing users' profiles. Read-only access.
     """
 
-    queryset = CustomUser.objects.all()
-    serializer_class = UserSerializer
+    serializer_class = PublicUserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["is_owner"] = False
-        return context
+    def get_queryset(self):
+        return CustomUser.objects.select_related("profile").filter(
+            profile__isnull=False
+        )
+
+    def get_object(self):
+        # If requesting the authenticated user's profile
+        if self.kwargs.get("pk") == "me":
+            return self.request.user
+        return super().get_object()
