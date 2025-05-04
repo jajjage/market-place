@@ -5,6 +5,11 @@ from apps.users.models import CustomUser, UserProfile
 from apps.users.models.user_store import UserStore
 from apps.users.models.user_rating import UserRating
 from apps.users.models.user_address import UserAddress
+from apps.transactions.serializers import (
+    EscrowTransactionShortSerializer,
+    DisputeSerializer,
+    TransactionHistorySerializer,
+)
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
@@ -129,6 +134,12 @@ class UserSerializer(TimestampedModelSerializer):
     received_ratings = UserRatingSerializer(
         many=True, read_only=True
     )  # Always read-only for security
+    purchases = serializers.SerializerMethodField()
+    sales = serializers.SerializerMethodField()
+    disputes = DisputeSerializer(many=True, read_only=True, source="opened_disputes")
+    transaction_history = TransactionHistorySerializer(
+        many=True, read_only=True, source="created_transaction_history"
+    )
 
     class Meta:
         model = CustomUser
@@ -143,10 +154,24 @@ class UserSerializer(TimestampedModelSerializer):
             "store",
             "addresses",
             "received_ratings",
+            "purchases",
+            "sales",
+            "disputes",
+            "transaction_history",
         ] + get_timestamp_fields(CustomUser)
         read_only_fields = ["id", "verification_status"] + get_timestamp_fields(
             CustomUser
         )
+
+    def get_purchases(self, obj):
+        """Get user's purchases using the short serializer"""
+        purchases = obj.purchases.all()
+        return EscrowTransactionShortSerializer(purchases, many=True).data
+
+    def get_sales(self, obj):
+        """Get user's sales using the short serializer"""
+        sales = obj.sales.all()
+        return EscrowTransactionShortSerializer(sales, many=True).data
 
     def update(self, instance, validated_data):
         # Handle nested updates only if user is owner
@@ -200,6 +225,9 @@ class UserSerializer(TimestampedModelSerializer):
         if getattr(instance, "user_type", None) == "BUYER":
             data.pop("received_ratings", None)
             data.pop("store", None)
+            data.pop("sales", None)  # Buyers don't have sales
+        # else:  # SELLER
+        #     data.pop("purchases", None)  # Optional: hide seller's purchases for privacy
         return data
 
 

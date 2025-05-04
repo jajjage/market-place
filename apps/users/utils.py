@@ -11,8 +11,9 @@ class CookieSet:
 
     def set_token_cookies(self, response):
         try:
-            logger.debug(f"Setting cookies with data: {response.data}")
+            logger.debug("Setting authentication cookies")
             self._validate_token_data(response.data)
+
             # Set access token cookie
             response.set_cookie(
                 settings.JWT_AUTH_COOKIE,
@@ -38,7 +39,7 @@ class CookieSet:
             # Remove tokens from response data for security
             response.data.pop("access")
             response.data.pop("refresh")
-            logger.info("Cookies set successfully")
+            logger.info("Authentication cookies set successfully")
             return response
 
         except Exception as e:
@@ -48,31 +49,13 @@ class CookieSet:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def _set_token_cookies(self, response):
-        if "access" in response.data:
-            response.set_cookie(
-                settings.JWT_AUTH_COOKIE,
-                response.data["access"],
-                max_age=settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds(),
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                secure=settings.JWT_AUTH_SECURE,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-            response.data.pop("access")
-
-        if "refresh" in response.data:
-            response.set_cookie(
-                settings.JWT_AUTH_REFRESH_COOKIE,
-                response.data["refresh"],
-                max_age=settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds(),
-                httponly=settings.JWT_AUTH_HTTPONLY,
-                secure=settings.JWT_AUTH_SECURE,
-                samesite=settings.JWT_AUTH_SAMESITE,
-                path=settings.JWT_AUTH_PATH,
-            )
-            response.data.pop("refresh")
-
     def _validate_token_data(self, data):
+        """Validate that both access and refresh tokens are present."""
+        if not isinstance(data, dict):
+            raise ValueError("Response data must be a dictionary")
+
         if "access" not in data or "refresh" not in data:
-            raise ValueError("Token data missing from response")
+            raise ValueError("Both access and refresh tokens are required")
+
+        if not data["access"] or not data["refresh"]:
+            raise ValueError("Token values cannot be empty")

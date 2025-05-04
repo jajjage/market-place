@@ -189,7 +189,9 @@ JWT_REFRESH_THRESHOLD = 300  # 5 minutes in seconds
 JWT_ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
 JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=1)
 JWT_AUTH_SECURE = False
-JWT_AUTH_SAMESITE = "Lax"
+JWT_AUTH_SAMESITE = (
+    "Lax"  # if env("JWT_AUTH_SECURE", default="False") == "True" else "None"
+)
 JWT_AUTH_HTTPONLY = True
 JWT_AUTH_PATH = "/"
 
@@ -230,20 +232,24 @@ SITE_NAME = "Safe Trade MarketPlace"
 # Social Auth Pipeline
 # -----------------------------------------------------------------------------
 SOCIAL_AUTH_PIPELINE = (
+    # Get user information from social provider
     "social_core.pipeline.social_auth.social_details",
     "social_core.pipeline.social_auth.social_uid",
     "social_core.pipeline.social_auth.auth_allowed",
-    "apps.users.social_auth_pipeline.store_user_details",  # Store user name and picture URL first
-    "apps.users.social_auth_pipeline.set_user_type",  # Set user type from request
+    # Get or create the user account
     "social_core.pipeline.social_auth.social_user",
     "social_core.pipeline.user.get_username",
     "social_core.pipeline.user.create_user",
-    "apps.users.social_auth_pipeline.activate_social_user",  # Activate and verify the user
-    "apps.users.social_auth_pipeline.create_user_profile",  # Create profile if needed
-    "apps.users.social_auth_pipeline.store_user_details",
-    "apps.users.social_auth_pipeline.set_user_type",
+    # Store OAuth data first
     "apps.users.social_auth_pipeline.store_oauth_data",
+    "apps.users.social_auth_pipeline.store_user_details",
+    # Only then set user type and handle activation
+    "apps.users.social_auth_pipeline.set_user_type",
+    "apps.users.social_auth_pipeline.activate_social_user",
+    # Create profile last, after user_type is set
+    "apps.users.social_auth_pipeline.create_user_profile",
 )
+
 # -----------------------------------------------------------------------------
 # DRF Spectacular Settings
 # -----------------------------------------------------------------------------

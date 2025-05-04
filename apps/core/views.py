@@ -2,9 +2,41 @@ from django.http import JsonResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.throttling import AnonRateThrottle
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class BaseAPIView(APIView):
+    """
+    Base API View that standardizes response format across the application.
+    All responses will have the format:
+    {
+        "status": "success" | "error",
+        "message": str,
+        "data": Any | None
+    }
+    """
+
+    def send_response(
+        self, data=None, message="Success", status_code=status.HTTP_200_OK
+    ):
+        """Send a success response"""
+        response_data = {"status": "success", "message": message, "data": data}
+        return Response(response_data, status=status_code)
+
+    def send_error(
+        self,
+        message="An error occurred",
+        status_code=status.HTTP_400_BAD_REQUEST,
+        data=None,
+    ):
+        """Send an error response"""
+        response_data = {"status": "error", "message": message, "data": data}
+        return Response(response_data, status=status_code)
 
 
 class PingRateThrottle(AnonRateThrottle):

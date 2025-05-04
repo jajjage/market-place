@@ -1,4 +1,5 @@
 from apps.users.models.user_profile import UserProfile
+from apps.users.models.user_address import UserAddress
 import logging
 
 logger = logging.getLogger(__name__)
@@ -106,14 +107,21 @@ def store_oauth_data(strategy, details, backend, user=None, *args, **kwargs):
 
 
 def create_user_profile(backend, user, is_new=False, *args, **kwargs):
+    """Create appropriate profile based on user type"""
+    # Skip if user_type is not set yet
+    if not user.user_type:
+        return None
+
     # Check if a profile already exists
     profile_exists = UserProfile.objects.filter(user=user).exists()
+    address_exists = UserAddress.objects.filter(user=user).exists()
 
-    # Only proceed if a profile doesn't exist and the user is either new or a SELLER
-    if not profile_exists and (is_new or user.user_type == "SELLER"):
+    # Only proceed if no profile exists and user type matches
+    if user.user_type == "SELLER" and not profile_exists:
         try:
-            # Use get_or_create to avoid race conditions
+            # Create seller profile
             profile, created = UserProfile.objects.get_or_create(user=user)
+            logger.info(f"Created seller profile for user: {user.email}")
 
             # Process profile picture from social auth if available
             if backend.name == "google-oauth2" and "picture" in kwargs.get(
@@ -135,14 +143,25 @@ def create_user_profile(backend, user, is_new=False, *args, **kwargs):
                     img_response = session.get(picture_url, stream=True)
 
                     if img_response.status_code == 200:
-                        # Don't try to decode the binary content
                         file_name = f"profile_{user.id}.jpg"
                         profile.profile_picture.save(
-                            file_name, ContentFile(img_response.raw.read()), save=True
+                            file_name, ContentFile(img_response.content), save=True
                         )
                 except Exception as e:
                     logger.error(f"Failed to save OAuth profile picture: {e}")
-        except Exception as e:
-            logger.error(f"Failed to create user profile: {e}")
 
-    return {"profile_exists": profile_exists}
+        except Exception as e:
+            logger.error(f"Failed to create seller profile: {e}")
+
+    elif user.user_type == "BUYER" and not address_exists:
+        try:
+            # Create buyer address
+            UserAddress.objects.create(user=user)
+            logger.info(f"Created buyer address for user: {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to create buyer address: {e}")
+
+    return {
+        "profile_exists": profile_exists or address_exists,
+        "user_type": user.user_type,
+    }

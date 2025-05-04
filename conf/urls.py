@@ -18,6 +18,9 @@ urlpatterns = [
     path("core/", include("apps.core.urls")),
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.products.urls")),
+    path(
+        "api/v1/", include("apps.transactions.urls")
+    ),  # Special URL pattern for sharing transactions by UUID (backend use)
 ]
 
 if env("DEBUG") == "True":
