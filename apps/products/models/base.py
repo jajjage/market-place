@@ -1,7 +1,6 @@
 from django.db import models
 from django.conf import settings
 from django.urls import reverse
-from django.utils.text import slugify
 from django.db.models import JSONField
 
 from apps.core.models import BaseModel
@@ -40,7 +39,7 @@ class Product(BaseModel):
 
     slug = models.SlugField(max_length=255, blank=True, db_index=True)
     short_code = models.CharField(
-        max_length=10, unique=True, blank=True, null=True, db_index=True
+        max_length=200, unique=True, blank=True, null=True, db_index=True
     )
 
     class Meta:
@@ -58,25 +57,8 @@ class Product(BaseModel):
             return int(((self.original_price - self.price) / self.original_price) * 100)
         return 0
 
-    def save(self, *args, **kwargs):
-        if not self.slug:
-            self.slug = slugify(self.title)
-
-        super().save(*args, **kwargs)
-
-        # Only generate short_code if needed and save again
-        if not self.short_code:
-            self.short_code = str(self.id).split("-")[0][:6]
-            super().save(update_fields=["short_code"])
-
     def get_absolute_url(self):
         return reverse("product-detail", kwargs={"slug": self.slug})
-
-    def get_share_url(self):
-        from django.conf import settings
-
-        frontend_domain = settings.FRONTEND_DOMAIN  # Define this in your settings.py
-        return f"{frontend_domain}/p/{self.short_code}"
 
     def __str__(self):
         return self.title

@@ -107,55 +107,32 @@ def store_oauth_data(strategy, details, backend, user=None, *args, **kwargs):
 
 
 def create_user_profile(backend, user, is_new=False, *args, **kwargs):
-    """Create appropriate profile based on user type"""
-    # Skip if user_type is not set yet
+    """Create appropriate profile based on user type, and save avatar_url instead of file."""
     if not user.user_type:
         return None
 
-    # Check if a profile already exists
     profile_exists = UserProfile.objects.filter(user=user).exists()
     address_exists = UserAddress.objects.filter(user=user).exists()
 
-    # Only proceed if no profile exists and user type matches
     if user.user_type == "SELLER" and not profile_exists:
         try:
-            # Create seller profile
             profile, created = UserProfile.objects.get_or_create(user=user)
             logger.info(f"Created seller profile for user: {user.email}")
 
-            # Process profile picture from social auth if available
-            if backend.name == "google-oauth2" and "picture" in kwargs.get(
-                "response", {}
-            ):
-                try:
-                    import requests
-                    from django.core.files.base import ContentFile
-                    from urllib3.util.retry import Retry
-                    from requests.adapters import HTTPAdapter
-
-                    # Configure session with retries
-                    session = requests.Session()
-                    retries = Retry(total=3, backoff_factor=0.1)
-                    session.mount("http://", HTTPAdapter(max_retries=retries))
-                    session.mount("https://", HTTPAdapter(max_retries=retries))
-
-                    picture_url = kwargs["response"]["picture"]
-                    img_response = session.get(picture_url, stream=True)
-
-                    if img_response.status_code == 200:
-                        file_name = f"profile_{user.id}.jpg"
-                        profile.profile_picture.save(
-                            file_name, ContentFile(img_response.content), save=True
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to save OAuth profile picture: {e}")
+            # --- NEW: Save Google picture URL instead of downloading ---
+            if backend.name == "google-oauth2":
+                picture_url = kwargs.get("response", {}).get("picture")
+                if picture_url:
+                    profile.avatar_url = picture_url
+                    profile.save(update_fields=["avatar_url"])
+                    logger.info(f"Saved avatar_url for user: {user.email}")
+            # -----------------------------------------------------------
 
         except Exception as e:
             logger.error(f"Failed to create seller profile: {e}")
 
     elif user.user_type == "BUYER" and not address_exists:
         try:
-            # Create buyer address
             UserAddress.objects.create(user=user)
             logger.info(f"Created buyer address for user: {user.email}")
         except Exception as e:

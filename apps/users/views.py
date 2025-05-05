@@ -15,7 +15,8 @@ from rest_framework_simplejwt.views import (
 )
 
 from djoser.social.views import ProviderAuthView
-from apps.core.views import BaseAPIView
+from apps.core.permissions import UserTypePermission
+from apps.core.views import BaseAPIView, BaseViewSet
 from rest_framework import viewsets, permissions
 
 from apps.users.models.base import CustomUser
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
+class CustomSocialProviderView(ProviderAuthView, CookieSet):
     """
     Custom social provider view to handle authentication with social providers.
     Extends ProviderAuthView and adds cookie support for tokens.
@@ -107,12 +108,10 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
                                 "phone_verified": profile.phone_verified,
                             }
 
-                            if profile.profile_picture:
-                                profile_data["profile_picture"] = (
-                                    profile.profile_picture.url
-                                )
+                            if profile.avatar_url:
+                                profile_data["avatar_url"] = profile.avatar_url
                             else:
-                                profile_data["profile_picture"] = None
+                                profile_data["avatar_url"] = None
 
                             user_data["profile"] = profile_data
 
@@ -145,7 +144,7 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
 
 
 @extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
-class CookieTokenObtainPairView(TokenObtainPairView, CookieSet, BaseAPIView):
+class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
     """
     Custom view to obtain token pairs with cookie support.
     Extends TokenObtainPairView and sets tokens in cookies on successful authentication.
@@ -194,7 +193,7 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet, BaseAPIView):
 
 
 @extend_schema(responses=TOKEN_REFRESH_SCHEMA)
-class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
+class CookieTokenRefreshView(TokenRefreshView, CookieSet):
     """
     Custom TokenRefreshView to handle refresh tokens in cookies.
     Handles rate limiting and blacklist checks for refresh tokens.
@@ -232,7 +231,7 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
             response = super().post(request, *args, **kwargs)
 
             if response.status_code == status.HTTP_200_OK:
-                response = self._set_token_cookies(response)
+                response = self.set_token_cookies(response)
                 # Update response data instead of creating new response
                 response.data = {
                     "status": "success",
@@ -289,7 +288,7 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
 
 
 @extend_schema(responses=TOKEN_VERIFY_SCHEMA)
-class CookieTokenVerifyView(TokenVerifyView, BaseAPIView):
+class CookieTokenVerifyView(TokenVerifyView):
     def post(self, request, *args, **kwargs):
         token = request.COOKIES.get(settings.JWT_AUTH_COOKIE)
 
@@ -317,7 +316,7 @@ class CookieTokenVerifyView(TokenVerifyView, BaseAPIView):
 class LogoutView(BaseAPIView):
     def post(self, request, *args, **kwargs):
         try:
-            response = self.send_response(
+            response = self.success_response(
                 message="Successfully logged out", status_code=status.HTTP_200_OK
             )
             response.delete_cookie(settings.JWT_AUTH_COOKIE)
@@ -325,13 +324,13 @@ class LogoutView(BaseAPIView):
             return response
         except Exception as e:
             logger.error("Logout error: %s", e, exc_info=True)
-            return self.send_error(
+            return self.error_response(
                 message="Logout failed", status_code=status.HTTP_400_BAD_REQUEST
             )
 
 
 @extend_schema(tags=["User Ratings"])
-class UserRatingViewSet(viewsets.ModelViewSet, BaseAPIView):
+class UserRatingViewSet(BaseViewSet):
     queryset = UserRating.objects.all()
     serializer_class = UserRatingSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -342,46 +341,9 @@ class UserRatingViewSet(viewsets.ModelViewSet, BaseAPIView):
             from_user=user
         )
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return self.send_response(
-            data=serializer.data, message="User ratings retrieved successfully"
-        )
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        try:
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            return self.send_response(
-                data=serializer.data,
-                message="Rating created successfully",
-                status_code=status.HTTP_201_CREATED,
-            )
-        except Exception as e:
-            return self.send_error(
-                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
-            )
-
-    def retrieve(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-            serializer = self.get_serializer(instance)
-            return self.send_response(
-                data=serializer.data, message="Rating retrieved successfully"
-            )
-        except Exception as e:
-            return self.send_error(
-                message=str(e), status_code=status.HTTP_404_NOT_FOUND
-            )
-
-    def perform_create(self, serializer):
-        serializer.save(from_user=self.request.user)
-
 
 @extend_schema(tags=["User Store"])
-class UserStoreViewSet(viewsets.ModelViewSet, BaseAPIView):
+class UserStoreViewSet(BaseViewSet):
     queryset = UserStore.objects.all()
     serializer_class = UserStoreSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -390,120 +352,30 @@ class UserStoreViewSet(viewsets.ModelViewSet, BaseAPIView):
         user = self.request.user
         return UserStore.objects.filter(user=user)
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return self.send_response(
-            data=serializer.data, message="User stores retrieved successfully"
-        )
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        try:
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            return self.send_response(
-                data=serializer.data,
-                message="Store created successfully",
-                status_code=status.HTTP_201_CREATED,
-            )
-        except Exception as e:
-            return self.send_error(
-                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
-            )
-
-    def retrieve(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-            serializer = self.get_serializer(instance)
-            return self.send_response(
-                data=serializer.data, message="Store retrieved successfully"
-            )
-        except Exception as e:
-            return self.send_error(
-                message=str(e), status_code=status.HTTP_404_NOT_FOUND
-            )
-
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
-
 
 @extend_schema(tags=["User Address"])
-class UserAddressViewSet(viewsets.ModelViewSet, BaseAPIView):
+class UserAddressViewSet(BaseViewSet):
     queryset = UserAddress.objects.all()
     serializer_class = UserAddressSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [UserTypePermission]
+    permission_user_types = ["SELLER", "BUYER"]
+    # permission_object_user_field = "owner"
 
     def get_queryset(self):
         user = self.request.user
         return UserAddress.objects.filter(user=user)
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return self.send_response(
-            data=serializer.data, message="User addresses retrieved successfully"
-        )
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        try:
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            return self.send_response(
-                data=serializer.data,
-                message="Address created successfully",
-                status_code=status.HTTP_201_CREATED,
-            )
-        except Exception as e:
-            return self.send_error(
-                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
-            )
-
-    def retrieve(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-            serializer = self.get_serializer(instance)
-            return self.send_response(
-                data=serializer.data, message="Address retrieved successfully"
-            )
-        except Exception as e:
-            return self.send_error(
-                message=str(e), status_code=status.HTTP_404_NOT_FOUND
-            )
-
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
-
 
 @extend_schema(tags=["User Profile"])
-class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseAPIView):
+class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
     serializer_class = PublicUserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [UserTypePermission]
+    permission_user_types = ["SELLER", "BUYER"]
 
     def get_queryset(self):
         return CustomUser.objects.select_related("profile").filter(
             profile__isnull=False
         )
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return self.send_response(
-            data=serializer.data, message="User profiles retrieved successfully"
-        )
-
-    def retrieve(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-            serializer = self.get_serializer(instance)
-            return self.send_response(
-                data=serializer.data, message="Profile retrieved successfully"
-            )
-        except Exception as e:
-            return self.send_error(
-                message=str(e), status_code=status.HTTP_404_NOT_FOUND
-            )
 
     def get_object(self):
         if self.kwargs.get("pk") == "me":

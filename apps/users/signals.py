@@ -1,8 +1,7 @@
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.db import transaction
-import requests
-from django.core.files.base import ContentFile
+
 
 from apps.users.models.base import CustomUser
 from apps.users.models.user_address import UserAddress
@@ -27,28 +26,19 @@ def create_user_profile(sender, instance, created, **kwargs):
     with transaction.atomic():
         if instance.user_type == "BUYER":
             UserAddress.objects.get_or_create(user=instance)
+
         elif instance.user_type == "SELLER":
-            profile, created = UserProfile.objects.get_or_create(user=instance)
+            profile, _ = UserProfile.objects.get_or_create(user=instance)
 
-            # Handle profile picture from OAuth if available
-            if (
-                hasattr(instance, "temp_profile_picture_url")
-                and instance.temp_profile_picture_url
-            ):
-                try:
-                    img_response = requests.get(instance.temp_profile_picture_url)
-                    if img_response.status_code == 200:
-                        file_name = f"profile_{instance.id}.jpg"
-                        profile.profile_picture.save(
-                            file_name, ContentFile(img_response.content), save=True
-                        )
-                        instance.temp_profile_picture_url = None
-                        instance.save(update_fields=["temp_profile_picture_url"])
-                except Exception as e:
-                    import logging
+            # Instead of downloading, just store the URL in avatar_url
+            temp_url = getattr(instance, "temp_profile_picture_url", None)
+            if temp_url:
+                profile.avatar_url = temp_url
+                profile.save(update_fields=["avatar_url"])
 
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to save OAuth profile picture: {e}")
+                # Clear the temp field on the user
+                instance.temp_profile_picture_url = None
+                instance.save(update_fields=["temp_profile_picture_url"])
 
 
 @receiver(pre_save, sender=CustomUser)

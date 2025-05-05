@@ -55,7 +55,7 @@ class UserTypePermission(permissions.BasePermission):
         # Check if user's type is in allowed types
         user_type = getattr(request.user, "user_type", None)
         if not user_type:
-            logger.warning(f"User {request.user.username} has no user_type attribute")
+            logger.warning(f"User {request.user.first_name} has no user_type attribute")
             self.message = "Your account has no assigned user type."
             return False
 
@@ -64,7 +64,7 @@ class UserTypePermission(permissions.BasePermission):
         # Log permission denial for auditing
         if not has_permission:
             logger.warning(
-                f"Permission denied: User {request.user.username} ({user_type}) "
+                f"Permission denied: User {request.user.first_name} ({user_type}) "
                 f"attempted to access {view.__class__.__name__} "
                 f"which requires one of {allowed_user_types}"
             )

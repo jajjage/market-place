@@ -1,7 +1,8 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import status
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter
-from apps.core.views import BaseAPIView
+from apps.core.permissions import UserTypePermission
+from apps.core.views import BaseViewSet
 from .models.escrow_transactions import EscrowTransaction
 from .models.transaction_dispute import Dispute
 from .models.transaction_history import TransactionHistory
@@ -14,14 +15,15 @@ from .serializers import (
 )
 
 
-class TransactionViewSet(viewsets.ModelViewSet, BaseAPIView):
+class TransactionViewSet(BaseViewSet):
     """
     ViewSet for handling escrow transactions.
     """
 
     queryset = EscrowTransaction.objects.all()
     serializer_class = EscrowTransactionDetailSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [UserTypePermission]
+    permission_user_types = ["SELLER", "BUYER"]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     ordering_fields = ["created_at", "updated_at", "status"]
     ordering = ["-created_at"]
@@ -64,14 +66,15 @@ class TransactionViewSet(viewsets.ModelViewSet, BaseAPIView):
         )
 
 
-class DisputeViewSet(viewsets.ModelViewSet, BaseAPIView):
+class DisputeViewSet(BaseViewSet):
     """
     ViewSet for handling transaction disputes.
     """
 
     queryset = Dispute.objects.all()
     serializer_class = DisputeSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [UserTypePermission]
+    permission_user_types = ["SELLER", "BUYER"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
@@ -107,14 +110,15 @@ class DisputeViewSet(viewsets.ModelViewSet, BaseAPIView):
         )
 
 
-class TransactionHistoryViewSet(viewsets.ModelViewSet, BaseAPIView):
+class TransactionHistoryViewSet(BaseViewSet):
     """
     ViewSet for handling transaction history entries.
     """
 
     queryset = TransactionHistory.objects.all()
     serializer_class = TransactionHistorySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [UserTypePermission]
+    permission_user_types = ["SELLER", "BUYER"]
     ordering = ["-timestamp"]
 
     def get_queryset(self):

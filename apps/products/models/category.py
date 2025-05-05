@@ -13,10 +13,11 @@ class Category(BaseModel):
         blank=True,
         related_name="subcategories",
     )
-
-    def __str__(self):
-        return self.name
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = "categories"
         verbose_name_plural = "Categories"
+
+    def __str__(self):
+        return self.name

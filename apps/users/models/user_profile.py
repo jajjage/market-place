@@ -11,9 +11,7 @@ class UserProfile(BaseModel):
 
     # Identity and presentation
     display_name = models.CharField(max_length=100, blank=True)
-    profile_picture = models.ImageField(
-        upload_to="profile_pictures/", null=True, blank=True
-    )
+    avatar_url = models.URLField(blank=True, null=True)
     bio = models.TextField(blank=True)
 
     # Verification
@@ -48,15 +46,15 @@ class UserProfile(BaseModel):
         ]
 
     def __str__(self):
-        return self.user.first_name or self.user.username
+        return self.user.first_name
 
     def get_full_name(self):
         """Return the full name of the user."""
         return f"{self.user.first_name} {self.user.last_name}".strip()
 
     def save(self, *args, **kwargs):
-        if not self.profile_picture:
-            self.profile_picture = None  # Ensure it's explicitly None
+        if not self.avatar_url:
+            self.avatar_url = None  # Ensure it's explicitly None
         super().save(*args, **kwargs)
 
     @property

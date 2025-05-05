@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from apps.products.serializers import ProductBaseSerializer
+from apps.products.serializers import ProductDetailSerializer
 from .models.escrow_transactions import EscrowTransaction
 from .models.transaction_dispute import Dispute
 from .models.transaction_history import TransactionHistory
@@ -47,7 +47,7 @@ class EscrowTransactionBaseSerializer(serializers.ModelSerializer):
 
     buyer = serializers.SerializerMethodField()
     seller = serializers.SerializerMethodField()
-    product = ProductBaseSerializer(read_only=True)
+    product = ProductDetailSerializer(read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:

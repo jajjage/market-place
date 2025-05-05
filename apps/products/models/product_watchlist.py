@@ -17,4 +17,4 @@ class ProductWatchlistItem(BaseModel):
         unique_together = ("user", "product")
 
     def __str__(self):
-        return f"{self.user.username} watching {self.product.title}"
+        return f"{self.user.first_name} watching {self.product.title}"

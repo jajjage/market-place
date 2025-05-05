@@ -98,7 +98,6 @@ class UserProfileSerializer(TimestampedModelSerializer):
         fields = [
             "id",
             "display_name",
-            "profile_picture",
             "bio",
             "email_verified",
             "phone_verified",
@@ -213,15 +212,12 @@ class UserSerializer(TimestampedModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         try:
-            if (
-                hasattr(instance, "userprofile")
-                and instance.userprofile.profile_picture
-            ):
-                data["profile_picture"] = instance.userprofile.profile_picture.url
+            if hasattr(instance, "profile") and instance.profile.avatar_url:
+                data["avatar_url"] = instance.profile.avatar_url
             else:
-                data["profile_picture"] = None
+                data["avatar_url"] = None
         except (ValueError, AttributeError):
-            data["profile_picture"] = None
+            data["avatar_url"] = None
         if getattr(instance, "user_type", None) == "BUYER":
             data.pop("received_ratings", None)
             data.pop("store", None)
@@ -243,7 +239,7 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "display_name",
-            "profile_picture",
+            "avatar_url",
             "bio",
             "country",
             "city",
@@ -258,15 +254,12 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         try:
-            if (
-                hasattr(instance, "userprofile")
-                and instance.userprofile.profile_picture
-            ):
-                data["profile_picture"] = instance.userprofile.profile_picture.url
+            if hasattr(instance, "userprofile") and instance.userprofile.avatar_url:
+                data["avatar_url"] = instance.userprofile.avatar_url
             else:
-                data["profile_picture"] = None
+                data["avatar_url"] = None
         except (ValueError, AttributeError):
-            data["profile_picture"] = None
+            data["avatar_url"] = None
 
         return data
 

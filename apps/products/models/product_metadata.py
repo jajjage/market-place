@@ -12,6 +12,7 @@ class ProductMeta(BaseModel):
     )
     views_count = models.PositiveIntegerField(default=0)
     featured = models.BooleanField(default=False)
+    total_shares = models.PositiveIntegerField(default=0)
     seo_keywords = models.CharField(max_length=255, blank=True)
 
     class Meta:

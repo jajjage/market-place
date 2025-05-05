@@ -5,6 +5,7 @@ from apps.core.models import BaseModel
 class ProductCondition(BaseModel):
     name = models.CharField(max_length=50)  # New, Like New, Good, Fair, etc.
     description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         db_table = "product_conditions"
