@@ -78,7 +78,9 @@ class ProductUpdateSerializer(TimestampedModelSerializer):
             "category",
             "condition",
             "is_active",
-            "inventory_count",
+            "in_escrow_inventory",
+            "available_inventory",
+            "total_inventory",
             "is_featured",
             "status",
             "specifications",
@@ -122,7 +124,9 @@ class ProductListSerializer(TimestampedModelSerializer):
             "seller_name",
             "image_url",
             "discount_percent",
-            "inventory_count",
+            "in_escrow_inventory",
+            "available_inventory",
+            "total_inventory",
         ]
 
     def get_image_url(self, obj):
@@ -166,7 +170,9 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "category",
             "condition",
             "is_active",
-            "inventory_count",
+            "in_escrow_inventory",
+            "available_inventory",
+            "total_inventory",
             "is_featured",
             "status",
             "specifications",
@@ -218,7 +224,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
 
     def get_watching_count(self, obj):
         """Get the number of users watching this product"""
-        return obj.meta.views_count
+        return obj.watchers.count()
 
 
 class ProductStatsSerializer(TimestampedModelSerializer):
@@ -254,7 +260,9 @@ class ProductStatsSerializer(TimestampedModelSerializer):
             "is_active",
             "is_featured",
             "status",
-            "inventory_count",
+            "in_escrow_inventory",
+            "available_inventory",
+            "total_inventory",
             "watching_count",
             "images_count",
             "has_discount",

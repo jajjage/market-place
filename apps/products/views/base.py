@@ -22,6 +22,7 @@ from apps.products.serializers import (
     # Uncomment the following line if you have this serializer defined
     # ProductWatchlistItemCreateSerializer,
 )
+from apps.products.services import InventoryService
 from apps.products.utils.product_filters import ProductFilter
 
 
@@ -97,7 +98,7 @@ class ProductViewSet(BaseViewSet):
 
         return queryset
 
-    @action(detail=False, methods=["get"])
+    @action(detail=False, url_path="my-products", methods=["get"])
     def my_products(self, request):
         """
         Return only the current user's products.
@@ -116,7 +117,7 @@ class ProductViewSet(BaseViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return self.success_response(data=serializer.data)
 
     @action(detail=False, methods=["get"])
     def featured(self, request):
@@ -129,7 +130,7 @@ class ProductViewSet(BaseViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return self.success_response(data=serializer.data)
 
     @action(detail=False, methods=["get"])
     def stats(self, request):
@@ -150,7 +151,15 @@ class ProductViewSet(BaseViewSet):
 
         # Get inventory stats
         inventory_total = queryset.aggregate(
-            total=Sum("inventory_count"), avg_per_product=Avg("inventory_count")
+            total=Sum("total_inventory"), avg_per_product=Avg("total_inventory")
+        )
+        # Get inventory stats
+        inventory_available = queryset.aggregate(
+            total=Sum("available_inventory"), avg_per_product=Avg("available_inventory")
+        )
+        # Get inventory stats
+        inventory_in_escrow = queryset.aggregate(
+            total=Sum("in_escrow_inventory"), avg_per_product=Avg("in_escrow_inventory")
         )
 
         # Get category distribution
@@ -211,10 +220,22 @@ class ProductViewSet(BaseViewSet):
                 "products_with_discount": discounted_products,
                 "avg_discount_percent": round(avg_discount_percent["avg"] or 0, 1),
             },
-            "inventory": {
+            "total_inventory": {
                 "total_inventory": inventory_total["total"] or 0,
                 "avg_inventory_per_product": round(
                     inventory_total["avg_per_product"] or 0, 1
+                ),
+            },
+            "available_inventory": {
+                "total_inventory": inventory_available["total"] or 0,
+                "avg_inventory_per_product": round(
+                    inventory_available["avg_per_product"] or 0, 1
+                ),
+            },
+            "in_escrow_inventory": {
+                "total_inventory": inventory_in_escrow["total"] or 0,
+                "avg_inventory_per_product": round(
+                    inventory_in_escrow["avg_per_product"] or 0, 1
                 ),
             },
             "categories": list(category_distribution),
@@ -223,23 +244,23 @@ class ProductViewSet(BaseViewSet):
             "monthly_trend": monthly_trend_data,
         }
 
-        return Response(stats_data)
+        return self.success_response(data=stats_data)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, url_path="toggle-active", methods=["post"])
     def toggle_active(self, request, pk=None):
         """Quickly toggle the active status of a product"""
         product = self.get_object()
         product.is_active = not product.is_active
         product.save()
-        return Response({"status": "success", "is_active": product.is_active})
+        return self.success_response(data=product.is_active)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, url_path="toggle-featured", methods=["post"])
     def toggle_featured(self, request, pk=None):
         """Quickly toggle the featured status of a product"""
         product = self.get_object()
         product.is_featured = not product.is_featured
         product.save()
-        return Response({"status": "success", "is_featured": product.is_featured})
+        return self.success_response(data=product.is_featured)
 
     @action(detail=True, methods=["get"])
     def watchers(self, request, pk=None):
@@ -311,7 +332,186 @@ class ProductViewSet(BaseViewSet):
             "telegram": f"https://t.me/share/url?url={url_enc}&text={title_enc}&ref=telegram",
         }
 
-        return Response({"share_urls": share_links})
+        return self.success_response(data=share_links)
+
+    @action(detail=True, methods=["post"])
+    def add_inventory(self, request, pk=None):
+        """Add inventory to total"""
+        product = self.get_object()
+        quantity = request.data.get("quantity", 1)
+        notes = request.data.get("notes", "")
+
+        try:
+            quantity = int(quantity)
+            if quantity <= 0:
+                raise ValueError("Quantity must be positive")
+        except (ValueError, TypeError):
+            return Response(
+                {"status": "error", "message": "Invalid quantity"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = InventoryService.add_inventory(
+            product=product, quantity=quantity, user=request.user, notes=notes
+        )
+
+        if result:
+            return Response(
+                {
+                    "status": "success",
+                    "total": result.total,
+                    "available": result.available,
+                    "in_escrow": result.in_escrow,
+                }
+            )
+        else:
+            return Response(
+                {"status": "error", "message": "Failed to add inventory"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=["post"])
+    def activate_inventory(self, request, pk=None):
+        """Move inventory from total to available"""
+        product = self.get_object()
+        quantity = request.data.get("quantity")
+        notes = request.data.get("notes", "")
+
+        if quantity is not None:
+            try:
+                quantity = int(quantity)
+                if quantity <= 0:
+                    raise ValueError("Quantity must be positive")
+            except (ValueError, TypeError):
+                return Response(
+                    {"status": "error", "message": "Invalid quantity"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        result = InventoryService.activate_inventory(
+            product=product, quantity=quantity, user=request.user, notes=notes
+        )
+
+        if result:
+            return Response(
+                {
+                    "status": "success",
+                    "total": result.total,
+                    "available": result.available,
+                    "in_escrow": result.in_escrow,
+                }
+            )
+        else:
+            return Response(
+                {"status": "error", "message": "No inventory to activate"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=["post"])
+    def place_in_escrow(self, request, pk=None):
+        """Place inventory in escrow for transaction"""
+        product = self.get_object()
+        quantity = request.data.get("quantity", 1)
+        notes = request.data.get("notes", "")
+
+        try:
+            quantity = int(quantity)
+            if quantity <= 0:
+                raise ValueError("Quantity must be positive")
+        except (ValueError, TypeError):
+            return Response(
+                {"status": "error", "message": "Invalid quantity"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        result = InventoryService.place_in_escrow(
+            product=product, quantity=quantity, user=request.user, notes=notes
+        )
+
+        if result:
+            return Response(
+                {
+                    "status": "success",
+                    "total": result.total,
+                    "available": result.available,
+                    "in_escrow": result.in_escrow,
+                }
+            )
+        else:
+            return Response(
+                {"status": "error", "message": "Insufficient available inventory"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=["post"])
+    def release_from_escrow(self, request, pk=None):
+        """Release inventory from escrow back to available"""
+        product = self.get_object()
+        quantity = request.data.get("quantity", 1)
+        notes = request.data.get("notes", "")
+
+        try:
+            quantity = int(quantity)
+            if quantity <= 0:
+                raise ValueError("Quantity must be positive")
+        except (ValueError, TypeError):
+            return Response(
+                {"status": "error", "message": "Invalid quantity"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = InventoryService.release_from_escrow(
+            product=product, quantity=quantity, user=request.user, notes=notes
+        )
+
+        if result:
+            return Response(
+                {
+                    "status": "success",
+                    "total": result.total,
+                    "available": result.available,
+                    "in_escrow": result.in_escrow,
+                }
+            )
+        else:
+            return Response(
+                {"status": "error", "message": "Insufficient inventory in escrow"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=["post"])
+    def deduct_inventory(self, request, pk=None):
+        """Deduct inventory from escrow (completing a sale)"""
+        product = self.get_object()
+        quantity = request.data.get("quantity", 1)
+        notes = request.data.get("notes", "")
+
+        try:
+            quantity = int(quantity)
+            if quantity <= 0:
+                raise ValueError("Quantity must be positive")
+        except (ValueError, TypeError):
+            return Response(
+                {"status": "error", "message": "Invalid quantity"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = InventoryService.deduct_inventory(
+            product=product, quantity=quantity, user=request.user, notes=notes
+        )
+
+        if result:
+            return Response(
+                {
+                    "status": "success",
+                    "total": result.total,
+                    "available": result.available,
+                    "in_escrow": result.in_escrow,
+                }
+            )
+        else:
+            return Response(
+                {"status": "error", "message": "Failed to deduct inventory"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 # Product retrieval by short code for social media sharing

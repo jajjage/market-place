@@ -33,9 +33,7 @@ class ProductFilter(filters.FilterSet):
 
     # Related model filters
     seller = filters.ModelChoiceFilter(queryset=User.objects.all())
-    seller_username = filters.CharFilter(
-        field_name="seller__username", lookup_expr="iexact"
-    )
+    seller_email = filters.CharFilter(field_name="seller__email", lookup_expr="iexact")
     category_name = filters.CharFilter(
         field_name="category__name", lookup_expr="icontains"
     )
@@ -120,7 +118,7 @@ class ProductFilter(filters.FilterSet):
         Search across multiple fields:
         - title
         - description
-        - seller username
+        - seller email
         - category name
         """
         if not value:
@@ -129,6 +127,6 @@ class ProductFilter(filters.FilterSet):
         return queryset.filter(
             Q(title__icontains=value)
             | Q(description__icontains=value)
-            | Q(seller__username__icontains=value)
+            | Q(seller__email__icontains=value)
             | Q(category__name__icontains=value)
         ).distinct()

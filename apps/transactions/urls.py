@@ -3,13 +3,10 @@ from rest_framework.routers import DefaultRouter
 from . import views
 
 router = DefaultRouter()
-router.register(r"transactions", views.TransactionViewSet, basename="transactions")
-router.register(r"disputes", views.DisputeViewSet, basename="disputes")
 router.register(
-    r"transaction-history",
-    views.TransactionHistoryViewSet,
-    basename="transaction-history",
+    r"transactions", views.EscrowTransactionViewSet, basename="transactions"
 )
+router.register(r"disputes", views.DisputeViewSet, basename="disputes")
 
 urlpatterns = [
     path("", include(router.urls)),

@@ -1,10 +1,12 @@
 from django.conf import settings
 from django.db import models
 
+from apps.core.models import BaseModel
+
 from .escrow_transactions import EscrowTransaction
 
 
-class TransactionHistory(models.Model):
+class TransactionHistory(BaseModel):
     """Tracks every status change in a transaction"""
 
     transaction = models.ForeignKey(

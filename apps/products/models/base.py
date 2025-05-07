@@ -28,7 +28,9 @@ class Product(BaseModel):
     category = models.ForeignKey("Category", on_delete=models.PROTECT)
     condition = models.ForeignKey("ProductCondition", on_delete=models.PROTECT)
     is_active = models.BooleanField(default=True)
-    inventory_count = models.IntegerField(default=0)
+    total_inventory = models.IntegerField(default=0)
+    available_inventory = models.IntegerField(default=0)
+    in_escrow_inventory = models.IntegerField(default=0)
     is_featured = models.BooleanField(default=False)
     status = models.CharField(
         max_length=12, choices=ProductsStatus.choices, default=ProductsStatus.DRAFT
@@ -62,3 +64,26 @@ class Product(BaseModel):
 
     def __str__(self):
         return self.title
+
+
+class InventoryTransaction(BaseModel):
+    TRANSACTION_TYPES = (
+        ("ADD", "Add to Total"),
+        ("ACTIVATE", "Make Available"),
+        ("ESCROW", "Place in Escrow"),
+        ("COMPLETE", "Complete Transaction"),
+        ("CANCEL", "Cancel Escrow"),
+    )
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="inventory_transactions"
+    )
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    notes = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.transaction_type} - {self.product.title}"

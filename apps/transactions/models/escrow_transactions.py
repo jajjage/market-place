@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from apps.core.models import BaseModel
 from apps.products.models import Product
 
@@ -31,6 +32,9 @@ class EscrowTransaction(BaseModel):
     )
     inspection_period_days = models.PositiveSmallIntegerField(default=3)
     inspection_end_date = models.DateTimeField(null=True, blank=True)
+    tracking_id = models.CharField(
+        max_length=32, unique=True, blank=True, db_index=True
+    )
     tracking_number = models.CharField(max_length=100, blank=True)
     shipping_carrier = models.CharField(max_length=100, blank=True)
     shipping_address = models.JSONField(null=True, blank=True)
@@ -43,4 +47,12 @@ class EscrowTransaction(BaseModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Transaction {self.id}: {self.product.title} ({self.status})"
+        return f"Transaction {self.tracking_id} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        # Set inspection end date when status changes to inspection
+        if self.status == "inspection" and not self.inspection_end_date:
+            self.inspection_end_date = timezone.now() + timezone.timedelta(
+                days=self.inspection_period_days
+            )
+        super().save(*args, **kwargs)

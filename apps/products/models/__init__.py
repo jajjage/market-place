@@ -1,4 +1,4 @@
-from .base import Product, ProductsStatus
+from .base import Product, ProductsStatus, InventoryTransaction
 from .category import Category
 from .product_condition import ProductCondition
 from .product_image import ProductImage
@@ -13,4 +13,5 @@ __all__ = [
     "ProductMeta",
     "ProductWatchlistItem",
     "ProductsStatus",
+    "InventoryTransaction",
 ]
