@@ -3,6 +3,9 @@ from .base import REST_FRAMEWORK, MIDDLEWARE, INSTALLED_APPS
 import tempfile
 
 import environ
+import os
+import sys
+from pathlib import Path
 
 # Initialize environment variables
 env = environ.Env()
@@ -84,6 +87,19 @@ FRONTEND_DOMAIN = "http://localhost:3000"  # or whatever port you use for your f
 # -----------------------------------------------------------------------------
 # Logging - Development
 # -----------------------------------------------------------------------------
+# helper to build absolute paths off your project root
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def root_path(*parts):
+    return str(BASE_DIR.joinpath(*parts))
+
+
+# create logs directory locally (won’t error if it already exists)
+if not os.environ.get("GITHUB_ACTIONS"):
+    os.makedirs(root_path("logs"), exist_ok=True)
+
+# base logging config
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -92,13 +108,18 @@ LOGGING = {
         "file": {"format": "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"},
     },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "console"},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "console",
+            "stream": sys.stdout,
+        },
+        # these two get overridden or removed in CI
         "info_file": {
             "level": "INFO",
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": "file",
             "filename": f"{root_path('logs')}/info.log",
-            "maxBytes": 1000000,
+            "maxBytes": 1_000_000,
             "backupCount": 10,
         },
         "error_file": {
@@ -106,7 +127,7 @@ LOGGING = {
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": "file",
             "filename": f"{root_path('logs')}/error.log",
-            "maxBytes": 1000000,
+            "maxBytes": 1_000_000,
             "backupCount": 10,
         },
     },
@@ -123,3 +144,13 @@ LOGGING = {
         },
     },
 }
+
+# If running in GitHub Actions, swap file handlers out for console-only
+if os.environ.get("GITHUB_ACTIONS"):
+    # drop the file handlers
+    LOGGING["handlers"].pop("info_file", None)
+    LOGGING["handlers"].pop("error_file", None)
+
+    # adjust root logger to only use console
+    LOGGING["loggers"][""]["handlers"] = ["console"]
+    LOGGING["loggers"]["apps.users.views"]["handlers"] = ["console"]
