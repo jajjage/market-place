@@ -15,7 +15,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from djoser.social.views import ProviderAuthView
-from apps.core.permissions import UserTypePermission
+from apps.core.permissions import IsOwnerOrReadOnly, UserTypePermission
 from apps.core.views import BaseAPIView, BaseViewSet
 from rest_framework import viewsets, permissions
 
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-class CustomSocialProviderView(ProviderAuthView, CookieSet):
+class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
     """
     Custom social provider view to handle authentication with social providers.
     Extends ProviderAuthView and adds cookie support for tokens.
@@ -129,7 +129,7 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet):
 
                     except User.DoesNotExist:
                         logger.error(f"User with email {user_email} not found")
-                        return self.send_error(
+                        return self.error_response(
                             message="User not found",
                             status_code=status.HTTP_404_NOT_FOUND,
                         )
@@ -137,14 +137,14 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet):
             return response
         except (TokenError, ValidationError) as e:
             logger.exception("Token generation failed: %s", e)
-            return self.send_error(
+            return self.error_response(
                 message="Authentication failed",
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
 
 @extend_schema(responses=LOGIN_RESPONSE_SCHEMA)
-class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
+class CookieTokenObtainPairView(TokenObtainPairView, CookieSet, BaseAPIView):
     """
     Custom view to obtain token pairs with cookie support.
     Extends TokenObtainPairView and sets tokens in cookies on successful authentication.
@@ -168,11 +168,13 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
                         "message": "Login successful",
                         "data": response.data,
                     }
+
                     return response
             return response
         except (TokenError, ValidationError) as e:
             logger.exception("Token generation failed: %s", e)
-            return self.send_error(
+            return self.error_response(
+                data=str(e),
                 message="Authentication failed",
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
@@ -193,7 +195,7 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet):
 
 
 @extend_schema(responses=TOKEN_REFRESH_SCHEMA)
-class CookieTokenRefreshView(TokenRefreshView, CookieSet):
+class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
     """
     Custom TokenRefreshView to handle refresh tokens in cookies.
     Handles rate limiting and blacklist checks for refresh tokens.
@@ -208,20 +210,20 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet):
         print(f"Refresh token: {refresh_token}")
 
         if not refresh_token:
-            return self.send_error(
+            return self.error_response(
                 message="No refresh token found",
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
         if self._is_token_blacklisted(refresh_token):
-            return self.send_error(
+            return self.error_response(
                 message="Token is blacklisted", status_code=status.HTTP_401_UNAUTHORIZED
             )
 
         try:
             # Rate limiting check
             if not self._check_rate_limit(refresh_token):
-                return self.send_error(
+                return self.error_response(
                     message="Too many refresh attempts",
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
@@ -241,12 +243,12 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet):
                 return response
 
         except TokenError as e:
-            return self.send_error(
+            return self.error_response(
                 message=str(e), status_code=status.HTTP_401_UNAUTHORIZED
             )
         except Exception as e:
             logger.error("Token refresh error: %s", e, exc_info=True)  # noqa: G201
-            return self.send_error(
+            return self.error_response(
                 message="Token refresh failed",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
@@ -288,26 +290,26 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet):
 
 
 @extend_schema(responses=TOKEN_VERIFY_SCHEMA)
-class CookieTokenVerifyView(TokenVerifyView):
+class CookieTokenVerifyView(TokenVerifyView, BaseAPIView):
     def post(self, request, *args, **kwargs):
         token = request.COOKIES.get(settings.JWT_AUTH_COOKIE)
 
         if not token:
-            return self.send_error(
+            return self.error_response(
                 message="No token found", status_code=status.HTTP_401_UNAUTHORIZED
             )
 
         try:
             request.data["token"] = token
             response = super().post(request, *args, **kwargs)
-            return self.send_response(
+            return self.success_response(
                 data=response.data,
                 message="Token verified successfully",
                 status_code=status.HTTP_200_OK,
             )
         except InvalidToken as e:
             logger.exception("Token verification error: %s", e)
-            return self.send_error(
+            return self.error_response(
                 message="Invalid token", status_code=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -317,7 +319,7 @@ class LogoutView(BaseAPIView):
     def post(self, request, *args, **kwargs):
         try:
             response = self.success_response(
-                message="Successfully logged out", status_code=status.HTTP_200_OK
+                message="Successfully logged out.", status_code=status.HTTP_200_OK
             )
             response.delete_cookie(settings.JWT_AUTH_COOKIE)
             response.delete_cookie(settings.JWT_AUTH_REFRESH_COOKIE)
@@ -333,7 +335,7 @@ class LogoutView(BaseAPIView):
 class UserRatingViewSet(BaseViewSet):
     queryset = UserRating.objects.all()
     serializer_class = UserRatingSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
@@ -341,29 +343,51 @@ class UserRatingViewSet(BaseViewSet):
             from_user=user
         )
 
+    def perform_create(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(from_user=self.request.user)
+
+    def perform_update(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(from_user=self.request.user)
+
 
 @extend_schema(tags=["User Store"])
 class UserStoreViewSet(BaseViewSet):
     queryset = UserStore.objects.all()
     serializer_class = UserStoreSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
         return UserStore.objects.filter(user=user)
+
+    def perform_create(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(user=self.request.user)
 
 
 @extend_schema(tags=["User Address"])
 class UserAddressViewSet(BaseViewSet):
     queryset = UserAddress.objects.all()
     serializer_class = UserAddressSerializer
-    permission_classes = [UserTypePermission]
-    permission_user_types = ["SELLER", "BUYER"]
-    # permission_object_user_field = "owner"
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
         return UserAddress.objects.filter(user=user)
+
+    def perform_create(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(user=self.request.user)
 
 
 @extend_schema(tags=["User Profile"])
@@ -376,6 +400,14 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
         return CustomUser.objects.select_related("profile").filter(
             profile__isnull=False
         )
+
+    def perform_create(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        """Set the seller to the current user when creating a product"""
+        serializer.save(user=self.request.user)
 
     def get_object(self):
         if self.kwargs.get("pk") == "me":

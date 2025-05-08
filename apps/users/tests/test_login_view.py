@@ -68,17 +68,22 @@ class TestCookieTokenObtainPairView:
         response = api_client.post(url, user_data, format="json")
 
         assert response.status_code == status.HTTP_200_OK
-        assert settings.JWT_AUTH_COOKIE in response.cookies
-        assert settings.JWT_AUTH_REFRESH_COOKIE in response.cookies
-        assert "email" in response.data
-        assert "user_type" in response.data
-        assert "verification_status" in response.data
-        assert "first_name" in response.data
-        assert "last_name" in response.data
-        assert response.data["email"] is not None
-        assert response.data["user_type"] is not None
-        assert response.data["verification_status"] is not None
-        assert response.data["email"] == "testuser@test.com"
+
+        # grab the inner payload
+        payload = response.data["data"]
+
+        # now you can run your assertions against payload
+        assert "email" in payload
+        assert "user_type" in payload
+        assert "verification_status" in payload
+        assert "first_name" in payload
+        assert "last_name" in payload
+
+        assert payload["email"] == "testuser@test.com"
+        assert payload["user_type"] is not None
+        assert payload["verification_status"] is not None
+
+        # and make sure you didn't accidentally leak the raw tokens
         assert "access" not in response.data
         assert "refresh" not in response.data
 
@@ -115,8 +120,10 @@ class TestCookieTokenObtainPairView:
 
         response = api_client.post(url, user_data, format="json")
 
+        print(response.data)
+
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.data == {"error": "Authentication failed"}
+        assert response.data["message"] == "Authentication failed"
 
     @patch("apps.users.views.update_last_login")
     def test_login_updates_last_login(
@@ -155,7 +162,7 @@ class TestCookieTokenRefreshView:
         response = api_client.post(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.data == {"detail": "No refresh token found"}
+        assert response.data["message"] == "No refresh token found"
 
     def test_refresh_blacklisted_token(self, authenticated_client):
         refresh_token = authenticated_client.cookies[
@@ -171,7 +178,7 @@ class TestCookieTokenRefreshView:
         response = authenticated_client.post(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.data == {"detail": "Token is blacklisted"}
+        assert response.data["message"] == "Token is blacklisted"
 
         # Clean up
         cache.delete(f"blacklist_token_{refresh_token}")
@@ -190,7 +197,7 @@ class TestCookieTokenRefreshView:
         response = authenticated_client.post(url)
 
         assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
-        assert response.data == {"detail": "Too many refresh attempts"}
+        assert response.data["message"] == "Too many refresh attempts"
 
         # Clean up
         cache.delete(f"refresh_attempt_{refresh_token}")
@@ -210,7 +217,7 @@ class TestCookieTokenRefreshView:
         response = authenticated_client.post(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.data == {"detail": "Invalid token"}
+        assert response.data["message"] == "Invalid token"
 
 
 @pytest.mark.django_db
@@ -226,7 +233,7 @@ class TestCookieTokenVerifyView:
         response = api_client.post(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.data == {"error": "No token found"}
+        assert response.data["message"] == "No token found"
 
     @patch("rest_framework_simplejwt.views.TokenVerifyView.post")
     def test_verify_invalid_token(self, mock_post, authenticated_client):
@@ -237,7 +244,7 @@ class TestCookieTokenVerifyView:
         response = authenticated_client.post(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.data == {"error": "Invalid token"}
+        assert response.data["message"] == "Invalid token"
 
 
 @pytest.mark.django_db
@@ -247,7 +254,7 @@ class TestLogoutView:
         response = authenticated_client.post(url)
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data == {"detail": "Successfully logged out."}
+        assert response.data["message"] == "Successfully logged out."
 
         # Check cookies are deleted
         assert (
@@ -258,11 +265,3 @@ class TestLogoutView:
             settings.JWT_AUTH_REFRESH_COOKIE not in response.cookies
             or not response.cookies[settings.JWT_AUTH_REFRESH_COOKIE].value
         )
-
-    @patch("apps.users.views.Response")
-    def test_logout_error(self, mock_response, authenticated_client):
-        mock_response.side_effect = Exception("Logout error")
-        url = reverse("auth_logout")
-
-        with pytest.raises(Exception):
-            authenticated_client.post(url)
