@@ -4,6 +4,7 @@ from apps.products.models import Product
 from apps.products.serializers.base import TimestampedModelSerializer
 from apps.transactions.models import EscrowTransaction, TransactionHistory
 from apps.transactions.models.transaction_dispute import Dispute
+from apps.transactions.utils.statuses import ESCROW_STATUSES
 
 
 class ProductTrackingSerializer(TimestampedModelSerializer):
@@ -11,7 +12,7 @@ class ProductTrackingSerializer(TimestampedModelSerializer):
 
     class Meta:
         model = Product
-        fields = ["id", "title", "description", "price", "image"]
+        fields = ["id", "title", "description", "price"]
 
 
 class TransactionHistorySerializer(TimestampedModelSerializer):
@@ -133,6 +134,10 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "shipping_carrier",
             "shipping_address",
             "notes",
+            "status_changed_at",
+            "is_auto_transition_scheduled",
+            "auto_transition_type",
+            "next_auto_transition_at",
             "created_at",
             "updated_at",
             "history",
@@ -241,6 +246,7 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
     class Meta:
         model = EscrowTransaction
         fields = [
+            "id",
             "tracking_id",
             "product_title",
             "product_image",
@@ -253,6 +259,7 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
             "tracking_info",
             "inspection_end_date",
         ]
+        read_only = ["id"]
 
     def get_product_image(self, obj):
         if hasattr(obj.product, "image") and obj.product.image:
@@ -280,6 +287,7 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
                 {
                     "code": status_code,
                     "label": dict(EscrowTransaction.STATUS_CHOICES).get(status_code),
+                    "description": ESCROW_STATUSES[status_code]["description"],
                     "completed": entry is not None,
                     "active": status_code == obj.status,
                     "timestamp": entry.timestamp if entry else None,

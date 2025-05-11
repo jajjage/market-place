@@ -123,7 +123,7 @@ class InventoryService:
         quantity=1,
         buyer=None,
         seller=None,
-        amount=0,
+        price_by_negotiation=0,
         currency="USD",
         inspection_period_days=3,
         shipping_address=None,
@@ -162,6 +162,7 @@ class InventoryService:
         product.in_escrow_inventory += quantity
         product.save(update_fields=["available_inventory", "in_escrow_inventory"])
 
+        seller = product.seller
         # Create inventory transaction record
         InventoryTransaction.objects.create(
             product=product,
@@ -182,10 +183,11 @@ class InventoryService:
             product=product,
             buyer=buyer,
             seller=seller,
-            amount=amount,
+            amount=quantity,
             currency=currency,
             status="initiated",
             inspection_period_days=inspection_period_days,
+            price_by_negotiation=price_by_negotiation,
             shipping_address=shipping_address,
             tracking_id=InventoryService.generate_tracking_id(product, buyer, seller),
             notes=notes,
@@ -195,7 +197,7 @@ class InventoryService:
         TransactionHistory.objects.create(
             transaction=escrow_transaction,
             status="initiated",
-            notes=f"Escrow transaction initiated for {quantity} units of {product.name}",
+            notes=f"Escrow transaction initiated for {quantity} units of {product.title}",
             created_by=user,
         )
 
@@ -382,7 +384,6 @@ class InventoryService:
         Returns:
             The updated escrow transaction
         """
-        old_status = escrow_transaction.status
         escrow_transaction.status = status
 
         # Update tracking info if provided

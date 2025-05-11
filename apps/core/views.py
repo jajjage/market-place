@@ -177,10 +177,6 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-    def perform_create(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(seller=self.request.user)
-
     def get_model_name(self) -> str:
         """AHelper method to get the model name for messages."""
         return self.__class__.__name__.replace("ViewSet", "")

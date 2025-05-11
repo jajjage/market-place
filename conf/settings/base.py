@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.products",
     "apps.transactions",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [

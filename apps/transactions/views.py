@@ -1,11 +1,12 @@
-from django_filters import rest_framework as filters
 from django.shortcuts import get_object_or_404
-from rest_framework import status
+from rest_framework import status, filters
 from django_filters.rest_framework import DjangoFilterBackend
-from apps.core.permissions import UserTypePermission
+from apps.core.permissions import ReadWriteUserTypePermission, UserTypePermission
 from apps.core.views import BaseViewSet
-from apps.transactions.models.transaction_dispute import Dispute
-from .models.escrow_transactions import EscrowTransaction
+from apps.transactions.models import (
+    Dispute,
+    EscrowTransaction,
+)
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models.transaction_history import TransactionHistory
@@ -18,6 +19,7 @@ from .serializers import (
     ProductTrackingSerializer,
 )
 from apps.products.services import InventoryService
+from .utils.transaction_filters import TransactionFilter
 
 
 class EscrowTransactionViewSet(BaseViewSet):
@@ -28,16 +30,39 @@ class EscrowTransactionViewSet(BaseViewSet):
     """
 
     queryset = EscrowTransaction.objects.all()
-    permission_classes = [UserTypePermission]
+    permission_classes = [ReadWriteUserTypePermission]
     permission_read_user_types = ["BUYER", "SELLER"]
-    permission_write_user_types = ["SELLER"]  # Only sellers can initiate transactions
+    permission_write_user_types = ["SELLER"]
+    update_status_user_types = ["SELLER", "BUYER"]
+    filterset_class = TransactionFilter
     filter_backends = [
         DjangoFilterBackend,
+        filters.SearchFilter,
         filters.OrderingFilter,
     ]
     search_fields = ["tracking_id", "product__title", "buyer__email", "seller__email"]
     ordering_fields = ["created_at", "updated_at", "status", "amount"]
     ordering = ["-created_at"]
+
+    def get_permissions(self):
+        """
+        Custom permissions:
+        - List/retrieve: Both BUYER and SELLER can view products
+        - Create/update/delete: Only SELLER can modify products
+        - Inventory actions: Only SELLER can manage inventory
+        """
+        # Define inventory management actions
+
+        update_status_action = [
+            "update_status",
+        ]
+
+        # Set appropriate user types based on the action
+        if self.action in update_status_action:
+            # Temporarily override permission user types for inventory actions
+            self.permission_write_user_types = self.update_status_user_types
+        # Use the standard ReadWriteUserTypePermission logic
+        return [permission() for permission in self.permission_classes]
 
     def get_serializer_class(self):
         """Return different serializers based on the action."""
@@ -95,7 +120,7 @@ class EscrowTransactionViewSet(BaseViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return self.success_response(data=serializer.data)
 
-    @action(detail=False, methods=["get"])
+    @action(detail=False, url_path="my-purchases", methods=["get"])
     def my_purchases(self, request):
         """Return only the current user's purchase transactions."""
         # Only buyers should access this
@@ -166,7 +191,7 @@ class EscrowTransactionViewSet(BaseViewSet):
 
         return self.success_response(data=data)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, url_path="update-status", methods=["post"])
     def update_status(self, request, pk=None):
         """
         Update the status of an escrow transaction.
@@ -230,13 +255,13 @@ class EscrowTransactionViewSet(BaseViewSet):
                 "cancelled": [] if is_buyer else [],  # Final state
             },
             "SELLER": {
-                "initiated": ["payment_received", "cancelled"] if is_seller else [],
+                "initiated": ["cancelled"] if is_seller else [],
                 "payment_received": ["shipped"] if is_seller else [],
                 "shipped": [] if is_seller else [],  # Buyer confirms delivery
                 "delivered": [] if is_seller else [],  # Buyer starts inspection
                 "inspection": [] if is_seller else [],  # Buyer approves or disputes
                 "disputed": [] if is_seller else [],  # Admin handles disputes
-                "completed": [] if is_seller else [],  # Final state
+                "completed": ["funds_released"] if is_seller else [],  # Final state
                 "refunded": [] if is_seller else [],  # Final state
                 "cancelled": [] if is_seller else [],  # Final state
             },
@@ -252,6 +277,11 @@ class EscrowTransactionViewSet(BaseViewSet):
 
         # Check if the new status is in the allowed transitions for this user type and current status
         return new_status in allowed_transitions[user_type][transaction.status]
+
+
+# ------------------------------------------------------------------------------
+# Dispute initiation view
+# ------------------------------------------------------------------------------
 
 
 class DisputeViewSet(BaseViewSet):
@@ -272,3 +302,27 @@ class DisputeViewSet(BaseViewSet):
             | Dispute.objects.filter(transaction__seller=user)
             | Dispute.objects.filter(transaction__buyer=user)
         )
+
+
+# ------------------------------------------------------------------------------
+# Flutterwave Escrow transaction view
+# ------------------------------------------------------------------------------
+
+
+def get_payment_config(request):
+    pass
+
+
+def verify_payment(request):
+    pass
+    # Handle payment_received status - process payment confirmation
+    # elif current_status == "payment_received":
+    #     # Run immediately to process payment confirmation
+    #     process_payment_received.apply_async(
+    #         args=[transaction_id],
+    #         countdown=5,  # Short delay to ensure database consistency
+    #     )
+
+
+def flutterwave_webhook(request):
+    pass

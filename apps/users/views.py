@@ -207,7 +207,6 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
         Applies rate limiting and blacklist checks.
         """
         refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
-        print(f"Refresh token: {refresh_token}")
 
         if not refresh_token:
             return self.error_response(

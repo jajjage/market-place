@@ -51,6 +51,7 @@
         "djangorestframework",
         "DJOSER",
         "filterset",
+        "Flutterwave",
         "gunicorn",
         "healthcheck",
         "ipykernel",

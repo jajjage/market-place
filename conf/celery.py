@@ -16,7 +16,7 @@ else:
     # os.environ.setdefault("DJANGO_SETTINGS_MODULE", "conf.settings.prod")
 # Set the default Django settings module for the 'celery' program.
 
-app = Celery("worker")  # worker
+app = Celery("conf")  # worker
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.

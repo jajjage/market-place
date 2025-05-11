@@ -31,6 +31,7 @@ class Product(BaseModel):
     total_inventory = models.IntegerField(default=0)
     available_inventory = models.IntegerField(default=0)
     in_escrow_inventory = models.IntegerField(default=0)
+    negotiable = models.BooleanField(default=False)
     is_featured = models.BooleanField(default=False)
     status = models.CharField(
         max_length=12, choices=ProductsStatus.choices, default=ProductsStatus.DRAFT
@@ -69,7 +70,7 @@ class Product(BaseModel):
 class InventoryTransaction(BaseModel):
     TRANSACTION_TYPES = (
         ("ADD", "Add to Total"),
-        ("ACTIVATE", "Make Available"),
+        ("ACTIVATE", "Move to Available"),
         ("ESCROW", "Place in Escrow"),
         ("COMPLETE", "Complete Transaction"),
         ("CANCEL", "Cancel Escrow"),
@@ -79,11 +80,23 @@ class InventoryTransaction(BaseModel):
         Product, on_delete=models.CASCADE, related_name="inventory_transactions"
     )
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
-    created_at = models.DateTimeField(auto_now_add=True)
+    quantity = models.IntegerField()
+    previous_total = models.IntegerField()
+    previous_available = models.IntegerField()
+    previous_in_escrow = models.IntegerField()
+    new_total = models.IntegerField()
+    new_available = models.IntegerField()
+    new_in_escrow = models.IntegerField()
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
     )
     notes = models.TextField(blank=True)
 
+    class Meta:
+        db_table = "inventory_transaction"
+        ordering = ["-created_at"]
+        verbose_name_plural = "Inventory Transaction"
+        indexes = [models.Index(fields=["transaction_type"])]
+
     def __str__(self):
-        return f"{self.transaction_type} - {self.product.title}"
+        return f"{self.transaction_type} - {self.product.title} ({self.quantity})"
