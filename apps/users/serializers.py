@@ -164,12 +164,12 @@ class UserSerializer(TimestampedModelSerializer):
 
     def get_purchases(self, obj):
         """Get user's purchases using the short serializer"""
-        purchases = obj.purchases.all()
+        purchases = obj.buyer_transactions.all()
         return EscrowTransactionShortSerializer(purchases, many=True).data
 
     def get_sales(self, obj):
         """Get user's sales using the short serializer"""
-        sales = obj.sales.all()
+        sales = obj.seller_transactions.all()
         return EscrowTransactionShortSerializer(sales, many=True).data
 
     def update(self, instance, validated_data):
