@@ -5,6 +5,9 @@ from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema
 from django.contrib.auth.models import update_last_login
 from django.core.cache import cache
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie
 from jsonschema import ValidationError
 from rest_framework import status
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -20,7 +23,8 @@ from apps.core.views import BaseAPIView, BaseViewSet
 from rest_framework import viewsets, permissions
 
 from apps.users.models.base import CustomUser
-from apps.users.utils import CookieSet
+from apps.users.utils.throttles import UserLoginRateThrottle
+from apps.users.utils.utils import CookieSet
 
 from apps.users.schema import (
     LOGIN_RESPONSE_SCHEMA,
@@ -149,6 +153,8 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet, BaseAPIView):
     Custom view to obtain token pairs with cookie support.
     Extends TokenObtainPairView and sets tokens in cookies on successful authentication.
     """
+
+    throttle_classes = [UserLoginRateThrottle]
 
     def post(self, request, *args, **kwargs):
         """
@@ -332,9 +338,21 @@ class LogoutView(BaseAPIView):
 
 @extend_schema(tags=["User Ratings"])
 class UserRatingViewSet(BaseViewSet):
+    """ViewSet for managing user ratings"""
+
+    CACHE_TTL = 60 * 15  # 15 minutes cache
+
     queryset = UserRating.objects.all()
     serializer_class = UserRatingSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        user_id = kwargs.get(
+            "user_id",
+            self.request.user.id if self.request.user.is_authenticated else "anonymous",
+        )
+        return f"rating:{view_name}:{kwargs.get('pk', '')}:{user_id}"
 
     def get_queryset(self):
         user = self.request.user
@@ -342,71 +360,165 @@ class UserRatingViewSet(BaseViewSet):
             from_user=user
         )
 
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
     def perform_create(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(from_user=self.request.user)
+        rating = serializer.save(from_user=self.request.user)
+        # Clear caches
+        cache_keys = [
+            self.get_cache_key("list", user_id=rating.from_user.id),
+            self.get_cache_key("list", user_id=rating.to_user.id),
+        ]
+        cache.delete_many(cache_keys)
 
     def perform_update(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(from_user=self.request.user)
+        rating = serializer.instance
+        # Clear caches before update
+        cache_keys = [
+            self.get_cache_key("detail", pk=rating.pk),
+            self.get_cache_key("list", user_id=rating.from_user.id),
+            self.get_cache_key("list", user_id=rating.to_user.id),
+        ]
+        cache.delete_many(cache_keys)
+        serializer.save()
 
 
 @extend_schema(tags=["User Store"])
 class UserStoreViewSet(BaseViewSet):
+    """ViewSet for managing user stores"""
+
+    CACHE_TTL = 60 * 30  # 30 minutes cache
+
     queryset = UserStore.objects.all()
     serializer_class = UserStoreSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        user_id = kwargs.get(
+            "user_id",
+            self.request.user.id if self.request.user.is_authenticated else "anonymous",
+        )
+        return f"store:{view_name}:{kwargs.get('pk', '')}:{user_id}"
 
     def get_queryset(self):
         user = self.request.user
         return UserStore.objects.filter(user=user)
 
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
     def perform_create(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(user=self.request.user)
+        store = serializer.save(user=self.request.user)
+        # Clear list cache
+        cache.delete(self.get_cache_key("list", user_id=store.user.id))
 
     def perform_update(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(user=self.request.user)
+        store = serializer.instance
+        # Clear caches
+        cache_keys = [
+            self.get_cache_key("detail", pk=store.pk),
+            self.get_cache_key("list", user_id=store.user.id),
+        ]
+        cache.delete_many(cache_keys)
+        serializer.save()
 
 
 @extend_schema(tags=["User Address"])
 class UserAddressViewSet(BaseViewSet):
+    """ViewSet for managing user addresses"""
+
+    CACHE_TTL = 60 * 30  # 30 minutes cache
+
     queryset = UserAddress.objects.all()
     serializer_class = UserAddressSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        user_id = kwargs.get(
+            "user_id",
+            self.request.user.id if self.request.user.is_authenticated else "anonymous",
+        )
+        return f"address:{view_name}:{kwargs.get('pk', '')}:{user_id}"
 
     def get_queryset(self):
         user = self.request.user
         return UserAddress.objects.filter(user=user)
 
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
     def perform_create(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(user=self.request.user)
+        address = serializer.save(user=self.request.user)
+        # Clear list cache
+        cache.delete(self.get_cache_key("list", user_id=address.user.id))
 
     def perform_update(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(user=self.request.user)
+        address = serializer.instance
+        # Clear caches
+        cache_keys = [
+            self.get_cache_key("detail", pk=address.pk),
+            self.get_cache_key("list", user_id=address.user.id),
+        ]
+        cache.delete_many(cache_keys)
+        serializer.save()
 
 
 @extend_schema(tags=["User Profile"])
 class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
+    """ViewSet for user profiles with caching"""
+
+    CACHE_TTL = 60 * 15  # 15 minutes cache
+
     serializer_class = PublicUserSerializer
     permission_classes = [UserTypePermission]
     permission_user_types = ["SELLER", "BUYER"]
+
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        user_id = kwargs.get(
+            "user_id",
+            self.request.user.id if self.request.user.is_authenticated else "anonymous",
+        )
+        return f"profile:{view_name}:{kwargs.get('pk', '')}:{user_id}"
 
     def get_queryset(self):
         return CustomUser.objects.select_related("profile").filter(
             profile__isnull=False
         )
 
-    def perform_create(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(user=self.request.user)
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
 
-    def perform_update(self, serializer):
-        """Set the seller to the current user when creating a product"""
-        serializer.save(user=self.request.user)
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
     def get_object(self):
         if self.kwargs.get("pk") == "me":

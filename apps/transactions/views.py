@@ -1,4 +1,8 @@
 from django.shortcuts import get_object_or_404
+from django.core.cache import cache
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie
 from rest_framework import status, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from apps.core.permissions import ReadWriteUserTypePermission, UserTypePermission
@@ -28,6 +32,9 @@ class EscrowTransactionViewSet(BaseViewSet):
     Buyers can view their purchases, sellers can view their sales.
     Tracking functionality is available to both parties involved in a transaction.
     """
+
+    CACHE_TTL = 60 * 5  # 5 minutes cache
+    TRACK_CACHE_TTL = 60 * 2  # 2 minutes cache for tracking info
 
     queryset = EscrowTransaction.objects.all()
     permission_classes = [ReadWriteUserTypePermission]
@@ -95,10 +102,29 @@ class EscrowTransactionViewSet(BaseViewSet):
         # For users without a specific type, return no results
         return queryset.none()
 
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        user_id = kwargs.get(
+            "user_id",
+            self.request.user.id if self.request.user.is_authenticated else "anonymous",
+        )
+        return f"transaction:{view_name}:{kwargs.get('pk', '')}:{user_id}"
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
     @action(detail=False, methods=["get"])
     def my_sales(self, request):
         """Return only the current user's sales transactions."""
-        # Only sellers should access this
         if getattr(request.user, "user_type", None) != "SELLER":
             return Response(
                 {"detail": "Only sellers can view sales."},
@@ -107,7 +133,6 @@ class EscrowTransactionViewSet(BaseViewSet):
 
         queryset = self.get_queryset().filter(seller=request.user)
 
-        # Filter by status if provided
         status_param = request.query_params.get("status", None)
         if status_param:
             queryset = queryset.filter(status=status_param)
@@ -120,10 +145,11 @@ class EscrowTransactionViewSet(BaseViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return self.success_response(data=serializer.data)
 
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
     @action(detail=False, url_path="my-purchases", methods=["get"])
     def my_purchases(self, request):
         """Return only the current user's purchase transactions."""
-        # Only buyers should access this
         if getattr(request.user, "user_type", None) != "BUYER":
             return Response(
                 {"detail": "Only buyers can view purchases."},
@@ -132,7 +158,6 @@ class EscrowTransactionViewSet(BaseViewSet):
 
         queryset = self.get_queryset().filter(buyer=request.user)
 
-        # Filter by status if provided
         status_param = request.query_params.get("status", None)
         if status_param:
             queryset = queryset.filter(status=status_param)
@@ -145,16 +170,16 @@ class EscrowTransactionViewSet(BaseViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return self.success_response(data=serializer.data)
 
+    @method_decorator(cache_page(TRACK_CACHE_TTL))
+    @method_decorator(vary_on_cookie)
     @action(detail=False, url_path=r"track/(?P<tracking_id>[^/.]+)", methods=["get"])
     def track(self, request, tracking_id=None):
         """
         Track an escrow transaction by its tracking ID.
         This endpoint is accessible to both buyers and sellers involved in the transaction.
         """
-        # Find the transaction by tracking_id
         transaction = get_object_or_404(EscrowTransaction, tracking_id=tracking_id)
 
-        # Check if user is authorized to view this transaction
         if not request.user.is_staff and request.user not in [
             transaction.buyer,
             transaction.seller,
@@ -164,25 +189,19 @@ class EscrowTransactionViewSet(BaseViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Get transaction history
         history = TransactionHistory.objects.filter(transaction=transaction).order_by(
             "timestamp"
         )
 
-        # Get transaction details
         serializer = self.get_serializer(transaction)
         data = serializer.data
 
-        # Add history data
         history_data = TransactionHistorySerializer(history, many=True).data
         data["history"] = history_data
 
-        # Add product details
         data["product_details"] = ProductTrackingSerializer(transaction.product).data
 
-        # Add estimated delivery information if applicable
         if transaction.status in ["shipped", "delivered"]:
-            # You could integrate with shipping APIs here for real-time tracking
             data["shipping_info"] = {
                 "tracking_number": transaction.tracking_number,
                 "shipping_carrier": transaction.shipping_carrier,
@@ -203,7 +222,6 @@ class EscrowTransactionViewSet(BaseViewSet):
         tracking_number = request.data.get("tracking_number")
         shipping_carrier = request.data.get("shipping_carrier")
 
-        # Validate the status transition is allowed for this user
         if not self._is_status_change_allowed(transaction, new_status, request.user):
             return Response(
                 {
@@ -212,7 +230,6 @@ class EscrowTransactionViewSet(BaseViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Use the inventory service to update the status
         updated_transaction = InventoryService.update_escrow_transaction_status(
             escrow_transaction=transaction,
             status=new_status,
@@ -223,6 +240,17 @@ class EscrowTransactionViewSet(BaseViewSet):
         )
 
         serializer = self.get_serializer(updated_transaction)
+
+        cache_keys = [
+            self.get_cache_key("detail", pk=transaction.pk),
+            self.get_cache_key("list", user_id=transaction.buyer.id),
+            self.get_cache_key("list", user_id=transaction.seller.id),
+            self.get_cache_key("my_purchases", user_id=transaction.buyer.id),
+            self.get_cache_key("my_sales", user_id=transaction.seller.id),
+            f"transaction_track:{transaction.tracking_id}",
+        ]
+        cache.delete_many(cache_keys)
+
         return self.success_response(data=serializer.data)
 
     def _is_status_change_allowed(self, transaction, new_status, user):
@@ -230,18 +258,14 @@ class EscrowTransactionViewSet(BaseViewSet):
         Helper method to determine if a status change is allowed.
         Different roles can perform different status changes.
         """
-        # Staff can change to any status
         if user.is_staff:
             return True
 
-        # Get user type
         user_type = getattr(user, "user_type", None)
 
-        # Check if user is involved in the transaction
         is_buyer = user == transaction.buyer
         is_seller = user == transaction.seller
 
-        # Define allowed status transitions by role
         allowed_transitions = {
             "BUYER": {
                 "initiated": ["cancelled"] if is_buyer else [],
@@ -249,33 +273,30 @@ class EscrowTransactionViewSet(BaseViewSet):
                 "shipped": ["delivered"] if is_buyer else [],
                 "delivered": ["inspection"] if is_buyer else [],
                 "inspection": ["completed", "disputed"] if is_buyer else [],
-                "disputed": [] if is_buyer else [],  # Admin handles disputes
-                "completed": [] if is_buyer else [],  # Final state
-                "refunded": [] if is_buyer else [],  # Final state
-                "cancelled": [] if is_buyer else [],  # Final state
+                "disputed": [] if is_buyer else [],
+                "completed": [] if is_buyer else [],
+                "refunded": [] if is_buyer else [],
+                "cancelled": [] if is_buyer else [],
             },
             "SELLER": {
                 "initiated": ["cancelled"] if is_seller else [],
                 "payment_received": ["shipped"] if is_seller else [],
-                "shipped": [] if is_seller else [],  # Buyer confirms delivery
-                "delivered": [] if is_seller else [],  # Buyer starts inspection
-                "inspection": [] if is_seller else [],  # Buyer approves or disputes
-                "disputed": [] if is_seller else [],  # Admin handles disputes
-                "completed": ["funds_released"] if is_seller else [],  # Final state
-                "refunded": [] if is_seller else [],  # Final state
-                "cancelled": [] if is_seller else [],  # Final state
+                "shipped": [] if is_seller else [],
+                "delivered": [] if is_seller else [],
+                "inspection": [] if is_seller else [],
+                "disputed": [] if is_seller else [],
+                "completed": ["funds_released"] if is_seller else [],
+                "refunded": [] if is_seller else [],
+                "cancelled": [] if is_seller else [],
             },
         }
 
-        # If user type is not defined or user is not involved in transaction
         if user_type not in allowed_transitions:
             return False
 
-        # Check if the current status exists in the allowed transitions
         if transaction.status not in allowed_transitions[user_type]:
             return False
 
-        # Check if the new status is in the allowed transitions for this user type and current status
         return new_status in allowed_transitions[user_type][transaction.status]
 
 
@@ -288,6 +309,8 @@ class DisputeViewSet(BaseViewSet):
     """
     ViewSet for handling transaction disputes.
     """
+
+    CACHE_TTL = 60 * 5  # 5 minutes cache
 
     queryset = Dispute.objects.all()
     serializer_class = DisputeSerializer
@@ -303,6 +326,47 @@ class DisputeViewSet(BaseViewSet):
             | Dispute.objects.filter(transaction__buyer=user)
         )
 
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        user_id = kwargs.get(
+            "user_id",
+            self.request.user.id if self.request.user.is_authenticated else "anonymous",
+        )
+        return f"dispute:{view_name}:{kwargs.get('pk', '')}:{user_id}"
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        """Clear cache when dispute is updated"""
+        dispute = serializer.instance
+        cache_keys = [
+            self.get_cache_key("detail", pk=dispute.pk),
+            self.get_cache_key("list", user_id=dispute.opened_by.id),
+            self.get_cache_key("list", user_id=dispute.transaction.buyer.id),
+            self.get_cache_key("list", user_id=dispute.transaction.seller.id),
+        ]
+        cache.delete_many(cache_keys)
+        return super().perform_update(serializer)
+
+    def perform_create(self, serializer):
+        """Clear relevant caches when new dispute is created"""
+        dispute = serializer.save()
+        cache_keys = [
+            self.get_cache_key("list", user_id=dispute.opened_by.id),
+            self.get_cache_key("list", user_id=dispute.transaction.buyer.id),
+            self.get_cache_key("list", user_id=dispute.transaction.seller.id),
+        ]
+        cache.delete_many(cache_keys)
+        return dispute
+
 
 # ------------------------------------------------------------------------------
 # Flutterwave Escrow transaction view
@@ -315,13 +379,6 @@ def get_payment_config(request):
 
 def verify_payment(request):
     pass
-    # Handle payment_received status - process payment confirmation
-    # elif current_status == "payment_received":
-    #     # Run immediately to process payment confirmation
-    #     process_payment_received.apply_async(
-    #         args=[transaction_id],
-    #         countdown=5,  # Short delay to ensure database consistency
-    #     )
 
 
 def flutterwave_webhook(request):

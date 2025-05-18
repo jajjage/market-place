@@ -2,53 +2,79 @@ from .base import *  # noqa
 from .base import REST_FRAMEWORK, MIDDLEWARE, INSTALLED_APPS
 import tempfile
 
-import environ
+from dotenv import load_dotenv
 import os
 import sys
 from pathlib import Path
 
 # Initialize environment variables
-env = environ.Env()
-root_path = environ.Path(__file__) - 3  # Adjust this based on your folder structure
-env.read_env(str(root_path.path(".env")))
+# Get the path to the .env file
+BASE_DIR = Path(__file__).resolve().parent.parent
+env_path = BASE_DIR / ".env"
 
+# Load the .env file
+load_dotenv(dotenv_path=env_path)
 # -----------------------------------------------------------------------------
 # Development Settings
 # -----------------------------------------------------------------------------
 DEBUG = True
-SECRET_KEY = env(
+SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY", default="django-insecure-development-key-change-me"
 )
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", default=["*"])
 
 # -----------------------------------------------------------------------------
 # Databases for Development
 # -----------------------------------------------------------------------------
-DJANGO_DATABASE_URL = env.db("DATABASE_URL", default="sqlite:///db.sqlite3")
-DATABASES = {"default": DJANGO_DATABASE_URL}
+# Database configuration without django-environ
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL", "postgres://postgres:postgres@localhost:5432/postgres"
+)
 
+if DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql://"):
+    import dj_database_url
+
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL)}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": "postgres",
+            "USER": "postgres",
+            "PASSWORD": "postgres",
+            "HOST": "localhost",
+            "PORT": "5432",
+        }
+    }
 # -----------------------------------------------------------------------------
 # Email Configuration - Development
 # -----------------------------------------------------------------------------
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
-EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
-EMAIL_PORT = env.int("EMAIL_PORT", default=587)
-EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", default="smtp.gmail.com")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", default=True)
+EMAIL_PORT = os.environ.get("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", default="")
 
 # -----------------------------------------------------------------------------
 # CORS Settings - Development
 # -----------------------------------------------------------------------------
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+# CORS_ALLOWED_ORIGINS = os.environ.get(
+#     "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+# ).split(",")
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
+# CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(",")]
 # -----------------------------------------------------------------------------
 # Cache - Development
 # -----------------------------------------------------------------------------
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": env("REDIS_URL", default="redis://redis:6379"),
+        "LOCATION": os.environ.get("REDIS_URL", default="redis://redis:6379"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
@@ -59,8 +85,8 @@ USER_AGENTS_CACHE = "default"
 # -----------------------------------------------------------------------------
 # Celery - Development
 # -----------------------------------------------------------------------------
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379")
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="django-db")
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", default="redis://localhost:6379")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", default="redis://localhost:6379")
 
 # -----------------------------------------------------------------------------
 # REST Framework - Development Settings

@@ -2,21 +2,25 @@ from datetime import timedelta
 from pathlib import Path
 
 from corsheaders.defaults import default_headers
-
-import environ
+import os
+from dotenv import load_dotenv
 
 # Initialize environment variables
-env = environ.Env()
-root_path = environ.Path(__file__) - 3  # Adjust this based on your folder structure
-env.read_env(str(root_path.path(".env")))
+# Get the path to the .env file
+BASE_DIR = Path(__file__).resolve().parent.parent
+env_path = BASE_DIR / ".env"
+
+# Load the .env file
+load_dotenv(dotenv_path=env_path)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 
 # -----------------------------------------------------------------------------
 # Basic Config
 # -----------------------------------------------------------------------------
 ROOT_URLCONF = "conf.urls"
 WSGI_APPLICATION = "conf.wsgi.application"
-SECRET_KEY = env(
+SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY", default="django-insecure-development-key-change-me"
 )
 # -----------------------------------------------------------------------------
@@ -87,7 +91,7 @@ MIDDLEWARE = [
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [root_path("templates")],
+        "DIRS": [str(BASE_DIR / "templates")],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -99,10 +103,6 @@ TEMPLATES = [
         },
     },
 ]
-
-DJANGO_DATABASE_URL = env.db("DATABASE_URL", default="sqlite:///db.sqlite3")
-DATABASES = {"default": DJANGO_DATABASE_URL}
-
 
 # -----------------------------------------------------------------------------
 # Auth Backends
@@ -141,9 +141,10 @@ DJOSER = {
     "SET_PASSWORD_RETYPE": True,
     "PASSWORD_RESET_CONFIRM_RETYPE": True,
     "TOKEN_MODEL": None,
-    "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": env.list(
-        "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS", default=""
-    ),
+    "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": [
+        "http://localhost:3000/auth/google/",
+        "http://127.0.0.1:3000/auth/google/"
+    ],
     "SERIALIZERS": {
         "user": "apps.users.serializers.UserSerializer",
         "current_user": "apps.users.serializers.UserSerializer",
@@ -166,7 +167,7 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,  # Blacklist old refresh tokens
     "TOKEN_OBTAIN_SERIALIZER": "apps.users.serializers.CustomTokenObtainSerializer",
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": env("DJANGO_SECRET_KEY", default="django-insecure$@"),
+    "SIGNING_KEY": os.environ.get("DJANGO_SECRET_KEY", default="django-insecure$@"),
     "VERIFYING_KEY": None,
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",  # Using UUID field from your User model
@@ -191,7 +192,7 @@ JWT_ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
 JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=1)
 JWT_AUTH_SECURE = False
 JWT_AUTH_SAMESITE = (
-    "Lax"  # if env("JWT_AUTH_SECURE", default="False") == "True" else "None"
+    "Lax"  # if os.environ.get("JWT_AUTH_SECURE", default="False") == "True" else "None"
 )
 JWT_AUTH_HTTPONLY = True
 JWT_AUTH_PATH = "/"
@@ -199,8 +200,8 @@ JWT_AUTH_PATH = "/"
 # -----------------------------------------------------------------------------
 # Google OAuth
 # -----------------------------------------------------------------------------
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = env("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default="")
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = env("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ.get("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default="")
 SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
@@ -226,7 +227,7 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 # Email Template
 # -----------------------------------------------------------------------------
 
-DOMAIN = env("DOMAIN", default="localhost:3000")
+DOMAIN = os.environ.get("DOMAIN", default="localhost:3000")
 SITE_NAME = "Safe Trade MarketPlace"
 
 # -----------------------------------------------------------------------------
@@ -265,9 +266,9 @@ SPECTACULAR_SETTINGS = {
 # Static & Media Base Configuration
 # -----------------------------------------------------------------------------
 STATIC_URL = "/static/"
-STATICFILES_DIRS = [root_path("static")]
+STATICFILES_DIRS = [str(BASE_DIR / "static")]
 MEDIA_URL = "/media/"
-MEDIA_ROOT = root_path("media_root")
+MEDIA_ROOT = str(BASE_DIR / "media_root")
 ADMIN_MEDIA_PREFIX = STATIC_URL + "admin/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

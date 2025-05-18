@@ -5,7 +5,7 @@
 	"name": "Safe Trade",
 	"dockerComposeFile": "docker-compose.yml",
 	"service": "app",
-	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	"workspaceFolder": "/workspaces",
 	"features": {},
 	"mounts": [
 		"source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
@@ -22,7 +22,7 @@
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "pip install --user -r requirements.txt",
 	// Configure tool-specific properties.
-	"postCreateCommand": "poetry install && poetry run create_dev_env && poetry run python manage.py migrate",
+	"postCreateCommand": "cd /workspaces && poetry install && poetry run create_dev_env && poetry run python manage.py migrate",
 	"customizations": {
 		"vscode": {
 			"extensions": [

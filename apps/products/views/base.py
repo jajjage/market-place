@@ -2,7 +2,10 @@ import urllib.parse
 from datetime import timezone
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
-
+from django.core.cache import cache
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie
 from django.db.models import Value
 from django.db.models.functions import Concat
 from rest_framework import permissions, status, filters, generics
@@ -38,6 +41,9 @@ class ProductViewSet(BaseViewSet):
     Supports CRUD operations, filtering, searching, and statistics.
     """
 
+    CACHE_TTL = 60 * 15  # 15 minutes cache
+    STATS_CACHE_TTL = 60 * 30  # 30 minutes cache for stats
+
     queryset = Product.objects.all()
     permission_classes = [ReadWriteUserTypePermission]
     permission_read_user_types = ["BUYER", "SELLER"]
@@ -53,6 +59,10 @@ class ProductViewSet(BaseViewSet):
     search_fields = ["title", "description", "slug", "short_code"]
     ordering_fields = ["price", "created_at", "title", "inventory_count"]
     ordering = ["-created_at"]
+
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        return f"product:{view_name}:{kwargs.get('pk', '')}:{kwargs.get('user_id', '')}"
 
     def get_permissions(self):
         """
@@ -126,6 +136,8 @@ class ProductViewSet(BaseViewSet):
 
         return queryset
 
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
     @action(detail=False, url_path="my-products", methods=["get"])
     def my_products(self, request):
         """
@@ -147,6 +159,8 @@ class ProductViewSet(BaseViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return self.success_response(data=serializer.data)
 
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
     @action(detail=False, methods=["get"])
     def featured(self, request):
         """Return featured products"""
@@ -160,6 +174,8 @@ class ProductViewSet(BaseViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return self.success_response(data=serializer.data)
 
+    @method_decorator(cache_page(STATS_CACHE_TTL))
+    @method_decorator(vary_on_cookie)
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """
@@ -274,12 +290,45 @@ class ProductViewSet(BaseViewSet):
 
         return self.success_response(data=stats_data)
 
+    def perform_update(self, serializer):
+        """Clear cache when product is updated"""
+        product = serializer.instance
+        cache_keys = [
+            self.get_cache_key("detail", pk=product.pk),
+            self.get_cache_key("list"),
+            "featured_products",
+            f"product_stats:{product.seller.id}",
+        ]
+        cache.delete_many(cache_keys)
+        return super().perform_update(serializer)
+
+    def perform_destroy(self, instance):
+        """Clear cache when product is deleted"""
+        cache_keys = [
+            self.get_cache_key("detail", pk=instance.pk),
+            self.get_cache_key("list"),
+            "featured_products",
+            f"product_stats:{instance.seller.id}",
+        ]
+        cache.delete_many(cache_keys)
+        return super().perform_destroy(instance)
+
     @action(detail=True, url_path="toggle-active", methods=["post"])
     def toggle_active(self, request, pk=None):
         """Quickly toggle the active status of a product"""
         product = self.get_object()
         product.is_active = not product.is_active
         product.save()
+
+        # Clear relevant caches
+        cache_keys = [
+            self.get_cache_key("detail", pk=product.pk),
+            self.get_cache_key("list"),
+            "featured_products",
+            f"product_stats:{product.seller.id}",
+        ]
+        cache.delete_many(cache_keys)
+
         return self.success_response(data=product.is_active)
 
     @action(detail=True, url_path="toggle-featured", methods=["post"])
@@ -288,6 +337,16 @@ class ProductViewSet(BaseViewSet):
         product = self.get_object()
         product.is_featured = not product.is_featured
         product.save()
+
+        # Clear relevant caches
+        cache_keys = [
+            self.get_cache_key("detail", pk=product.pk),
+            self.get_cache_key("list"),
+            "featured_products",
+            f"product_stats:{product.seller.id}",
+        ]
+        cache.delete_many(cache_keys)
+
         return self.success_response(data=product.is_featured)
 
     @action(detail=True, methods=["get"])
@@ -984,6 +1043,7 @@ class ProductDetailByShortCode(generics.RetrieveAPIView):
     lookup_field = "short_code"
     permission_classes = [permissions.AllowAny]
 
+    @method_decorator(cache_page(60 * 5))  # Cache for 5 minutes
     def retrieve(self, request, *args, **kwargs):
         product = self.get_object()
         meta, _ = ProductMeta.objects.get_or_create(product=product)
