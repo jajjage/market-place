@@ -54,7 +54,9 @@ class EscrowTransaction(BaseModel):
     # Inspection period
     inspection_period_days = models.PositiveSmallIntegerField(default=3)
     inspection_end_date = models.DateTimeField(blank=True, null=True)
-    price_by_negotiation = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    price_by_negotiation = models.DecimalField(
+        max_digits=10, decimal_places=2, blank=True, null=True
+    )
 
     # New fields for better automatic transition tracking
     status_changed_at = models.DateTimeField(default=timezone.now)
@@ -73,6 +75,9 @@ class EscrowTransaction(BaseModel):
     def __str__(self):
         return f"Escrow #{self.id} - {self.get_status_display()}"
 
+    # -----------------------------------------------------------------------------
+    # I may remove this in the future
+    # -----------------------------------------------------------------------------
     def save(self, *args, **kwargs):
         # Track status change time
         if self.pk is not None:
@@ -104,3 +109,27 @@ class EscrowTransaction(BaseModel):
         ):
             return self.next_auto_transition_at - timezone.now()
         return None
+
+
+class TransactionHistory(BaseModel):
+    """Tracks every status change in a transaction"""
+
+    transaction = models.ForeignKey(
+        EscrowTransaction, on_delete=models.CASCADE, related_name="history"
+    )
+    status = models.CharField(max_length=20, choices=EscrowTransaction.STATUS_CHOICES)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+
+    class Meta:
+        db_table = "transaction_history"
+        verbose_name = "Transaction History"
+        verbose_name_plural = "Transaction Histories"
+        ordering = ["-timestamp"]
+        unique_together = ("transaction", "timestamp")
+
+    def __str__(self):
+        return f"{self.transaction.id} changed to {self.status} at {self.timestamp}"

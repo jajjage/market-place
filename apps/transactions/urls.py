@@ -6,7 +6,6 @@ router = DefaultRouter()
 router.register(
     r"transactions", views.EscrowTransactionViewSet, basename="transactions"
 )
-router.register(r"disputes", views.DisputeViewSet, basename="disputes")
 
 urlpatterns = [
     path("", include(router.urls)),

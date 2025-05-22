@@ -5,26 +5,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def set_user_type(strategy, details, backend, user=None, *args, **kwargs):
-    """Set the user type based on request parameters or return None for normal flow"""
-    if not user:
-        return None
-
-    # Get the user type from request parameters
-    request = strategy.request
-    if request:
-        user_type = request.GET.get("user_type")
-        logger.info(f"Found user_type: {user_type}")
-
-        if user_type:
-            user.user_type = user_type
-            user.save()
-        else:
-            logger.warning("No user_type parameter found in request")
-
-    return {"user": user}
-
-
 def store_user_details(
     backend, strategy, details, response, user=None, *args, **kwargs
 ):
@@ -59,38 +39,6 @@ def store_user_details(
     return {"user": user}
 
 
-def activate_social_user(backend, user, response, *args, **kwargs):
-    """Activate the user and set their verification status."""
-
-    # Always check and set these fields, not just for new users
-    was_updated = False
-
-    if not user.is_active:
-        user.is_active = True
-        was_updated = True
-        logger.info(f"Activated user: {user.first_name or user.email}")
-
-    if hasattr(user, "verification_status") and user.verification_status != "VERIFIED":
-        user.verification_status = "VERIFIED"
-        was_updated = True
-        logger.info(
-            f"Set verification status to VERIFIED for user: {user.first_name or user.email}"
-        )
-
-    if hasattr(user, "user_type") and user.user_type == "ADMIN" and not user.is_staff:
-        user.is_staff = True
-        was_updated = True
-        logger.info(
-            f"Set is_staff=True for ADMIN user: {user.first_name or user.email}"
-        )
-
-    if was_updated:
-        user.save()
-        logger.info(f"Saved updated user: {user.first_name or user.email}")
-
-    return {"user": user}
-
-
 def store_oauth_data(strategy, details, backend, user=None, *args, **kwargs):
     """Store OAuth data like profile picture URL for later use"""
     if not user:
@@ -108,15 +56,14 @@ def store_oauth_data(strategy, details, backend, user=None, *args, **kwargs):
 
 def create_user_profile(backend, user, is_new=False, *args, **kwargs):
     """Create appropriate profile based on user type, and save avatar_url instead of file."""
-    if not user.user_type:
-        return None
 
     profile_exists = UserProfile.objects.filter(user=user).exists()
     address_exists = UserAddress.objects.filter(user=user).exists()
 
-    if user.user_type == "SELLER" and not profile_exists:
+    if user and not (profile_exists or address_exists):
         try:
             profile, created = UserProfile.objects.get_or_create(user=user)
+            UserAddress.objects.create(user=user)
             logger.info(f"Created seller profile for user: {user.email}")
 
             # --- NEW: Save Google picture URL instead of downloading ---
@@ -129,14 +76,7 @@ def create_user_profile(backend, user, is_new=False, *args, **kwargs):
             # -----------------------------------------------------------
 
         except Exception as e:
-            logger.error(f"Failed to create seller profile: {e}")
-
-    elif user.user_type == "BUYER" and not address_exists:
-        try:
-            UserAddress.objects.create(user=user)
-            logger.info(f"Created buyer address for user: {user.email}")
-        except Exception as e:
-            logger.error(f"Failed to create buyer address: {e}")
+            logger.error(f"Failed to create profile: {e}")
 
     return {
         "profile_exists": profile_exists or address_exists,

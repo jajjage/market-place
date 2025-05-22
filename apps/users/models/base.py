@@ -7,22 +7,6 @@ from apps.core.models import BaseModel
 from apps.users.managers import CustomUserManager
 
 
-class UserType(models.TextChoices):
-    """User type choices"""
-
-    BUYER = "BUYER", "Buyer"
-    SELLER = "SELLER", "Seller"
-    ADMIN = "ADMIN", "Admin"
-
-
-class VerificationStatus(models.TextChoices):
-    """User verification status choices"""
-
-    UNVERIFIED = "UNVERIFIED", "Unverified"
-    PENDING = "PENDING", "Pending"
-    VERIFIED = "VERIFIED", "Verified"
-
-
 class CustomUser(AbstractUser, BaseModel):
     """
     CustomUser is a custom user model that extends Django's AbstractUser.
@@ -36,12 +20,6 @@ class CustomUser(AbstractUser, BaseModel):
     email = models.EmailField(_("email address"), unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
-    user_type = models.CharField(max_length=10, choices=UserType.choices)
-    verification_status = models.CharField(
-        max_length=10,
-        choices=VerificationStatus.choices,
-        default=VerificationStatus.VERIFIED,
-    )
     temp_profile_picture_url = models.URLField(
         null=True, blank=True
     )  # Temporary storage for OAuth profile pic URL
@@ -55,7 +33,6 @@ class CustomUser(AbstractUser, BaseModel):
     REQUIRED_FIELDS = [
         "first_name",
         "last_name",
-        "user_type",
     ]
 
     objects = CustomUserManager()

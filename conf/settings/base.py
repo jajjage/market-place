@@ -73,6 +73,12 @@ INSTALLED_APPS = [
     "apps.products",
     "apps.transactions",
     "apps.notifications",
+    "apps.comments",
+    "apps.store",
+    "apps.disputes",
+    "apps.flutterwave",
+    "apps.auth.google",
+    "apps.auth.traditional",
 ]
 
 MIDDLEWARE = [
@@ -143,7 +149,7 @@ DJOSER = {
     "TOKEN_MODEL": None,
     "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": [
         "http://localhost:3000/auth/google/",
-        "http://127.0.0.1:3000/auth/google/"
+        "http://127.0.0.1:3000/auth/google/",
     ],
     "SERIALIZERS": {
         "user": "apps.users.serializers.UserSerializer",
@@ -165,7 +171,7 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),  # Longer-lived refresh tokens
     "ROTATE_REFRESH_TOKENS": True,  # Generate new refresh token when refreshing
     "BLACKLIST_AFTER_ROTATION": True,  # Blacklist old refresh tokens
-    "TOKEN_OBTAIN_SERIALIZER": "apps.users.serializers.CustomTokenObtainSerializer",
+    "TOKEN_OBTAIN_SERIALIZER": "apps.auth.traditional.serializers.CustomTokenObtainSerializer",
     "ALGORITHM": "HS256",
     "SIGNING_KEY": os.environ.get("DJANGO_SECRET_KEY", default="django-insecure$@"),
     "VERIFYING_KEY": None,
@@ -200,8 +206,12 @@ JWT_AUTH_PATH = "/"
 # -----------------------------------------------------------------------------
 # Google OAuth
 # -----------------------------------------------------------------------------
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ.get("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default="")
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ.get(
+    "SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default=""
+)
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get(
+    "SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default=""
+)
 SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",

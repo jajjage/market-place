@@ -48,6 +48,10 @@ class UserProfile(BaseModel):
     def __str__(self):
         return self.user.first_name
 
+    # -----------------------------------------------------------------------------
+    # I may remove this in the future
+    # -----------------------------------------------------------------------------
+
     def get_full_name(self):
         """Return the full name of the user."""
         return f"{self.user.first_name} {self.user.last_name}".strip()

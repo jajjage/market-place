@@ -2,7 +2,6 @@ from django.conf import settings
 from django.db import models
 
 from apps.core.models import BaseModel
-from .escrow_transactions import EscrowTransaction
 
 
 class Dispute(BaseModel):
@@ -23,7 +22,9 @@ class Dispute(BaseModel):
     ]
 
     transaction = models.OneToOneField(
-        EscrowTransaction, on_delete=models.CASCADE, related_name="dispute"
+        "transactions.EscrowTransaction",
+        on_delete=models.CASCADE,
+        related_name="dispute",
     )
     opened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

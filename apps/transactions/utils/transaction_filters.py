@@ -2,7 +2,7 @@ from django_filters import rest_framework as filters
 from django.db.models import Q
 from django.contrib.auth import get_user_model
 
-from apps.transactions.models.escrow_transactions import EscrowTransaction
+from apps.transactions.models import EscrowTransaction
 
 User = get_user_model()
 

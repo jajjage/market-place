@@ -16,6 +16,8 @@ urlpatterns = [
     # TODO ⚡ Disable the auth endpoints you don't need.
     # Enabled: create, profile, login, logout, logoutall
     path("core/", include("apps.core.urls")),
+    path("api/v1/", include("apps.auth.google.urls")),
+    path("api/v1/", include("apps.auth.traditional.urls")),
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.products.urls")),
     path(
