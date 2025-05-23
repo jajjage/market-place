@@ -1,8 +1,8 @@
 from rest_framework import serializers
 
+from apps.core.serializers import TimestampedModelSerializer
 from apps.products.models.product_watchlist import ProductWatchlistItem
 from apps.products.serializers import UserShortSerializer
-from apps.products.serializers.base import TimestampedModelSerializer
 
 
 class ProductWatchlistItemListSerializer(TimestampedModelSerializer):

@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from django.conf import settings
 
+from apps.core.serializers import TimestampedModelSerializer
 from apps.products.models.product_image import ProductImage
-from apps.products.serializers.base import TimestampedModelSerializer
 
 
 class ProductImageListSerializer(TimestampedModelSerializer):

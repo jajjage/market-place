@@ -15,14 +15,15 @@ urlpatterns = [
     path("admin-panel/", admin.site.urls, name="admin"),
     # TODO ⚡ Disable the auth endpoints you don't need.
     # Enabled: create, profile, login, logout, logoutall
-    path("core/", include("apps.core.urls")),
     path("api/v1/", include("apps.auth.google.urls")),
     path("api/v1/", include("apps.auth.traditional.urls")),
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.products.urls")),
-    path(
-        "api/v1/", include("apps.transactions.urls")
-    ),  # Special URL pattern for sharing transactions by UUID (backend use)
+    path("api/v1/", include("apps.transactions.urls")),
+    path("api/v1/", include("apps.comments.urls")),
+    path("api/v1/", include("apps.store.urls")),
+    path("api/v1/", include("apps.disputes.urls")),
+    path("api/v1/", include("apps.categories.urls")),
 ]
 
 if env("DEBUG") == "True":

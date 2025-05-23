@@ -91,8 +91,6 @@ class UserSerializer(TimestampedModelSerializer):
             "email",
             "first_name",
             "last_name",
-            "user_type",
-            "verification_status",
             "profile",
             "store",
             "addresses",

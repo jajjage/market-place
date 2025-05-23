@@ -6,8 +6,8 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from apps.core.permissions import ReadWriteUserTypePermission
 from apps.core.views import BaseViewSet
-from apps.products.models import Category
-from apps.products.serializers import (
+from .models import Category
+from .serializers import (
     CategoryListSerializer,
     CategoryDetailSerializer,
     CategoryWriteSerializer,

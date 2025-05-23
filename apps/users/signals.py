@@ -11,9 +11,6 @@ from apps.users.models.user_profile import UserProfile
 @receiver(post_save, sender=CustomUser)
 def create_user_profile(sender, instance, created, **kwargs):
     """Create appropriate profile based on user type, but only when user_type is set"""
-    # Skip if user_type is not set yet (initial OAuth creation)
-    if not instance.user_type:
-        return
 
     # First, check if any profile already exists
     if (

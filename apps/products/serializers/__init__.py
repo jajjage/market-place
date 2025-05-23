@@ -1,4 +1,3 @@
-from .base import TimestampedModelSerializer
 from .products import (
     UserShortSerializer,
     ProductUpdateSerializer,
@@ -15,12 +14,7 @@ from .watchlist import (
     ProductWatchlistItemListSerializer,
     WatchlistStatsSerializer,
 )
-from .category import (
-    CategoryBreadcrumbSerializer,
-    CategoryDetailSerializer,
-    CategoryListSerializer,
-    CategoryWriteSerializer,
-)
+
 from .conditions import (
     ProductConditionDetailSerializer,
     ProductConditionListSerializer,

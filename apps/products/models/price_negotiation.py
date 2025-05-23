@@ -2,10 +2,11 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
+from apps.core.models import BaseModel
 from apps.transactions.models import EscrowTransaction
 
 
-class PriceNegotiation(models.Model):
+class PriceNegotiation(BaseModel):
     STATUS_CHOICES = (
         ("pending", "Pending"),
         ("accepted", "Accepted"),
@@ -42,13 +43,12 @@ class PriceNegotiation(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     offered_at = models.DateTimeField(default=timezone.now)
-    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Negotiation #{self.id} - {self.product} - {self.status}"
 
 
-class NegotiationHistory(models.Model):
+class NegotiationHistory(BaseModel):
     ACTION_CHOICES = (
         ("price_offered", "Price Offered"),
         ("price_accepted", "Price Accepted"),

@@ -1,9 +1,10 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
-from apps.products.models import Product, Category, ProductCondition
-from apps.products.serializers.category import CategoryDetailSerializer
-from apps.products.serializers.base import TimestampedModelSerializer
+from apps.categories.models import Category
+from apps.categories.serializers import CategoryDetailSerializer
+from apps.core.serializers import TimestampedModelSerializer
+from apps.products.models import Product, ProductCondition
 from apps.products.serializers.conditions import ProductConditionDetailSerializer
 
 

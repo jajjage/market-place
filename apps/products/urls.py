@@ -2,7 +2,6 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ProductViewSet,
-    CategoryViewSet,
     ProductDetailByShortCode,
     ProductConditionViewSet,
     ProductImageViewSet,
@@ -13,7 +12,6 @@ from .views import (
 # Create a router and register our viewsets with it
 router = DefaultRouter()
 router.register(r"products", ProductViewSet, basename="product")
-router.register(r"categories", CategoryViewSet, basename="category")
 router.register(r"conditions", ProductConditionViewSet, basename="condition")
 router.register(r"images", ProductImageViewSet, basename="image")
 router.register(r"metadata", ProductMetaViewSet, basename="metadata")

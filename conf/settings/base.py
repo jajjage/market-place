@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "apps.store",
     "apps.disputes",
     "apps.flutterwave",
+    "apps.categories",
     "apps.auth.google",
     "apps.auth.traditional",
 ]
@@ -253,13 +254,10 @@ SOCIAL_AUTH_PIPELINE = (
     "social_core.pipeline.user.get_username",
     "social_core.pipeline.user.create_user",
     # Store OAuth data first
-    "apps.users.social_auth_pipeline.store_oauth_data",
-    "apps.users.social_auth_pipeline.store_user_details",
-    # Only then set user type and handle activation
-    "apps.users.social_auth_pipeline.set_user_type",
-    "apps.users.social_auth_pipeline.activate_social_user",
+    "apps.auth.google.social_auth_pipeline.store_oauth_data",
+    "apps.auth.google.social_auth_pipeline.store_user_details",
     # Create profile last, after user_type is set
-    "apps.users.social_auth_pipeline.create_user_profile",
+    "apps.auth.google.social_auth_pipeline.create_user_profile",
 )
 
 # -----------------------------------------------------------------------------

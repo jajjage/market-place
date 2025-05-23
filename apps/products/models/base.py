@@ -25,7 +25,7 @@ class Product(BaseModel):
         max_digits=10, decimal_places=2, null=True, blank=True
     )
     currency = models.CharField(max_length=3, default="USD")
-    category = models.ForeignKey("Category", on_delete=models.PROTECT)
+    category = models.ForeignKey("categories.Category", on_delete=models.PROTECT)
     condition = models.ForeignKey("ProductCondition", on_delete=models.PROTECT)
     is_active = models.BooleanField(default=True)
     total_inventory = models.IntegerField(default=0)

@@ -7,7 +7,7 @@ from django.contrib.auth.models import update_last_login
 from djoser.social.views import ProviderAuthView
 from apps.core.views import BaseAPIView
 
-from apps.users.utils.utils import CookieSet
+from apps.core.utils import CookieSet
 
 logger = logging.getLogger(__name__)
 

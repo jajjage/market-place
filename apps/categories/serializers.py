@@ -1,7 +1,8 @@
 from rest_framework import serializers
 
-from apps.products.models.category import Category
-from apps.products.serializers.base import TimestampedModelSerializer
+from apps.core.serializers import TimestampedModelSerializer
+
+from .models import Category
 
 
 class CategoryListSerializer(TimestampedModelSerializer):

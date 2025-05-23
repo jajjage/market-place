@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
+from apps.core.serializers import TimestampedModelSerializer
 from apps.products.models.product_metadata import ProductMeta
-from apps.products.serializers.base import TimestampedModelSerializer
 
 
 class ProductMetaSerializer(TimestampedModelSerializer):
