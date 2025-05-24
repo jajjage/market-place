@@ -4,11 +4,12 @@ from django.db import transaction
 from django.utils import timezone
 
 
+from apps.core.tasks import BaseTaskWithRetry
 from apps.transactions.models import EscrowTransaction, TransactionHistory
 from apps.products.services.inventory import InventoryService
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def schedule_auto_inspection(transaction_id):
     """
     Task to automatically move a transaction from delivered to inspection status
@@ -38,7 +39,7 @@ def schedule_auto_inspection(transaction_id):
         )
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def schedule_auto_completion(transaction_id):
     """
     Task to automatically complete a transaction after the inspection period expires
@@ -70,7 +71,7 @@ def schedule_auto_completion(transaction_id):
 # ------------------------------------------------------------------------------
 # Flutterwave Escrow transaction  task to trigger after payment verification
 # ------------------------------------------------------------------------------
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def process_payment_received(transaction_id):
     """
     Process a transaction that has received payment.
@@ -97,7 +98,7 @@ def process_payment_received(transaction_id):
         )
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def auto_refund_disputed_transaction(transaction_id):
     """
     Task to automatically refund a transaction that has been in disputed status
@@ -124,7 +125,7 @@ def auto_refund_disputed_transaction(transaction_id):
         return f"Transaction {transaction_id} not found or no longer in disputed status"
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def check_expired_transactions():
     """
     Periodic task to catch any transactions that may have missed their scheduled tasks.

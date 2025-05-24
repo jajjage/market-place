@@ -4,7 +4,6 @@ from rest_framework.response import Response
 from django.db.models import Count
 
 
-from apps.core.permissions import ReadWriteUserTypePermission
 from apps.core.views import BaseViewSet
 from apps.products.models import ProductCondition
 from apps.products.serializers import (
@@ -21,33 +20,19 @@ class ProductConditionViewSet(BaseViewSet):
     """
 
     queryset = ProductCondition.objects.all()
-    permission_read_user_types = ["BUYER", "SELLER"]
-    permission_write_user_types = ["SELLER"]
+    # permission_classes = []
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["name", "description"]
     ordering_fields = ["name", "created_at"]
     ordering = ["name"]
 
     def get_serializer_class(self):
-        print(self.action)
         """Return appropriate serializer based on action."""
         if self.action in ["create", "update", "partial_update"]:
             return ProductConditionWriteSerializer
         elif self.action == "list":
             return ProductConditionListSerializer
         return ProductConditionDetailSerializer
-
-    def get_permissions(self):
-        """
-        Custom permissions:
-        - List/retrieve: Anyone can view product conditions
-        - Create/update/delete: Only staff/admin users
-        """
-        if self.action in ["list", "retrieve"]:
-            permission_classes = [ReadWriteUserTypePermission]
-        else:
-            permission_classes = [ReadWriteUserTypePermission]
-        return [permission() for permission in permission_classes]
 
     @action(detail=False, methods=["get"])
     def products(self, request, pk=None):

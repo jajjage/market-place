@@ -51,11 +51,6 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
                             "email": user.email,
                             "first_name": user.first_name,
                             "last_name": user.last_name,
-                            "user_type": (
-                                user.user_type
-                                if user.user_type not in ["undefined", None, ""]
-                                else None
-                            ),
                             "verification_status": (
                                 user.verification_status
                                 if hasattr(user, "verification_status")

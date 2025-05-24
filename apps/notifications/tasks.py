@@ -3,11 +3,12 @@ from celery import shared_task
 from django.utils import timezone
 from datetime import timedelta
 
+from apps.core.tasks import BaseTaskWithRetry
 from apps.transactions.models import EscrowTransaction
 from apps.notifications.services import EscrowNotificationService
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def send_auto_transition_reminders():
     """
     Task to send reminders about upcoming automatic transitions
@@ -46,7 +47,7 @@ def send_auto_transition_reminders():
     )
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def send_status_change_notification(
     transaction_id, old_status, new_status, is_automatic=False
 ):

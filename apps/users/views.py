@@ -7,7 +7,7 @@ from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_cookie
 
 
-from apps.core.permissions import IsOwnerOrReadOnly, UserTypePermission
+from apps.core.permissions import IsOwnerOrReadOnly
 from apps.core.views import BaseViewSet
 from rest_framework import viewsets, permissions
 
@@ -76,8 +76,6 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
     CACHE_TTL = 60 * 15  # 15 minutes cache
 
     serializer_class = PublicUserSerializer
-    permission_classes = [UserTypePermission]
-    permission_user_types = ["SELLER", "BUYER"]
 
     def get_cache_key(self, view_name, **kwargs):
         """Generate a cache key for the view"""

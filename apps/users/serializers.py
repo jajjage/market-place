@@ -91,6 +91,7 @@ class UserSerializer(TimestampedModelSerializer):
             "email",
             "first_name",
             "last_name",
+            "verification_status",
             "profile",
             "store",
             "addresses",
@@ -156,8 +157,6 @@ class UserSerializer(TimestampedModelSerializer):
         try:
             if hasattr(instance, "profile") and instance.profile.avatar_url:
                 data["avatar_url"] = instance.profile.avatar_url
-            elif hasattr(instance, "temp_profile_picture_url"):
-                data["avatar_url"] = instance.temp_profile_picture_url
             else:
                 data["avatar_url"] = None
         except (ValueError, AttributeError):
@@ -168,9 +167,9 @@ class UserSerializer(TimestampedModelSerializer):
 class PublicUserProfileSerializer(serializers.ModelSerializer):
     # keep the computed fields you’re happy sharing
     average_rating = serializers.FloatField(read_only=True)
-    verified_status = serializers.CharField(read_only=True)
     total_sales = serializers.IntegerField(read_only=True)
     total_purchases = serializers.IntegerField(read_only=True)
+    verification_status = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = UserProfile
@@ -178,16 +177,20 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             "id",
             "display_name",
             "avatar_url",
+            "verification_status",
             "bio",
             "country",
             "city",
             "member_since",
             "average_rating",
-            "verified_status",
             "total_sales",
             "total_purchases",
         ]
         read_only_fields = fields
+
+    def get_verification_status(self, obj):
+        status = obj.user.verification_status
+        return status
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

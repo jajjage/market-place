@@ -80,5 +80,4 @@ def create_user_profile(backend, user, is_new=False, *args, **kwargs):
 
     return {
         "profile_exists": profile_exists or address_exists,
-        "user_type": user.user_type,
     }

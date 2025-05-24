@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 
+from apps.core.tasks import BaseTaskWithRetry
 from apps.transactions.models import EscrowTransaction
 
 # Default retention periods
@@ -15,7 +16,7 @@ DEFAULT_CANCELLED_RETENTION_DAYS = (
 )
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def clean_old_completed_transactions():
     """
     Archives or deletes old completed/cancelled/refunded transactions
@@ -62,7 +63,7 @@ def clean_old_completed_transactions():
     return f"Found {completed_count} old completed and {cancelled_count} old cancelled/refunded transactions to archive"
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def check_stalled_transactions():
     """
     Identifies transactions that appear to be stuck in a non-final state

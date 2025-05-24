@@ -26,6 +26,7 @@ def create_user_profile(sender, instance, created, **kwargs):
         profile, _ = UserProfile.objects.get_or_create(user=instance)
 
         # Instead of downloading, just store the URL in avatar_url
+        # We will provide default avatar url for users who register using traditional way
         temp_url = getattr(instance, "temp_profile_picture_url", None)
         if temp_url:
             profile.avatar_url = temp_url
