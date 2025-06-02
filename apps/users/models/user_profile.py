@@ -1,5 +1,4 @@
 from django.db import models
-from django.db.models import Avg
 from apps.core.models import BaseModel
 from django.conf import settings
 
@@ -14,22 +13,34 @@ class UserProfile(BaseModel):
     avatar_url = models.URLField(blank=True, null=True)
     bio = models.TextField(blank=True)
 
+    # Rating and feedback
+    average_rating = models.DecimalField(
+        max_digits=3, decimal_places=2, null=True, blank=True, default=0.0
+    )
+    total_ratings = models.PositiveIntegerField(default=0)
+
     # Verification
     email_verified = models.BooleanField(default=False)
     phone_verified = models.BooleanField(default=False)
     identity_verified = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False)  # Overall verification status
 
     # Contact information
     phone_number = models.CharField(max_length=20, blank=True)
+    response_rate = models.PositiveIntegerField(default=0)  # Percentage
+    response_time = models.CharField(max_length=50, default="< 24 hours")
 
     # Location
     country = models.CharField(max_length=100, blank=True)
     city = models.CharField(max_length=100, blank=True)
+    location = models.CharField(max_length=200, blank=True)  # Combined location string
 
     # Account statistics
     member_since = models.DateTimeField(auto_now_add=True)
     last_active = models.DateTimeField(auto_now=True)
-    transactions_completed = models.PositiveIntegerField(default=0)
+    positive_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0.0
+    )
 
     # Settings and preferences
     notification_email = models.BooleanField(default=True)
@@ -62,10 +73,6 @@ class UserProfile(BaseModel):
         super().save(*args, **kwargs)
 
     @property
-    def average_rating(self):
-        return self.received_ratings.aggregate(Avg("rating"))["rating__avg"] or 0
-
-    @property
     def verified_status(self):
         if self.identity_verified:
             return "ID Verified"
@@ -74,10 +81,6 @@ class UserProfile(BaseModel):
         elif self.email_verified:
             return "Email Verified"
         return "Unverified"
-
-    @property
-    def total_sales(self):
-        return self.user.sales.count()
 
     @property
     def total_purchases(self):

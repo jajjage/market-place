@@ -6,6 +6,10 @@ from apps.categories.serializers import CategoryDetailSerializer
 from apps.core.serializers import TimestampedModelSerializer
 from apps.products.models import Product, ProductCondition
 from apps.products.serializers.conditions import ProductConditionDetailSerializer
+from apps.products.serializers.image import ProductImageDetailSerializer
+from apps.products.serializers.ratings import ProductRatingsSerializer
+from apps.products.serializers.variants import ProductVariantSerializer
+from apps.users.serializers import PublicUserProfileSerializer
 
 
 class UserShortSerializer(TimestampedModelSerializer):
@@ -78,6 +82,8 @@ class ProductUpdateSerializer(TimestampedModelSerializer):
             "currency",
             "category",
             "condition",
+            "escrow_fee",
+            "location",
             "is_active",
             "in_escrow_inventory",
             "available_inventory",
@@ -101,7 +107,16 @@ class ProductListSerializer(TimestampedModelSerializer):
     Optimized for displaying products in listings.
     """
 
-    seller_name = serializers.CharField(source="seller.get_full_name", read_only=True)
+    originalPrice = serializers.DecimalField(
+        source="original_price", max_digits=10, decimal_places=2
+    )
+    escrowFee = serializers.DecimalField(
+        source="escrow_fee", max_digits=10, decimal_places=2
+    )
+
+    seller = serializers.SerializerMethodField()
+    ratings = ProductRatingsSerializer(source="*", read_only=True)
+
     category_name = serializers.CharField(source="category.name", read_only=True)
     condition_name = serializers.CharField(source="condition.name", read_only=True)
     image_url = serializers.SerializerMethodField()
@@ -113,7 +128,7 @@ class ProductListSerializer(TimestampedModelSerializer):
             "id",
             "title",
             "price",
-            "original_price",
+            "originalPrice",
             "currency",
             "category_name",
             "condition_name",
@@ -121,14 +136,23 @@ class ProductListSerializer(TimestampedModelSerializer):
             "is_featured",
             "status",
             "slug",
+            "ratings",
             "short_code",
-            "seller_name",
+            "seller",
+            "escrowFee",
+            "location",
+            "condition",
+            "description",
             "image_url",
             "discount_percent",
             "in_escrow_inventory",
             "available_inventory",
             "total_inventory",
         ]
+
+    def get_seller(self, obj):
+        profile_obj = obj.seller.profile
+        return PublicUserProfileSerializer(profile_obj, context=self.context).data
 
     def get_image_url(self, obj):
         request = self.context.get("request")
@@ -151,10 +175,46 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     Includes all information including nested category and seller details.
     """
 
+    variants = ProductVariantSerializer(many=True, read_only=True)
+    variant_summary = serializers.SerializerMethodField()
+
+    # Write-only for variant creation
+    variant_combinations = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="Specific variant combinations to create",
+    )
+
+    # Alternative: Auto-generate from selected options
+    auto_generate_variants = serializers.DictField(
+        write_only=True,
+        required=False,
+        help_text="Auto-generate variants from option groups: {'color': [1,2,3], 'size': [4,5,6]}",
+    )
+
+    base_variant_price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        write_only=True,
+        required=False,
+        help_text="Base price for auto-generated variants",
+    )
+
+    originalPrice = serializers.DecimalField(
+        source="original_price", max_digits=10, decimal_places=2
+    )
+    escrowFee = serializers.DecimalField(
+        source="escrow_fee", max_digits=10, decimal_places=2
+    )
+    images = ProductImageDetailSerializer(many=True, read_only=True)
     seller = serializers.SerializerMethodField()
+    ratings = ProductRatingsSerializer(source="*", read_only=True)
+    variants = serializers.SerializerMethodField()
+    details = serializers.SerializerMethodField()
+    breadcrumbs = serializers.SerializerMethodField()
     category = CategoryDetailSerializer(read_only=True)
     condition = ProductConditionDetailSerializer(read_only=True)
-    images = serializers.SerializerMethodField()
     discount_percent = serializers.SerializerMethodField()
     watching_count = serializers.SerializerMethodField()
 
@@ -166,7 +226,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "title",
             "description",
             "price",
-            "original_price",
+            "originalPrice",
             "currency",
             "category",
             "condition",
@@ -176,10 +236,22 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "total_inventory",
             "is_featured",
             "status",
-            "specifications",
             "slug",
             "short_code",
             "images",
+            "escrowFee",
+            "location",
+            "description",
+            "variants",
+            "variant_summary",
+            "variant_combinations",
+            "auto_generate_variants",
+            "base_variant_price",
+            "ratings",
+            "details",
+            "features",
+            "specifications",
+            "breadcrumbs",
             "discount_percent",
             "watching_count",
             "created_at",
@@ -187,35 +259,22 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         ]
 
     def get_seller(self, obj):
+        profile_obj = obj.seller.profile
+        return PublicUserProfileSerializer(profile_obj, context=self.context).data
+
+    def get_variant_summary(self, obj):
+        """Get variant summary with statistics"""
         return {
-            "id": obj.seller.id,
-            "first_name": obj.seller.first_name,
-            "full_name": obj.seller.get_full_name(),
-            "avatar": (
-                self.context.get("request").build_absolute_uri(
-                    obj.seller.profile.avatar_url
-                )
-                if hasattr(obj.seller, "profile") and obj.seller.profile.avatar_url
-                else None
-            ),
+            "total_variants": getattr(obj, "total_variants", 0),
+            "available_variants": getattr(obj, "available_variants", 0),
+            "price_range": {
+                "min": getattr(obj, "min_variant_price", None),
+                "max": getattr(obj, "max_variant_price", None),
+                "avg": getattr(obj, "avg_variant_price", None),
+            },
+            "total_stock": getattr(obj, "total_stock", 0),
+            "variant_types": getattr(obj, "variant_types", []),
         }
-
-    def get_images(self, obj):
-        request = self.context.get("request")
-        images = []
-
-        for img in obj.images.all():
-            if img.image:
-                images.append(
-                    {
-                        "id": img.id,
-                        "url": request.build_absolute_uri(img.image.url),
-                        "is_primary": img.is_primary,
-                        "alt_text": img.alt_text or "",
-                    }
-                )
-
-        return images
 
     def get_discount_percent(self, obj):
         if obj.original_price and obj.price < obj.original_price:
@@ -226,6 +285,52 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     def get_watching_count(self, obj):
         """Get the number of users watching this product"""
         return obj.watchers.count()
+
+    def get_variants(self, obj):
+        # This would need to be implemented based on your variant logic
+        # For now, returning a sample structure
+        return [
+            {"type": "Color", "options": ["Brown", "Black", "Tan"]},
+            {"type": "Condition", "options": ["New with tags", "Like New", "Good"]},
+        ]
+
+    def get_details(self, obj):
+        """Generate details list from model fields"""
+        details = []
+
+        if obj.brand:
+            details.append({"label": "Brand", "value": obj.brand})
+        if obj.model:
+            details.append({"label": "Model", "value": obj.model})
+        if obj.material:
+            details.append({"label": "Material", "value": obj.material})
+        if obj.color:
+            details.append({"label": "Color", "value": obj.color})
+        if obj.dimensions:
+            details.append({"label": "Dimensions", "value": obj.dimensions})
+        if obj.style:
+            details.append({"label": "Style", "value": obj.style})
+
+        details.append({"label": "Condition", "value": obj.condition.name})
+
+        if obj.authenticity_guaranteed:
+            details.append({"label": "Authenticity", "value": "Guaranteed Authentic"})
+
+        return details
+
+    def get_breadcrumbs(self, obj):
+        # You can implement this based on your category structure
+        return [
+            {"name": "TrustLock", "href": "/"},
+            {"name": "Fashion & Accessories", "href": "/explore?category=fashion"},
+            {"name": "Women's Bags & Handbags", "href": "/explore?category=bags"},
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Convert condition object to string
+        data["condition"] = instance.condition.name
+        return data
 
 
 class ProductStatsSerializer(TimestampedModelSerializer):
@@ -292,3 +397,49 @@ class ProductStatsSerializer(TimestampedModelSerializer):
             discount = ((obj.original_price - obj.price) / obj.original_price) * 100
             return round(discount, 1)
         return 0
+
+    def get_variants(self, obj):
+        # This would need to be implemented based on your variant logic
+        # For now, returning a sample structure
+        return [
+            {"type": "Color", "options": ["Brown", "Black", "Tan"]},
+            {"type": "Condition", "options": ["New with tags", "Like New", "Good"]},
+        ]
+
+    def get_details(self, obj):
+        """Generate details list from model fields"""
+        details = []
+
+        if obj.brand:
+            details.append({"label": "Brand", "value": obj.brand})
+        if obj.model:
+            details.append({"label": "Model", "value": obj.model})
+        if obj.material:
+            details.append({"label": "Material", "value": obj.material})
+        if obj.color:
+            details.append({"label": "Color", "value": obj.color})
+        if obj.dimensions:
+            details.append({"label": "Dimensions", "value": obj.dimensions})
+        if obj.style:
+            details.append({"label": "Style", "value": obj.style})
+
+        details.append({"label": "Condition", "value": obj.condition.name})
+
+        if obj.authenticity_guaranteed:
+            details.append({"label": "Authenticity", "value": "Guaranteed Authentic"})
+
+        return details
+
+    def get_breadcrumbs(self, obj):
+        # You can implement this based on your category structure
+        return [
+            {"name": "TrustLock", "href": "/"},
+            {"name": "Fashion & Accessories", "href": "/explore?category=fashion"},
+            {"name": "Women's Bags & Handbags", "href": "/explore?category=bags"},
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Convert condition object to string
+        data["condition"] = instance.condition.name
+        return data

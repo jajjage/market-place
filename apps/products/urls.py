@@ -7,6 +7,9 @@ from .views import (
     ProductImageViewSet,
     ProductWatchlistViewSet,
     ProductMetaViewSet,
+    ProductVariantTypeViewSet,
+    ProductVariantViewSet,
+    ProductRatingViewSet,
 )
 
 # Create a router and register our viewsets with it
@@ -16,6 +19,9 @@ router.register(r"conditions", ProductConditionViewSet, basename="condition")
 router.register(r"images", ProductImageViewSet, basename="image")
 router.register(r"metadata", ProductMetaViewSet, basename="metadata")
 router.register(r"watchlist", ProductWatchlistViewSet, basename="watchlist")
+router.register(r"variant-types", ProductVariantTypeViewSet, basename="variant-type")
+router.register(r"variants", ProductVariantViewSet, basename="variant")
+router.register(r"ratings", ProductRatingViewSet, basename="rating")
 
 # The API URLs are determined automatically by the router
 urlpatterns = [

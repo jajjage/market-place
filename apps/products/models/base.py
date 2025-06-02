@@ -1,32 +1,45 @@
 from django.db import models
 from django.conf import settings
 from django.urls import reverse
-from django.db.models import JSONField
+
 
 from apps.core.models import BaseModel
 
 
-class ProductsStatus(models.TextChoices):
-    DRAFT = "DRAFT", "Draft"
-    ACTIVE = "ACTIVE", "Active"
-    UNDER_REVIEW = "UNDER_REVIEW", "Under Review"
-    INACTIVE = "INACTIVE", "Inactive"
-
-
 class Product(BaseModel):
-    # Core fields all products have
+    class ProductsStatus(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        ACTIVE = "active", "Active"
+        INACTIVE = "inactive", "Inactive"
+        SOLD = "sold", "Sold"
+
+    # Basic product information
     seller = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="products"
     )
     title = models.CharField(max_length=255)
     description = models.TextField()
+    slug = models.SlugField(max_length=255, blank=True, db_index=True)
+    short_code = models.CharField(
+        max_length=200, unique=True, blank=True, null=True, db_index=True
+    )
+
+    # Pricing
     price = models.DecimalField(max_digits=10, decimal_places=2)
     original_price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True
     )
     currency = models.CharField(max_length=3, default="USD")
+    escrow_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+
+    # Category and condition
     category = models.ForeignKey("categories.Category", on_delete=models.PROTECT)
     condition = models.ForeignKey("ProductCondition", on_delete=models.PROTECT)
+
+    # Location
+    location = models.CharField(max_length=200, blank=True)
+
+    # Status and inventory
     is_active = models.BooleanField(default=True)
     total_inventory = models.IntegerField(default=0)
     available_inventory = models.IntegerField(default=0)
@@ -37,13 +50,19 @@ class Product(BaseModel):
         max_length=12, choices=ProductsStatus.choices, default=ProductsStatus.DRAFT
     )
 
-    # Dynamic specifications field using JSONField
-    specifications = JSONField(default=dict, blank=True)
+    # Product details and specifications
+    brand = models.CharField(max_length=100, blank=True)
+    model = models.CharField(max_length=100, blank=True)
+    material = models.CharField(max_length=100, blank=True)
+    color = models.CharField(max_length=50, blank=True)
+    dimensions = models.CharField(max_length=100, blank=True)
+    style = models.CharField(max_length=100, blank=True)
+    authenticity_guaranteed = models.BooleanField(default=False)
 
-    slug = models.SlugField(max_length=255, blank=True, db_index=True)
-    short_code = models.CharField(
-        max_length=200, unique=True, blank=True, null=True, db_index=True
-    )
+    # Dynamic specifications field using JSONField
+    specifications = models.JSONField(default=dict, blank=True)
+    features = models.JSONField(default=list, blank=True)  # List of features
+    details = models.JSONField(default=list, blank=True)  # List of detail objects
 
     class Meta:
         db_table = "products"
@@ -55,6 +74,29 @@ class Product(BaseModel):
             models.Index(fields=["short_code"]),
         ]
 
+    def __str__(self):
+        return self.title
+
+    @property
+    def average_rating(self):
+        ratings = self.product_ratings.all()
+        if ratings:
+            return sum(r.rating for r in ratings) / len(ratings)
+        return 0.0
+
+    @property
+    def rating_count(self):
+        return self.product_ratings.count()
+
+    @property
+    def rating_breakdown(self):
+        """Returns rating breakdown similar to the desired format"""
+        breakdown = []
+        for i in range(1, 6):
+            count = self.product_ratings.filter(rating=i).count()
+            breakdown.append({"stars": i, "count": count})
+        return breakdown
+
     def discount_percentage(self):
         if self.original_price and self.original_price > self.price:
             return int(((self.original_price - self.price) / self.original_price) * 100)
@@ -62,9 +104,6 @@ class Product(BaseModel):
 
     def get_absolute_url(self):
         return reverse("product-detail", kwargs={"slug": self.slug})
-
-    def __str__(self):
-        return self.title
 
 
 class InventoryTransaction(BaseModel):

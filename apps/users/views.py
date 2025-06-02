@@ -1,4 +1,5 @@
 import logging
+from django.db.models import Count, Sum, Q
 
 from drf_spectacular.utils import extend_schema
 from django.core.cache import cache
@@ -76,6 +77,7 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
     CACHE_TTL = 60 * 15  # 15 minutes cache
 
     serializer_class = PublicUserSerializer
+    permission_classes = [IsOwnerOrReadOnly]
 
     def get_cache_key(self, view_name, **kwargs):
         """Generate a cache key for the view"""
@@ -86,8 +88,24 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
         return f"profile:{view_name}:{kwargs.get('pk', '')}:{user_id}"
 
     def get_queryset(self):
-        return CustomUser.objects.select_related("profile").filter(
-            profile__isnull=False
+        return (
+            CustomUser.objects.select_related("profile")
+            .filter(profile__isnull=False)
+            .annotate(
+                # Annotate on CustomUser, not UserProfile
+                completed_sales_count=Count(
+                    "seller_transactions",
+                    filter=Q(seller_transactions__status="completed"),
+                ),
+                completed_purchases_count=Count(
+                    "buyer_transactions",
+                    filter=Q(buyer_transactions__status="completed"),
+                ),
+                total_sales_amount=Sum(
+                    "seller_transactions__amount",
+                    filter=Q(seller_transactions__status="completed"),
+                ),
+            )
         )
 
     @method_decorator(cache_page(CACHE_TTL))

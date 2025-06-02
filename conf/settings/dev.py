@@ -85,8 +85,12 @@ USER_AGENTS_CACHE = "default"
 # -----------------------------------------------------------------------------
 # Celery - Development
 # -----------------------------------------------------------------------------
-CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", default="redis://localhost:6379")
-CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", default="redis://localhost:6379")
+CELERY_BROKER_URL = os.environ.get(
+    "CELERY_BROKER_URL", default="redis://localhost:6379"
+)
+CELERY_RESULT_BACKEND = os.environ.get(
+    "CELERY_RESULT_BACKEND", default="redis://localhost:6379"
+)
 
 # -----------------------------------------------------------------------------
 # REST Framework - Development Settings
@@ -139,6 +143,11 @@ LOGGING = {
             "formatter": "console",
             "stream": sys.stdout,
         },
+        "throttle_file": {
+            "level": "WARNING",
+            "class": "logging.FileHandler",
+            "filename": "throttling.log",
+        },
         # these two get overridden or removed in CI
         "info_file": {
             "level": "INFO",
@@ -167,6 +176,11 @@ LOGGING = {
             "level": "INFO",
             "handlers": ["console", "info_file", "error_file"],
             "propagate": False,
+        },
+        "utils.rate_limiting": {
+            "handlers": ["throttle_file"],
+            "level": "DEBUG",
+            "propagate": True,
         },
     },
 }

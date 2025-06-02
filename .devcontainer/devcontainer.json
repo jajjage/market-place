@@ -15,10 +15,17 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// This can be used to network with other containers or the host.
 	"forwardPorts": [
-		5000,
+		8000,
 		5432,
-		6379
+		6379,
+		5000
 	],
+	"portsAttributes": {
+		"8000": {
+			"label": "Django Server",
+			"onAutoForward": "notify"
+		}
+	},
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "pip install --user -r requirements.txt",
 	// Configure tool-specific properties.
@@ -29,7 +36,7 @@
 				"ms-python.black-formatter",
 				"streetsidesoftware.code-spell-checker",
 				"mtxr.sqltools",
-        		"mtxr.sqltools-driver-pg",
+				"mtxr.sqltools-driver-pg",
 				"IronGeek.vscode-env",
 				"tamasfe.even-better-toml",
 				"ms-python.flake8",

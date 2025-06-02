@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django.db.models import Count
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
-from apps.core.permissions import ReadWriteUserTypePermission
+from apps.core.permissions import IsOwnerOrReadOnly
 from apps.core.views import BaseViewSet
 from .models import Category
 from .serializers import (
@@ -22,8 +22,7 @@ class CategoryViewSet(BaseViewSet):
     """
 
     queryset = Category.objects.all()
-    permission_read_user_types = ["BUYER", "SELLER"]
-    permission_write_user_types = ["SELLER"]
+    permission_classes = [IsOwnerOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["name", "description"]
     ordering_fields = ["name", "created_at"]
@@ -38,18 +37,6 @@ class CategoryViewSet(BaseViewSet):
         elif self.action == "breadcrumb":
             return CategoryBreadcrumbSerializer
         return CategoryDetailSerializer
-
-    def get_permissions(self):
-        """
-        Custom permissions:
-        - List/retrieve: Anyone can view categories
-        - Create/update/delete: Only staff/admin users
-        """
-        if self.action in ["list", "retrieve", "breadcrumb", "subcategories", "tree"]:
-            permission_classes = [ReadWriteUserTypePermission]
-        else:
-            permission_classes = [ReadWriteUserTypePermission]
-        return [permission() for permission in permission_classes]
 
     @extend_schema(
         parameters=[

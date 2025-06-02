@@ -3,6 +3,8 @@ from .conditions import ProductConditionViewSet
 from .images import ProductImageViewSet
 from .watchlists import ProductWatchlistViewSet
 from .metadata import ProductMetaViewSet
+from .variants import ProductVariantTypeViewSet, ProductVariantViewSet
+from .ratings import ProductRatingViewSet
 
 
 __all__ = [
@@ -12,4 +14,7 @@ __all__ = [
     "ProductImageViewSet",
     "ProductWatchlistViewSet",
     "ProductMetaViewSet",
+    "ProductVariantTypeViewSet",
+    "ProductVariantViewSet",
+    "ProductRatingViewSet",
 ]

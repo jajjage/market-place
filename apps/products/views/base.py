@@ -1,4 +1,5 @@
 import urllib.parse
+import logging
 from datetime import timezone
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -8,14 +9,16 @@ from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_cookie
 from django.db.models import Value
 from django.db.models.functions import Concat
+from django.http import Http404
+from rest_framework.exceptions import ValidationError
 from rest_framework import permissions, status, filters, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Count, Avg, Sum, F, ExpressionWrapper, FloatField
 from django.db.models.functions import TruncMonth
 from django_filters.rest_framework import DjangoFilterBackend
-from apps.core.permissions import ReadWriteUserTypePermission
-from apps.core.views import BaseViewSet
+from apps.core.permissions import IsOwnerOrReadOnly
+from apps.core.views import BaseAPIView, BaseViewSet
 from apps.products.models import (
     Product,
     ProductMeta,
@@ -41,15 +44,12 @@ class ProductViewSet(BaseViewSet):
     Supports CRUD operations, filtering, searching, and statistics.
     """
 
+    logger = logging.getLogger(__name__)
     CACHE_TTL = 60 * 15  # 15 minutes cache
     STATS_CACHE_TTL = 60 * 30  # 30 minutes cache for stats
 
     queryset = Product.objects.all()
-    permission_classes = [ReadWriteUserTypePermission]
-    permission_read_user_types = ["BUYER", "SELLER"]
-    permission_write_user_types = ["SELLER"]
-    inventory_user_types = ["SELLER"]
-    buyer_user_types = ["BUYER"]
+    permission_classes = [IsOwnerOrReadOnly]
     filter_backends = [
         DjangoFilterBackend,
         filters.SearchFilter,
@@ -62,38 +62,9 @@ class ProductViewSet(BaseViewSet):
 
     def get_cache_key(self, view_name, **kwargs):
         """Generate a cache key for the view"""
-        return f"product:{view_name}:{kwargs.get('pk', '')}:{kwargs.get('user_id', '')}"
-
-    def get_permissions(self):
-        """
-        Custom permissions:
-        - List/retrieve: Both BUYER and SELLER can view products
-        - Create/update/delete: Only SELLER can modify products
-        - Inventory actions: Only SELLER can manage inventory
-        """
-        # Define inventory management actions
-        inventory_actions = [
-            "add_inventory",
-            "activate_inventory",
-            "release_from_escrow",
-            "deduct_inventory",
-            "respond_to_negotiation",
-        ]
-        buy_action = [
-            "place_in_escrow",
-            "create_transaction_from_negotiation",
-            "initiate_negotiation",
-        ]
-
-        # Set appropriate user types based on the action
-        if self.action in inventory_actions:
-            # Temporarily override permission user types for inventory actions
-            self.permission_write_user_types = self.inventory_user_types
-        elif self.action in buy_action:
-            self.permission_write_user_types = self.buyer_user_types
-
-        # Use the standard ReadWriteUserTypePermission logic
-        return [permission() for permission in self.permission_classes]
+        key = f"product:{view_name}:{kwargs.get('pk', '')}:{kwargs.get('user_id', '')}"
+        self.logger.debug("Generated cache key: %s", key)
+        return key
 
     def get_serializer_class(self):
         """
@@ -164,15 +135,29 @@ class ProductViewSet(BaseViewSet):
     @action(detail=False, methods=["get"])
     def featured(self, request):
         """Return featured products"""
+        cache_key = self.get_cache_key("featured")
+        cached_data = cache.get(cache_key)
+
+        if cached_data:
+            self.logger.info("Cache HIT for featured products: %s", cache_key)
+            return self.success_response(data=cached_data)
+
+        self.logger.info("Cache MISS for featured products: %s", cache_key)
         queryset = self.get_queryset().filter(is_featured=True, is_active=True)
         page = self.paginate_queryset(queryset)
 
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            data = self.get_paginated_response(serializer.data).data
+        else:
+            serializer = self.get_serializer(queryset, many=True)
+            data = serializer.data
 
-        serializer = self.get_serializer(queryset, many=True)
-        return self.success_response(data=serializer.data)
+        # Cache the result
+        cache.set(cache_key, data, self.CACHE_TTL)
+        self.logger.info("Cached featured products: %s", cache_key)
+
+        return self.success_response(data=data)
 
     @method_decorator(cache_page(STATS_CACHE_TTL))
     @method_decorator(vary_on_cookie)
@@ -183,6 +168,15 @@ class ProductViewSet(BaseViewSet):
         - For staff: all products stats
         - For users: their own products stats
         """
+        cache_key = self.get_cache_key("stats", user_id=request.user.id)
+        cached_data = cache.get(cache_key)
+
+        if cached_data:
+            self.logger.info("Cache HIT for product stats: %s", cache_key)
+            return self.success_response(data=cached_data)
+
+        self.logger.info("Cache MISS for product stats: %s", cache_key)
+
         if request.user.is_staff:
             queryset = Product.objects.all()
         else:
@@ -288,19 +282,24 @@ class ProductViewSet(BaseViewSet):
             "monthly_trend": monthly_trend_data,
         }
 
+        # Cache the result
+        cache.set(cache_key, stats_data, self.STATS_CACHE_TTL)
+        self.logger.info("Cached product stats: %s", cache_key)
+
         return self.success_response(data=stats_data)
 
     def perform_update(self, serializer):
         """Clear cache when product is updated"""
-        product = serializer.instance
+        instance = serializer.instance
         cache_keys = [
-            self.get_cache_key("detail", pk=product.pk),
+            self.get_cache_key("detail", pk=instance.pk),
             self.get_cache_key("list"),
             "featured_products",
-            f"product_stats:{product.seller.id}",
+            f"product_stats:{instance.seller.id}",
         ]
+        self.logger.info("Invalidating cache keys on update: %s", cache_keys)
         cache.delete_many(cache_keys)
-        return super().perform_update(serializer)
+        serializer.save()
 
     def perform_destroy(self, instance):
         """Clear cache when product is deleted"""
@@ -310,8 +309,9 @@ class ProductViewSet(BaseViewSet):
             "featured_products",
             f"product_stats:{instance.seller.id}",
         ]
+        self.logger.info("Invalidating cache keys on delete: %s", cache_keys)
         cache.delete_many(cache_keys)
-        return super().perform_destroy(instance)
+        instance.delete()
 
     @action(detail=True, url_path="toggle-active", methods=["post"])
     def toggle_active(self, request, pk=None):
@@ -1032,53 +1032,65 @@ class ProductViewSet(BaseViewSet):
 
 
 # Product retrieval by short code for social media sharing
-class ProductDetailByShortCode(generics.RetrieveAPIView):
+class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
     """
     Retrieve a product by its short code.
     Used for both viewing and sharing via short URLs.
     """
+
+    logger = logging.getLogger(__name__)
+    CACHE_TTL = 60 * 15  # 15 minutes cache
+    STATS_CACHE_TTL = 60 * 30  # 30 minutes cache for stats
 
     queryset = Product.objects.all()
     serializer_class = ProductDetailSerializer
     lookup_field = "short_code"
     permission_classes = [permissions.AllowAny]
 
+    def get_cache_key(self, view_name, **kwargs):
+        """Generate a cache key for the view"""
+        key = f"product:{view_name}:{kwargs.get('pk', '')}:{kwargs.get('user_id', '')}"
+        self.logger.debug("Generated cache key: %s", key)
+        return key
+
     @method_decorator(cache_page(60 * 5))  # Cache for 5 minutes
     def retrieve(self, request, *args, **kwargs):
-        product = self.get_object()
-        meta, _ = ProductMeta.objects.get_or_create(product=product)
+        """
+        Standardized retrieve method with proper error handling and response format.
+        """
+        try:
+            cache_key = self.get_cache_key("detail", pk=kwargs.get("pk"))
+            cached_data = cache.get(cache_key)
 
-        print(meta)
+            if cached_data:
+                self.logger.info("Cache HIT for product detail: %s", cache_key)
+                return self.success_response(
+                    data=cached_data,
+                    message="product retrieved from cache successfully",
+                )
 
-        # 1) Handle share tracking if ?ref=<network> is present
-        ref = request.query_params.get("ref")
-        if ref in {"facebook", "twitter", "instagram"}:
-            # increment a single counter
-            meta.total_shares = F("total_shares") + 1
-            meta.save(update_fields=["total_shares"])
-            # fire off an analytics event
-            # analytics.track(
-            #     event="Product Shared",
-            #     product_id=product.id,
-            #     network=ref,
-            #     short_code=product.short_code,
-            #     request=request,
-            # )
+            self.logger.info("Cache MISS for product detail: %s", cache_key)
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            serialized_data = serializer.data
 
-        # 2) Always increment view count on each retrieval
-        meta.views_count = F("views_count") + 1
-        meta.save(update_fields=["views_count"])
+            # Cache the result
+            cache.set(cache_key, serialized_data, self.CACHE_TTL)
+            self.logger.info("Cached product detail: %s", cache_key)
 
-        # 3) Serialize product
-        serializer = self.get_serializer(product)
-        data = serializer.data
-
-        # 4) Attach a map of “share URLs” for each social network
-        base_url = request.build_absolute_uri(
-            reverse("product-detail-by-shortcode", args=[product.short_code])
-        )
-        data["share_urls"] = {
-            net: f"{base_url}?ref={net}" for net in ("facebook", "twitter", "instagram")
-        }
-
-        return Response(data)
+            return self.success_response(
+                data=serialized_data,
+                message="product retrieved successfully",
+            )
+        except Http404:
+            self.logger.warning("Product not found: %s", kwargs.get("pk"))
+            return self.error_response(
+                message="product not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        except (ValidationError, PermissionError) as e:
+            self.logger.error("Error retrieving product: %s", str(e))
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )

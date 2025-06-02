@@ -1,3 +1,4 @@
+from django.db.models import Count, Sum, Q
 from django.contrib.auth.base_user import BaseUserManager
 from django.utils.translation import gettext_lazy as _
 
@@ -7,6 +8,20 @@ class CustomUserManager(BaseUserManager):
     Custom user model manager where email is the unique identifier
     for authentication instead of usernames.
     """
+
+    def with_transaction_stats(self):
+        return self.annotate(
+            completed_sales_count=Count(
+                "seller_transactions", filter=Q(seller_transactions__status="completed")
+            ),
+            completed_purchases_count=Count(
+                "buyer_transactions", filter=Q(buyer_transactions__status="completed")
+            ),
+            total_sales_amount=Sum(
+                "seller_transactions__amount",
+                filter=Q(seller_transactions__status="completed"),
+            ),
+        )
 
     def create_user(self, email: str, password=None, **extra_fields: dict) -> object:
         """

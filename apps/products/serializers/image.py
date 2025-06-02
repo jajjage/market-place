@@ -8,7 +8,6 @@ from apps.products.models.product_image import ProductImage
 class ProductImageListSerializer(TimestampedModelSerializer):
     """Serializer for listing product images."""
 
-    image_url = serializers.SerializerMethodField()
     image_thumbnail = serializers.SerializerMethodField()
 
     class Meta:
@@ -16,20 +15,12 @@ class ProductImageListSerializer(TimestampedModelSerializer):
         fields = [
             "id",
             "product",
-            "image",
             "image_url",
             "image_thumbnail",
             "is_primary",
             "display_order",
             "created_at",
         ]
-
-    def get_image_url(self, obj):
-        """Get full URL for image."""
-        request = self.context.get("request")
-        if request and obj.image:
-            return request.build_absolute_uri(obj.image.url)
-        return None
 
     def get_image_thumbnail(self, obj):
         """Get thumbnail URL if using a thumbnail library."""
@@ -41,11 +32,23 @@ class ProductImageListSerializer(TimestampedModelSerializer):
             return request.build_absolute_uri(obj.image.url)
         return None
 
+    def to_representation(self, instance):
+        request = self.context.get("request")
+        return {
+            "id": str(instance.id),
+            "url": (
+                request.build_absolute_uri(instance.image_url)
+                if request
+                else instance.image_url
+            ),
+            "alt": instance.alt_text or "",
+            "is_primary": instance.order == 0,
+        }
+
 
 class ProductImageDetailSerializer(TimestampedModelSerializer):
     """Detailed serializer for a single product image."""
 
-    image_url = serializers.SerializerMethodField()
     image_thumbnail = serializers.SerializerMethodField()
     image_size = serializers.SerializerMethodField()
     image_dimensions = serializers.SerializerMethodField()
@@ -57,23 +60,16 @@ class ProductImageDetailSerializer(TimestampedModelSerializer):
             "id",
             "product",
             "product_title",
-            "image",
             "image_url",
             "image_thumbnail",
             "image_size",
             "image_dimensions",
             "is_primary",
             "display_order",
+            "alt_text",
             "created_at",
             "updated_at",
         ]
-
-    def get_image_url(self, obj):
-        """Get full URL for image."""
-        request = self.context.get("request")
-        if request and obj.image:
-            return request.build_absolute_uri(obj.image.url)
-        return None
 
     def get_image_thumbnail(self, obj):
         """Get thumbnail URL if using a thumbnail library."""
@@ -97,13 +93,26 @@ class ProductImageDetailSerializer(TimestampedModelSerializer):
             return {"width": obj.image.width, "height": obj.image.height}
         return None
 
+    def to_representation(self, instance):
+        request = self.context.get("request")
+        return {
+            "id": str(instance.id),
+            "url": (
+                request.build_absolute_uri(instance.image_url)
+                if request
+                else instance.image_url
+            ),
+            "alt": instance.alt_text or "",
+            "is_primary": instance.display_order == 0,
+        }
+
 
 class ProductImageWriteSerializer(TimestampedModelSerializer):
     """Serializer for creating/updating product images."""
 
     class Meta:
         model = ProductImage
-        fields = ["product", "image", "is_primary", "display_order"]
+        fields = ["product", "image_url", "is_primary", "display_order"]
 
     def validate_image(self, value):
         """

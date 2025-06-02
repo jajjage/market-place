@@ -128,13 +128,20 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "apps.core.authentication.CookieJWTAuthentication",
     ),
+    # "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {
-        "user": "1000/day",
         "anon": "100/day",
         "user_login": "5/minute",
+        "watchlist": "500/hour",
+        "watchlist_toggle": "100/hour",
+        "watchlist_bulk": "20/hour",
+        "watchlist_admin": "1000/hour",
+        "ratings_create": "100/hour",
+        "vote_helpful": "100/hour",
     },
 }
 

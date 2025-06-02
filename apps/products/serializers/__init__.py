@@ -37,6 +37,12 @@ from .metadata import (
     FeaturedProductMetaSerializer,
 )
 
+from .ratings import (
+    ProductRatingsSerializer,
+    ProductRatingAggregateSerializer,
+    RatingBreakdownSerializer,
+)
+
 __all__ = [
     "TimestampedModelSerializer",
     "ProductStatsSerializer",
@@ -71,4 +77,8 @@ __all__ = [
     "ProductMetaWriteSerializer",
     "ProductMetaWriteSerializer",
     "WatchlistStatsSerializer",
+    "ProductRatingsSerializer",
+    "RatingBreakdownSerializer",
+    "ProductRatingAggregateSerializer",
+    "ProductVariantSerializer",
 ]

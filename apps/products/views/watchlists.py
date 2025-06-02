@@ -1,18 +1,25 @@
 from rest_framework import permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Count
-from django.shortcuts import get_object_or_404
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from apps.core.views import BaseViewSet
-from apps.products.models import ProductWatchlistItem, Product
 from apps.products.serializers import (
     ProductWatchlistItemListSerializer,
     ProductWatchlistItemDetailSerializer,
-    ProductWatchlistItemCreateSerializer,
     ProductWatchlistBulkSerializer,
     WatchlistStatsSerializer,
+)
+from apps.products.services.product_watch_services import WatchlistService, CACHE_TTL
+from apps.products.utils.rate_limiting import (
+    AdminWatchlistThrottle,
+    WatchlistBulkThrottle,
+    WatchlistRateThrottle,
+    WatchlistThrottled,
+    WatchlistToggleThrottle,
 )
 
 
@@ -22,81 +29,82 @@ class ProductWatchlistViewSet(BaseViewSet):
     Allows users to create and manage their product watchlists.
     """
 
+    throttle_classes = [WatchlistRateThrottle]
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ["added_at"]
     ordering = ["-added_at"]
 
     def get_queryset(self):
         """
-        Return watchlist items for the current user.
-        Staff users can filter by user_id to see other users' watchlists.
+        Return optimized watchlist items for the current user.
         """
         user = self.request.user
+        user_id = None
 
-        # Base queryset (either user's own watchlist or all for staff)
         if user.is_staff and "user_id" in self.request.query_params:
             try:
                 user_id = int(self.request.query_params.get("user_id"))
-                return ProductWatchlistItem.objects.filter(user_id=user_id)
             except (ValueError, TypeError):
                 pass
 
-        # Default to current user's watchlist
-        return ProductWatchlistItem.objects.filter(user=user)
+        return WatchlistService.get_user_watchlist_queryset(user, user_id)
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
-        if self.action == "list":
-            return ProductWatchlistItemListSerializer
-        elif self.action == "create":
-            return ProductWatchlistItemCreateSerializer
-        elif self.action == "bulk_operation":
-            return ProductWatchlistBulkSerializer
-        elif self.action == "stats":
-            return WatchlistStatsSerializer
-        return ProductWatchlistItemDetailSerializer
+        serializer_mapping = {
+            "list": ProductWatchlistItemListSerializer,
+            "bulk_operation": ProductWatchlistBulkSerializer,
+            "stats": WatchlistStatsSerializer,
+        }
+        return serializer_mapping.get(self.action, ProductWatchlistItemDetailSerializer)
+
+    def handle_exception(self, exc):
+        """Custom exception handling for throttling."""
+        if hasattr(exc, "default_code") and exc.default_code == "throttled":
+            # Convert DRF throttled exception to custom one
+            scope = (
+                getattr(self.get_throttles()[0], "scope", None)
+                if self.get_throttles()
+                else None
+            )
+            raise WatchlistThrottled(wait=exc.wait, scope=scope)
+        return super().handle_exception(exc)
 
     def get_permissions(self):
-        """
-        Custom permissions:
-        - Users can only access their own watchlists
-        - Staff users can view any watchlist
-        """
-        permission_classes = [permissions.IsAuthenticated]
-        return [permission() for permission in permission_classes]
+        """Custom permissions for watchlist access."""
+        return [permissions.IsAuthenticated()]
 
-    def perform_create(self, serializer):
-        """Create a new watchlist item for the current user."""
-        serializer.save()
+    @method_decorator(cache_page(CACHE_TTL))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        """Get user's watchlist with caching."""
+        return super().list(request, *args, **kwargs)
 
     @extend_schema(
         request=ProductWatchlistBulkSerializer,
         responses={200: {"description": "Bulk operation completed successfully"}},
     )
-    @action(detail=False, methods=["post"])
+    @action(detail=False, methods=["post"], throttle_classes=[WatchlistBulkThrottle])
     def bulk_operation(self, request):
-        """
-        Perform bulk operations (add/remove) on watchlist items.
-        """
+        """Perform bulk operations (add/remove) on watchlist items."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         result = serializer.save()
 
         if isinstance(result, list):
-            # For bulk add operations
             response_data = {
                 "message": f"Added {len(result)} products to your watchlist",
                 "added_count": len(result),
+                "operation": "add",
             }
         elif isinstance(result, dict) and "removed_count" in result:
-            # For bulk remove operations
             response_data = {
                 "message": f"Removed {result['removed_count']} products from your watchlist",
                 "removed_count": result["removed_count"],
+                "operation": "remove",
             }
         else:
-            # Default response
             response_data = result
 
         return Response(response_data, status=status.HTTP_200_OK)
@@ -104,50 +112,33 @@ class ProductWatchlistViewSet(BaseViewSet):
     @extend_schema(responses={200: WatchlistStatsSerializer})
     @action(detail=False, methods=["get"])
     def stats(self, request):
-        """
-        Get statistics about the user's watchlist.
-        """
-        # user = request.user
-        queryset = self.get_queryset()
+        """Get statistics about the user's watchlist with caching."""
+        user = request.user
+        user_id = None
 
-        # Total items in watchlist
-        total_items = queryset.count()
+        if user.is_staff and "user_id" in self.request.query_params:
+            try:
+                user_id = int(self.request.query_params.get("user_id"))
+            except (ValueError, TypeError):
+                pass
 
-        # Recently added items (IDs only)
-        recently_added = list(
-            queryset.order_by("-added_at")[:5].values_list("product_id", flat=True)
-        )
-
-        # Most watched categories
-        category_counts = []
-        if total_items > 0:
-            category_counts = list(
-                queryset.values("product__category__name")
-                .annotate(count=Count("product__category"))
-                .filter(product__category__isnull=False)
-                .order_by("-count")[:5]
-                .values("product__category__name", "count")
-            )
-            # Transform to the expected format
-            category_counts = [
-                {"name": item["product__category__name"], "count": item["count"]}
-                for item in category_counts
-            ]
-
-        stats = {
-            "total_items": total_items,
-            "recently_added": recently_added,
-            "most_watched_categories": category_counts,
-        }
-
+        stats = WatchlistService.get_watchlist_stats(user, user_id)
         serializer = self.get_serializer(stats)
         return Response(serializer.data)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="product_id",
+                description="Product ID to check",
+                required=True,
+                type=int,
+            )
+        ]
+    )
     @action(detail=False, methods=["get"])
     def check_product(self, request):
-        """
-        Check if a product is in the user's watchlist.
-        """
+        """Check if a product is in the user's watchlist with caching."""
         product_id = request.query_params.get("product_id")
         if not product_id:
             return Response(
@@ -155,48 +146,55 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        is_in_watchlist = ProductWatchlistItem.objects.filter(
-            user=request.user, product_id=product_id
-        ).exists()
+        try:
+            product_id = int(product_id)
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Invalid product_id format"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        is_in_watchlist = WatchlistService.is_product_in_watchlist(
+            request.user, product_id
+        )
 
         return Response({"in_watchlist": is_in_watchlist})
 
-    @action(detail=False, methods=["post"])
+    @extend_schema(
+        request={
+            "type": "object",
+            "properties": {"product_id": {"type": "integer"}},
+            "required": ["product_id"],
+        }
+    )
+    @action(detail=False, methods=["post"], throttle_classes=[WatchlistToggleThrottle])
     def toggle_product(self, request):
-        """
-        Toggle a product in the user's watchlist (add if not present, remove if present).
-        """
+        """Toggle a product in the user's watchlist."""
         product_id = request.data.get("product_id")
         if not product_id:
             return Response(
                 {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check if product exists and is active
-        product = get_object_or_404(Product, id=product_id, is_active=True)
-
-        # Check if product is already in watchlist
-        watchlist_item = ProductWatchlistItem.objects.filter(
-            user=request.user, product=product
-        ).first()
-
-        if watchlist_item:
-            # Remove from watchlist
-            watchlist_item.delete()
+        try:
+            product_id = int(product_id)
+        except (ValueError, TypeError):
             return Response(
-                {"status": "removed", "message": "Product removed from watchlist"}
-            )
-        else:
-            # Add to watchlist
-            watchlist_item = ProductWatchlistItem.objects.create(
-                user=request.user, product=product
-            )
-            return Response(
-                {"status": "added", "message": "Product added to watchlist"},
-                status=status.HTTP_201_CREATED,
+                {"error": "Invalid product_id format"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-    @action(detail=False, methods=["get"])
+        result = WatchlistService.toggle_product_in_watchlist(request.user, product_id)
+
+        response_status = (
+            status.HTTP_201_CREATED
+            if result["status"] == "added"
+            else status.HTTP_200_OK
+        )
+
+        return Response(result, status=response_status)
+
+    @action(detail=False, methods=["get"], throttle_classes=[AdminWatchlistThrottle])
     @extend_schema(
         parameters=[
             OpenApiParameter(
@@ -208,10 +206,7 @@ class ProductWatchlistViewSet(BaseViewSet):
         ]
     )
     def by_product(self, request):
-        """
-        Get watchlist count for a specific product.
-        Staff only endpoint.
-        """
+        """Get watchlist count for a specific product (Staff only) with caching."""
         if not request.user.is_staff:
             return Response(
                 {"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN
@@ -224,6 +219,14 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        count = ProductWatchlistItem.objects.filter(product_id=product_id).count()
+        try:
+            product_id = int(product_id)
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Invalid product_id format"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        count = WatchlistService.get_product_watchlist_count(product_id)
 
         return Response({"product_id": product_id, "watchlist_count": count})

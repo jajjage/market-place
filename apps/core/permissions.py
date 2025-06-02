@@ -155,20 +155,27 @@ class ReadWriteUserTypePermission(UserTypePermission):
 class IsOwnerOrReadOnly(permissions.BasePermission):
     """
     Custom permission class that allows:
-    - Read access to any authenticated user
-    - Write access only to the owner of the object
+    - Read access to any user (including unauthenticated users)
+    - Write access only to authenticated users who own the object
     """
 
     def has_permission(self, request, view):
-        # Allow read access for authenticated users
+        # Allow read access for any user (authenticated or not)
         if request.method in permissions.SAFE_METHODS:
-            return request.user.is_authenticated
-        return True
+            return True
+        # Require authentication for write operations
+        return request.user and request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
-        # Read permissions are allowed to any authenticated user
+        # Read permissions are allowed to any user
         if request.method in permissions.SAFE_METHODS:
-            return request.user.is_authenticated
+            return True
 
-        # Write permissions are only allowed to the owner
-        return obj == request.user or hasattr(obj, "user") and obj.user == request.user
+        # Write permissions are only allowed to authenticated owners
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Check if user is the owner
+        return (
+            obj == request.user or hasattr(obj, "seller") and obj.seller == request.user
+        )

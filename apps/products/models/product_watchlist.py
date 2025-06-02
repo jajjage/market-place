@@ -15,6 +15,11 @@ class ProductWatchlistItem(BaseModel):
     class Meta:
         db_table = "product_watchlist_items"
         unique_together = ("user", "product")
+        indexes = [
+            models.Index(fields=["user", "product"]),
+            models.Index(fields=["product", "added_at"]),
+            models.Index(fields=["added_at"]),
+        ]
 
     def __str__(self):
         return f"{self.user.first_name} watching {self.product.title}"

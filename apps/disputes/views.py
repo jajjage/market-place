@@ -19,7 +19,6 @@ class DisputeViewSet(BaseViewSet):
     queryset = Dispute.objects.all()
     serializer_class = DisputeSerializer
     permission_classes = [UserTypePermission]
-    permission_user_types = ["SELLER", "BUYER"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
