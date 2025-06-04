@@ -6,5 +6,5 @@ router = DefaultRouter()
 router.register(r"inventory", InventoryViewSet, basename="inventory")
 
 urlpatterns = [
-    path("api/", include(router.urls)),
+    path("", include(router.urls)),
 ]

@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse
 import urllib.parse
 from apps.products.product_metadata.models import ProductMeta
-from ..models import Product
+from apps.products.product_base.models import Product
 
 
 class ProductShareService:

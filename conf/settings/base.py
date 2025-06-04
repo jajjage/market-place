@@ -91,6 +91,7 @@ INSTALLED_APPS = [
     "apps.products.product_variant",
     "apps.products.product_inventory",
     "apps.products.product_image",
+    "apps.products.product_breadcrumb",
 ]
 
 MIDDLEWARE = [

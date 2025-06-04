@@ -2,7 +2,7 @@ from apps.core.utils.cache_manager import CacheKeyManager
 from django.core.cache import cache
 from rest_framework.response import Response
 from apps.products.product_condition.services import ProductConditionService as PCS
-from ..serializers import ProductListSerializer
+from apps.products.product_base.serializers import ProductListSerializer
 from apps.products.product_condition.serializers import ProductConditionListSerializer
 
 

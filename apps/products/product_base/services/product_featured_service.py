@@ -1,6 +1,6 @@
 from apps.core.utils.cache_manager import CacheKeyManager
 from django.core.cache import cache
-from ..serializers import ProductListSerializer
+from apps.products.product_base.serializers import ProductListSerializer
 
 
 class ProductFeaturedService:

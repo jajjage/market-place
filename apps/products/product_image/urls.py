@@ -8,29 +8,8 @@ router = DefaultRouter()
 router.register(r"images", ProductImageViewSet, basename="product-image")
 
 urlpatterns = [
-    path("api/products/", include(router.urls)),
+    path("", include(router.urls)),
     # File upload specific endpoints
-    path(
-        "api/products/<int:product_id>/images/upload/",
-        ProductImageViewSet.as_view({"post": "upload_image"}),
-    ),
-    path(
-        "api/products/<int:product_id>/images/bulk-upload/",
-        ProductImageViewSet.as_view({"post": "bulk_upload"}),
-    ),
-    # Other endpoints
-    path(
-        "api/products/<int:product_id>/images/",
-        ProductImageViewSet.as_view({"get": "list"}),
-    ),
-    path(
-        "api/products/<int:product_id>/images/primary/",
-        ProductImageViewSet.as_view({"get": "primary"}),
-    ),
-    path(
-        "api/products/<int:product_id>/images/variants/",
-        ProductImageViewSet.as_view({"get": "variants"}),
-    ),
 ]
 
 if settings.DEBUG:
