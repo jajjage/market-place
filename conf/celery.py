@@ -3,6 +3,8 @@ import os
 
 from celery import Celery
 
+# from datetime import timedelta
+# from django.conf import settings
 import environ
 
 # Initialize environment variables
@@ -27,3 +29,11 @@ app.conf.broker_connection_retry_on_startup = True
 
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
+
+# app.conf.beat_schedule = {
+#     "monitoring-periodic-performance-check": {
+#         "task": "monitoring.tasks.periodic_performance_check",
+#         # run every PERFORMANCE_CHECK_INTERVAL_SECONDS seconds
+#         "schedule": timedelta(seconds=settings.PERFORMANCE_CHECK_INTERVAL_SECONDS),
+#     },
+# }

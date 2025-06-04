@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from apps.core.tasks import BaseTaskWithRetry
 from apps.transactions.models import EscrowTransaction, TransactionHistory
-from apps.products.services.inventory import InventoryService
+from apps.products.product_inventory.services import InventoryService
 
 
 @shared_task(bind=True, base=BaseTaskWithRetry)

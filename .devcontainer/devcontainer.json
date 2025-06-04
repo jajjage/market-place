@@ -29,7 +29,7 @@
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "pip install --user -r requirements.txt",
 	// Configure tool-specific properties.
-	"postCreateCommand": "cd /workspaces && poetry install && poetry run create_dev_env && poetry run python manage.py migrate",
+	// "postCreateCommand": "cd /workspaces && poetry install && poetry run create_dev_env && poetry run python manage.py migrate",
 	"customizations": {
 		"vscode": {
 			"extensions": [

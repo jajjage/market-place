@@ -12,7 +12,7 @@ class EscrowTransaction(BaseModel):
     """
 
     # Existing fields shown for context
-    product = models.ForeignKey("products.Product", on_delete=models.PROTECT)
+    product = models.ForeignKey("product_base.Product", on_delete=models.PROTECT)
     buyer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="buyer_transactions",

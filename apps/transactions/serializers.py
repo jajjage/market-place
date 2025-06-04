@@ -1,7 +1,7 @@
 # serializers.py
 from rest_framework import serializers
 from apps.core.serializers import TimestampedModelSerializer
-from apps.products.models import Product
+from apps.products.product_base.models import Product
 from apps.transactions.models import EscrowTransaction, TransactionHistory
 from apps.transactions.utils.statuses import ESCROW_STATUSES
 

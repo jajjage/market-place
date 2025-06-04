@@ -120,3 +120,20 @@ class CategoryBreadcrumbSerializer(TimestampedModelSerializer):
             category = category.parent
 
         return breadcrumbs
+
+
+class CategoryTreeSerializer(TimestampedModelSerializer):
+    """Optimized serializer for category tree representation."""
+
+    subcategories = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Category
+        fields = ["id", "name", "description", "slug", "is_active", "subcategories"]
+
+    def get_subcategories(self, obj):
+        if hasattr(obj, "prefetched_subcategories"):
+            return CategoryTreeSerializer(
+                obj.prefetched_subcategories, many=True, context=self.context
+            ).data
+        return []

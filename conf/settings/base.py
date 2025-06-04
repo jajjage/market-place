@@ -70,7 +70,6 @@ INSTALLED_APPS = [
     # local apps
     "apps.users",
     "apps.core",
-    "apps.products",
     "apps.transactions",
     "apps.notifications",
     "apps.comments",
@@ -80,10 +79,23 @@ INSTALLED_APPS = [
     "apps.categories",
     "apps.auth.google",
     "apps.auth.traditional",
+    "apps.monitoring",
+    "apps.products.product_base",
+    "apps.products.product_detail",
+    "apps.products.product_condition",
+    "apps.products.product_brand",
+    "apps.products.product_rating",
+    "apps.products.product_metadata",
+    "apps.products.product_negotiation",
+    "apps.products.product_watchlist",
+    "apps.products.product_variant",
+    "apps.products.product_inventory",
+    "apps.products.product_image",
 ]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    "apps.monitoring.middleware.PerformanceMonitoringMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -142,6 +154,11 @@ REST_FRAMEWORK = {
         "watchlist_admin": "1000/hour",
         "ratings_create": "100/hour",
         "vote_helpful": "100/hour",
+        "category": "1000/hour",
+        "product_condition": "2000/hour",
+        "brand_search": "30/min",
+        "brand_create": "5/hour",
+        "breadcrumb": "200/hour",
     },
 }
 
@@ -285,6 +302,18 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = str(BASE_DIR / "media_root")
 ADMIN_MEDIA_PREFIX = STATIC_URL + "admin/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Optional: Custom media base URL for production
+# MEDIA_BASE_URL = 'https://your-cdn-domain.com/media/'
+
+# File upload settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Make sure media directory exists
+os.makedirs(MEDIA_ROOT, exist_ok=True)
+os.makedirs(os.path.join(MEDIA_ROOT, "products", "images"), exist_ok=True)
 
 # -----------------------------------------------------------------------------
 # Celery

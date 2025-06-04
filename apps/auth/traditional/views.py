@@ -16,7 +16,7 @@ from rest_framework_simplejwt.views import (
 from apps.core.views import BaseAPIView
 
 from apps.auth.traditional.throttles import UserLoginRateThrottle
-from apps.core.utils import CookieSet
+from apps.core.utils.cookie_set import CookieSet
 
 
 logger = logging.getLogger(__name__)

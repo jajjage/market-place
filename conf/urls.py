@@ -18,12 +18,22 @@ urlpatterns = [
     path("api/v1/", include("apps.auth.google.urls")),
     path("api/v1/", include("apps.auth.traditional.urls")),
     path("api/v1/", include("apps.users.urls")),
-    path("api/v1/", include("apps.products.urls")),
     path("api/v1/", include("apps.transactions.urls")),
     path("api/v1/", include("apps.comments.urls")),
     path("api/v1/", include("apps.store.urls")),
     path("api/v1/", include("apps.disputes.urls")),
     path("api/v1/", include("apps.categories.urls")),
+    path("api/v1/", include("apps.products.product_base.urls")),
+    path("api/v1/", include("apps.products.product_detail.urls")),
+    path("api/v1/", include("apps.products.product_condition.urls")),
+    path("api/v1/", include("apps.products.product_brand.urls")),
+    path("api/v1/", include("apps.products.product_rating.urls")),
+    path("api/v1/", include("apps.products.product_metadata.urls")),
+    path("api/v1/", include("apps.products.product_negotiation.urls")),
+    path("api/v1/", include("apps.products.product_watchlist.urls")),
+    path("api/v1/", include("apps.products.product_variant.urls")),
+    path("api/v1/", include("apps.products.product_inventory.urls")),
+    path("api/v1/", include("apps.products.product_image.urls")),
 ]
 
 if env("DEBUG") == "True":

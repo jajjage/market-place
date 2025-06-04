@@ -20,7 +20,7 @@ from .serializers import (
     TransactionHistorySerializer,
     ProductTrackingSerializer,
 )
-from apps.products.services import InventoryService
+from apps.products.product_inventory.services import InventoryService
 from .utils.transaction_filters import TransactionFilter
 
 

@@ -872,6 +872,21 @@ files = [
 python-dotenv = "*"
 
 [[package]]
+name = "drf-nested-routers"
+version = "0.94.2"
+description = "Nested resources for the Django Rest Framework"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "drf_nested_routers-0.94.2-py2.py3-none-any.whl", hash = "sha256:74dbdceeae2a32f8668ba0df8e3eeabeb9b1c64d2621d914901ae653e4e3bcff"},
+    {file = "drf_nested_routers-0.94.2.tar.gz", hash = "sha256:aa70923b716dc47cd93b8129b06be6c15706b405cf5f718f59cb8eed01de59cc"},
+]
+
+[package.dependencies]
+Django = ">=4.2"
+djangorestframework = ">=3.15.0"
+
+[[package]]
 name = "drf-spectacular"
 version = "0.28.0"
 description = "Sane and flexible OpenAPI 3 schema generation for Django REST framework"
@@ -2301,4 +2316,4 @@ brotli = ["brotli"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.13"
-content-hash = "8c85134b56afeb1b5f555317282d25ce2e8ff8f1ffb7f2b2023cd317161ecc2d"
+content-hash = "8abe6798479d9a7a6ff092c5ab22557be05bb390bc7abc7fd384009ec2263faa"

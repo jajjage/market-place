@@ -19,3 +19,11 @@ class TimestampedModelSerializer(serializers.ModelSerializer):
 
     created_at = serializers.DateTimeField(read_only=True, required=False)
     updated_at = serializers.DateTimeField(read_only=True, required=False)
+
+
+class UserShortSerializer(TimestampedModelSerializer):
+    """Serializer for a short representation of the user."""
+
+    class Meta:
+        model = get_user_model()
+        fields = ["id", "first_name", "first_name", "last_name"]
