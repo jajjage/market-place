@@ -7,6 +7,8 @@ import logging
 
 from .models import ProductCondition
 from apps.products.product_base.models import Product
+from apps.core.utils.cache_manager import CacheManager
+from apps.core.utils.cache_key_manager import CacheKeyManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,9 @@ class ProductConditionService:
         cls, include_stats: bool = False
     ) -> List[ProductCondition]:
         """Get all active conditions with optional statistics."""
-        cache_key = f"active_conditions_{include_stats}"
+        cache_key = CacheKeyManager.make_key(
+            "product_condition", "active_conditions", include_stats=include_stats
+        )
         cached_result = cache.get(cache_key)
 
         if cached_result:
@@ -47,7 +51,9 @@ class ProductConditionService:
     @classmethod
     def get_popular_conditions(cls, limit: int = 10) -> List[ProductCondition]:
         """Get most popular conditions based on product usage."""
-        cache_key = f"popular_conditions_{limit}"
+        cache_key = CacheKeyManager.make_key(
+            "product_condition", "popular_conditions", limit=limit
+        )
         cached_result = cache.get(cache_key)
 
         if cached_result:
@@ -71,7 +77,9 @@ class ProductConditionService:
     @classmethod
     def get_condition_analytics(cls, condition_id: int) -> Dict[str, Any]:
         """Get detailed analytics for a specific condition."""
-        cache_key = f"condition_analytics_{condition_id}"
+        cache_key = CacheKeyManager.make_key(
+            "product_condition", "condition_analytics", condition_id=condition_id
+        )
         cached_result = cache.get(cache_key)
 
         if cached_result:
@@ -223,15 +231,5 @@ class ProductConditionService:
 
     @classmethod
     def _clear_condition_caches(cls):
-        """Clear all condition-related caches."""
-        cache_keys = [
-            "active_conditions_True",
-            "active_conditions_False",
-        ]
-
-        # Clear popular conditions cache
-        for limit in [5, 10, 15, 20]:
-            cache_keys.append(f"popular_conditions_{limit}")
-
-        # Clear analytics cache (more complex - you might want to use cache versioning)
-        cache.delete_many(cache_keys)
+        """Clear all condition-related caches using the centralized manager."""
+        CacheManager.invalidate("product_condition")

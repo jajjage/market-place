@@ -1,4 +1,5 @@
 from django.http import Http404, JsonResponse
+from django.views.decorators.cache import cache_page
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.throttling import AnonRateThrottle
@@ -54,8 +55,20 @@ class BaseResponseMixin:
 
 
 class BaseViewSet(ModelViewSet, BaseResponseMixin):
-    """Base ViewSet for patient-related models with standardized CRUD operations."""
+    """
+    Base ViewSet for patient-related models with standardized CRUD operations,
+    plus configurable caching on `list` and `retrieve`.
+    """
 
+    # === CONFIGURABLE CACHE TIMEOUTS ===
+    # Subclasses can override these. If set to an integer (seconds),
+    # the corresponding method will be wrapped in cache_page(timeout).
+    cache_list_seconds = None
+    cache_retrieve_seconds = None
+
+    # ------------------------------------
+    # CREATE
+    # ------------------------------------
     def create(self, request, *args, **kwargs):
         """
         Standardized create method with proper error handling and response format.
@@ -71,15 +84,18 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
             )
         except ValidationError as e:
             return self.error_response(
-                message=str(e),  # detail.get("non_field_errors")
+                message=str(e),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
         except (TypeError, AttributeError, PermissionError) as e:
             return self.error_response(
-                message=f"Failed to create {self.get_model_name().lower()}: {str(e)!s}",
+                message=f"Failed to create {self.get_model_name().lower()}: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    # ------------------------------------
+    # UPDATE
+    # ------------------------------------
     def update(self, request, *args, **kwargs):
         """
         Standardized update method with proper error handling and response format.
@@ -104,10 +120,13 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
             )
         except (PermissionError, AttributeError, TypeError) as e:
             return self.error_response(
-                message=f"Failed to update {self.get_model_name().lower()}: {str(e)!s}",
+                message=f"Failed to update {self.get_model_name().lower()}: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    # ------------------------------------
+    # DESTROY
+    # ------------------------------------
     def destroy(self, request, *args, **kwargs):
         """
         Standardized delete method with proper error handling and response format.
@@ -122,13 +141,16 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
             )
         except (Http404, PermissionError, ValidationError) as e:
             return self.error_response(
-                message=f"Failed to delete {self.get_model_name().lower()}: {str(e)!s}",
+                message=f"Failed to delete {self.get_model_name().lower()}: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def list(self, request, *args, **kwargs):
+    # ------------------------------------
+    # LIST (with optional caching)
+    # ------------------------------------
+    def _list_logic(self, request, *args, **kwargs):
         """
-        Standardized list method with proper error handling and response format.
+        The core `list` logic—pulled out so we can wrap it in cache_page if needed.
         """
         try:
             queryset = self.filter_queryset(self.get_queryset())
@@ -150,18 +172,31 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
             )
         except (TypeError, AttributeError) as e:
             return self.error_response(
-                message=f"Error processing {self.get_model_name().lower()} list: {str(e)!s}",
+                message=f"Error processing {self.get_model_name().lower()} list: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def retrieve(self, request, *args, **kwargs):
+    def list(self, request, *args, **kwargs):
         """
-        Standardized retrieve method with proper error handling and response format.
+        Optionally wraps `_list_logic` in cache_page if `cache_list_seconds` is set.
+        """
+        if isinstance(self.cache_list_seconds, int):
+            # Wrap the core logic in a cache_page decorator
+            cached_view = cache_page(self.cache_list_seconds)(self._list_logic)
+            return cached_view(request, *args, **kwargs)
+        # No caching: just call core logic
+        return self._list_logic(request, *args, **kwargs)
+
+    # ------------------------------------
+    # RETRIEVE (with optional caching)
+    # ------------------------------------
+    def _retrieve_logic(self, request, *args, **kwargs):
+        """
+        The core `retrieve` logic—pulled out so we can wrap it in cache_page if needed.
         """
         try:
             instance = self.get_object()
             serializer = self.get_serializer(instance)
-
             return self.success_response(
                 data=serializer.data,
                 message=f"{self.get_model_name()} retrieved successfully",
@@ -177,8 +212,22 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Optionally wraps `_retrieve_logic` in cache_page if `cache_retrieve_seconds` is set.
+        """
+        if isinstance(self.cache_retrieve_seconds, int):
+            cached_view = cache_page(self.cache_retrieve_seconds)(self._retrieve_logic)
+            return cached_view(request, *args, **kwargs)
+        return self._retrieve_logic(request, *args, **kwargs)
+
+    # ------------------------------------
+    # HELPER
+    # ------------------------------------
     def get_model_name(self) -> str:
-        """AHelper method to get the model name for messages."""
+        """
+        Helper method to get the model name for messages.
+        """
         return self.__class__.__name__.replace("ViewSet", "")
 
 

@@ -64,8 +64,6 @@ class Brand(BaseModel):
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
-        # Invalidate cache on save
-        self.invalidate_cache()
 
     def get_absolute_url(self):
         return reverse("brand-detail", kwargs={"slug": self.slug})
@@ -73,17 +71,6 @@ class Brand(BaseModel):
     @property
     def cache_key(self):
         return f"brand:{self.id}"
-
-    def invalidate_cache(self):
-        """Invalidate all related cache keys"""
-        cache.delete_many(
-            [
-                f"{self.cache_key}:stats",
-                f"{self.cache_key}:products",
-                "brands:featured",
-                "brands:active",
-            ]
-        )
 
     def get_stats(self, use_cache=True):
         """Get brand statistics with caching"""

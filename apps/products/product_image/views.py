@@ -3,7 +3,6 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
-from apps.core.throttle import ThrottledException
 from apps.core.views import BaseViewSet
 from apps.core.utils.cache_manager import CacheManager
 from apps.products.product_image.models import ProductImage
@@ -42,18 +41,6 @@ class ProductImageViewSet(BaseViewSet):
         else:
             throttle_classes = []
         return [throttle() for throttle in throttle_classes]
-
-    def handle_exception(self, exc):
-        """Custom exception handling for throttling."""
-        if hasattr(exc, "default_code") and exc.default_code == "throttled":
-            # Convert DRF throttled exception to custom one
-            scope = (
-                getattr(self.get_throttles()[0], "scope", None)
-                if self.get_throttles()
-                else None
-            )
-            raise ThrottledException(wait=exc.wait, scope=scope)
-        return super().handle_exception(exc)
 
     @method_decorator(cache_page(60 * 15))  # 15 minutes
     @method_decorator(vary_on_headers("Authorization"))

@@ -146,6 +146,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
+    "EXCEPTION_HANDLER": "apps.core.exceptions.custom_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
         "anon": "100/day",
         "user_login": "5/minute",
@@ -158,7 +159,7 @@ REST_FRAMEWORK = {
         "category": "1000/hour",
         "product_condition": "2000/hour",
         "brand_search": "30/min",
-        "brand_create": "5/hour",
+        "brand_create": "100/min",
         "breadcrumb": "200/hour",
     },
 }

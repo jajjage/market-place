@@ -10,7 +10,7 @@ class ProductConditionService:
     @staticmethod
     def by_condition(view, request, condition_id=None):
         cache_key = CacheKeyManager.make_key(
-            "product", "by_condition", condition_id=condition_id
+            "base", "by_condition", condition_id=condition_id
         )
         cached_data = cache.get(cache_key)
         if cached_data:

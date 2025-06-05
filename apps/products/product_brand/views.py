@@ -2,13 +2,11 @@
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_headers
-from rest_framework import viewsets, status, filters
+from rest_framework import status, filters
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
 
-from apps.core.throttle import ThrottledException
 from apps.core.views import BaseViewSet
 from apps.products.product_brand.utils.rate_limiting import (
     BrandCreateThrottle,
@@ -48,6 +46,8 @@ class BrandViewSet(BaseViewSet):
     - GET /brands/{id}/analytics/ - Brand analytics (admin only)
     """
 
+    cache_list_seconds = 300  # List is cached for 5 minutes
+    cache_retrieve_seconds = 600
     queryset = Brand.objects.all()
     pagination_class = BrandPagination
     filter_backends = [
@@ -66,11 +66,12 @@ class BrandViewSet(BaseViewSet):
     ordering = ["name"]
 
     def get_serializer_class(self):
-        if self.action == "list":
+        if self.action in ("list", "search"):
             return BrandListSerializer
         elif self.action == "create":
             return BrandCreateSerializer
-        return BrandDetailSerializer
+        else:
+            return BrandDetailSerializer
 
     def get_permissions(self):
         if self.action in [
@@ -92,18 +93,6 @@ class BrandViewSet(BaseViewSet):
             throttle_classes = [BrandCreateThrottle]
         return [throttle() for throttle in throttle_classes]
 
-    def handle_exception(self, exc):
-        """Custom exception handling for throttling."""
-        if hasattr(exc, "default_code") and exc.default_code == "throttled":
-            # Convert DRF throttled exception to custom one
-            scope = (
-                getattr(self.get_throttles()[0], "scope", None)
-                if self.get_throttles()
-                else None
-            )
-            raise ThrottledException(wait=exc.wait, scope=scope)
-        return super().handle_exception(exc)
-
     def get_queryset(self):
         """Optimize queryset based on action"""
         queryset = Brand.objects.active()
@@ -117,16 +106,6 @@ class BrandViewSet(BaseViewSet):
 
         return queryset
 
-    @method_decorator(cache_page(300))  # 5 minute cache
-    def list(self, request, *args, **kwargs):
-        """Cached brand list with filtering"""
-        return super().list(request, *args, **kwargs)
-
-    @method_decorator(cache_page(600))  # 10 minute cache
-    def retrieve(self, request, *args, **kwargs):
-        """Cached brand detail"""
-        return super().retrieve(request, *args, **kwargs)
-
     @action(detail=False, methods=["GET"])
     @method_decorator(cache_page(900))  # 15 minute cache
     def featured(self, request):
@@ -134,38 +113,74 @@ class BrandViewSet(BaseViewSet):
         limit = int(request.query_params.get("limit", 10))
         brands = BrandService.get_featured_brands(limit)
         serializer = BrandListSerializer(brands, many=True)
-        return Response(serializer.data)
+        return self.success_response(
+            data=serializer.data, status_code=status.HTTP_200_OK
+        )
 
-    @action(detail=False, methods=["GET"])
+    @action(detail=False, methods=["get"], url_path="search")
     def search(self, request):
-        """Advanced brand search"""
-        query = request.query_params.get("q", "")
-        if len(query) < 2:
-            return Response(
-                {"error": "Search query must be at least 2 characters"},
-                status=status.HTTP_400_BAD_REQUEST,
+        """Advanced brand search with multiple filters."""
+        # 1) Pull & clean the q param (strip surrounding quotes if present)
+        raw_q = request.query_params.get("q", "").strip()
+        if len(raw_q) >= 2 and (
+            (raw_q[0] == raw_q[-1] == '"') or (raw_q[0] == raw_q[-1] == "'")
+        ):
+            q = raw_q[1:-1]
+        else:
+            q = raw_q
+
+        if len(q) < 2:
+            return self.error_response(
+                message="Search query must be at least 2 characters",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        filters = {
-            "country": request.query_params.get("country"),
-            "verified_only": request.query_params.get("verified") == "true",
-            "min_products": request.query_params.get("min_products"),
-            "min_rating": request.query_params.get("min_rating"),
-        }
+        country = request.query_params.get("country")
+        verified_only = request.query_params.get("verified") == "true"
+        min_products = request.query_params.get("min_products")
+        min_rating = request.query_params.get("min_rating")
 
-        # Remove None values
-        filters = {k: v for k, v in filters.items() if v is not None}
+        # 2) Build base queryset
+        qs = Brand.objects.filter(name__icontains=q)
 
-        brands = BrandService.search_brands(query, filters)
+        if country:
+            qs = qs.filter(country_of_origin__iexact=country)
 
-        # Paginate results
-        page = self.paginate_queryset(brands)
+        if verified_only:
+            qs = qs.filter(is_verified=True)
+
+        # 3) If you have “cached_…” fields, filter on them directly:
+        if min_products is not None:
+            try:
+                min_prod_int = int(min_products)
+            except ValueError:
+                return self.error_response(
+                    message="`min_products` must be an integer",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = qs.filter(cached_product_count__gte=min_prod_int)
+
+        if min_rating is not None:
+            try:
+                min_rating_dec = float(min_rating)
+            except ValueError:
+                return self.error_response(
+                    message="`min_rating` must be a number (e.g. 4.5)",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = qs.filter(cached_average_rating__gte=min_rating_dec)
+
+        # 4) Paginate & serialize exactly like in “list”
+        page = self.paginate_queryset(qs)
         if page is not None:
-            serializer = BrandListSerializer(page, many=True)
+            serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
-        serializer = BrandListSerializer(brands, many=True)
-        return Response(serializer.data)
+        serializer = self.get_serializer(qs, many=True)
+        return self.success_response(
+            data=serializer.data,
+            message=f"Search results for '{q}'",
+        )
 
     @action(detail=True, methods=["GET"], permission_classes=[IsAdminUser])
     def analytics(self, request, pk=None):
@@ -174,7 +189,7 @@ class BrandViewSet(BaseViewSet):
         days = int(request.query_params.get("days", 30))
 
         analytics = BrandService.get_brand_analytics(brand.id, days)
-        return Response(analytics)
+        return self.success_response(data=analytics)
 
     @action(detail=True, methods=["POST"], permission_classes=[IsAdminUser])
     def refresh_stats(self, request, pk=None):
@@ -184,10 +199,10 @@ class BrandViewSet(BaseViewSet):
 
         update_brand_stats.delay(brand.id)
 
-        return Response({"message": "Statistics refresh initiated"})
+        return self.success_response(message="Statistics refresh initiated")
 
 
-class BrandRequestViewSet(viewsets.ModelViewSet):
+class BrandRequestViewSet(BaseViewSet):
     """
     Brand Request ViewSet
 
@@ -198,6 +213,8 @@ class BrandRequestViewSet(viewsets.ModelViewSet):
     - PATCH /brand-requests/{id}/process/ - Process request (admin only)
     """
 
+    cache_list_seconds = 300  # List is cached for 5 minutes
+    cache_retrieve_seconds = 600
     queryset = BrandRequest.objects.all()
     serializer_class = BrandRequestSerializer
     permission_classes = [IsAuthenticated]
@@ -222,7 +239,9 @@ class BrandRequestViewSet(viewsets.ModelViewSet):
             )
             serializer.instance = brand_request
         except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return self.error_response(
+                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+            )
 
     @action(detail=True, methods=["PATCH"], permission_classes=[IsAdminUser])
     def process(self, request, pk=None):
@@ -232,9 +251,9 @@ class BrandRequestViewSet(viewsets.ModelViewSet):
         notes = request.data.get("notes", "")
 
         if action_type not in ["approve", "reject"]:
-            return Response(
-                {"error": 'Action must be either "approve" or "reject"'},
-                status=status.HTTP_400_BAD_REQUEST,
+            return self.error_response(
+                message='Action must be either "approve" or "reject"',
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
@@ -246,13 +265,17 @@ class BrandRequestViewSet(viewsets.ModelViewSet):
             )
 
             serializer = self.get_serializer(processed_request)
-            return Response(serializer.data)
+            return self.success_response(
+                data=serializer.data, status_code=status.HTTP_200_OK
+            )
 
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return self.error_response(
+                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+            )
 
 
-class BrandVariantViewSet(viewsets.ModelViewSet):
+class BrandVariantViewSet(BaseViewSet):
     """Brand Variant management"""
 
     serializer_class = BrandVariantSerializer
@@ -285,7 +308,9 @@ class BrandVariantViewSet(viewsets.ModelViewSet):
         """Auto-generate variants for a brand"""
         variants = BrandVariantService.auto_generate_variants(brand_pk)
         serializer = BrandVariantSerializer(variants, many=True)
-        return Response({"created_count": len(variants), "variants": serializer.data})
+        return self.success_response(
+            data={"variants": serializer.data, "created_count": len(variants)}
+        )
 
     @action(detail=False, methods=["GET"])
     def for_locale(self, request, brand_pk=None):
@@ -299,9 +324,11 @@ class BrandVariantViewSet(viewsets.ModelViewSet):
 
         if variant:
             serializer = BrandVariantSerializer(variant)
-            return Response(serializer.data)
+            return self.success_response(
+                data=serializer.data, status_code=status.HTTP_200_OK
+            )
         else:
-            return Response(
-                {"error": "No variant found for this locale"},
-                status=status.HTTP_404_NOT_FOUND,
+            return self.error_response(
+                message="No variant found for this locale",
+                status_code=status.HTTP_404_NOT_FOUND,
             )

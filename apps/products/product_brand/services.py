@@ -1,7 +1,7 @@
 from django.core.cache import cache
 from django.db import transaction
 from django.db import models
-from typing import List, Dict
+from typing import Any, List, Dict
 import logging
 
 from apps.products.product_brand.models import (
@@ -15,6 +15,8 @@ from apps.products.product_brand.tasks import (
     notify_brand_request_rejected,
     update_brand_stats,
 )
+from apps.core.utils.cache_manager import CacheManager
+from apps.core.utils.cache_key_manager import CacheKeyManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,8 @@ class BrandService:
     @staticmethod
     def get_featured_brands(limit: int = 10) -> List[Brand]:
         """Get featured brands with caching"""
-        cache_key = f"brands:featured:{limit}"
+        # Fixed: Use proper cache key construction
+        cache_key = CacheKeyManager.make_key("brand", "featured", limit=limit)
         brands = cache.get(cache_key)
 
         if brands is None:
@@ -71,6 +74,14 @@ class BrandService:
             brand_request.status = BrandRequest.Status.APPROVED
             brand_request.save()
 
+            # Comprehensive cache invalidation
+            # This will invalidate ALL brand-related cache keys using wildcard patterns
+            CacheManager.invalidate("brand")
+
+            # Or be more specific if you want:
+            # CacheManager.invalidate_pattern("brand", "featured")  # only featured brands
+            # CacheManager.invalidate_pattern("brand", "list")      # only brand lists
+
             # Trigger async stats calculation
             update_brand_stats.delay(brand.id)
 
@@ -79,16 +90,97 @@ class BrandService:
     @staticmethod
     def get_brand_analytics(brand_id: int, days: int = 30) -> Dict:
         """Get brand analytics data"""
-        cache_key = f"brand:{brand_id}:analytics:{days}"
+        # Fixed: Now uses proper analytics key template
+        cache_key = CacheKeyManager.make_key(
+            "brand", "analytics", brand_id=brand_id, days=days
+        )
         analytics = cache.get(cache_key)
 
         if analytics is None:
             # This would typically involve complex queries
-            # Better to move to a separate analytics service
-            # analytics = BrandAnalyticsService.calculate_analytics(brand_id, days)
+            analytics = {}  # Placeholder for actual analytics calculation
             cache.set(cache_key, analytics, timeout=3600)
 
         return analytics
+
+    @staticmethod
+    def get_brand_detail(brand_id: int) -> "Brand":
+        """Get brand detail with enhanced cache management"""
+        # Check if cache exists first
+        if CacheManager.cache_exists("brand", "detail", id=brand_id):
+            cache_key = CacheKeyManager.make_key("brand", "detail", id=brand_id)
+            return cache.get(cache_key)
+
+        # Fetch from database and cache
+        from apps.products.product_brand.models import Brand
+
+        brand = Brand.objects.with_stats().get(id=brand_id)
+
+        cache_key = CacheKeyManager.make_key("brand", "detail", id=brand_id)
+        cache.set(cache_key, brand, timeout=1800)
+
+        return brand
+
+    @staticmethod
+    def update_brand(brand_id: int, **update_data):
+        """Update brand and invalidate related caches"""
+        from apps.products.product_brand.models import Brand
+
+        # Update the brand
+        Brand.objects.filter(id=brand_id).update(**update_data)
+
+        # Targeted cache invalidation
+        CacheManager.invalidate_key("brand", "detail", id=brand_id)
+        CacheManager.invalidate_key("brand", "stats", id=brand_id)
+        CacheManager.invalidate_pattern("brand", "variants_all", id=brand_id)
+
+        # Invalidate broader caches that might be affected
+        CacheManager.invalidate_pattern("brand", "featured")
+        CacheManager.invalidate_pattern("brand", "list")
+
+        logger.info(f"Updated brand {brand_id} and invalidated related caches")
+
+    @staticmethod
+    def get_brand_stats(brand_id: int) -> Dict:
+        """Get brand stats with caching"""
+        cache_key = CacheKeyManager.make_key("brand", "stats", id=brand_id)
+        stats = cache.get(cache_key)
+
+        if stats is None:
+            # Calculate stats
+            stats = {}  # Placeholder for actual stats calculation
+            cache.set(cache_key, stats, timeout=3600)
+
+        return stats
+
+    @staticmethod
+    def invalidate_brand_cache(brand_id: int = None):
+        """Invalidate brand-related cache"""
+        if brand_id:
+            # Invalidate specific brand caches
+            CacheManager.invalidate_key("brand", "detail", id=brand_id)
+            CacheManager.invalidate_key("brand", "stats", id=brand_id)
+            CacheManager.invalidate_pattern("brand", "variants_all", id=brand_id)
+            CacheManager.invalidate_pattern(
+                "brand", "all_analytics"
+            )  # All analytics since they might be affected
+        else:
+            # Invalidate all brand caches
+            CacheManager.invalidate("brand")
+
+    @staticmethod
+    def get_cache_diagnostics() -> Dict[str, Any]:
+        """Get cache diagnostics for monitoring"""
+        return {
+            "brand_cache_stats": CacheManager.get_cache_stats("brand"),
+            "brand_variant_cache_stats": CacheManager.get_cache_stats("brand_variant"),
+            "available_templates": {
+                "brand": CacheKeyManager.get_available_templates("brand"),
+                "brand_variant": CacheKeyManager.get_available_templates(
+                    "brand_variant"
+                ),
+            },
+        }
 
 
 class BrandRequestService:
@@ -161,9 +253,16 @@ class BrandVariantService:
         # Apply translations if available
         variant_data = BrandVariantService._apply_translations(brand, variant_data)
 
-        return BrandVariant.objects.create(
+        variant = BrandVariant.objects.create(
             brand=brand, created_by=created_by, **variant_data
         )
+
+        # Fixed: Proper cache invalidation for brand variants
+        CacheManager.invalidate_pattern("brand_variant", "all", brand_id=brand_id)
+        # Also invalidate parent brand caches that might be affected
+        BrandService.invalidate_brand_cache(brand_id)
+
+        return variant
 
     @staticmethod
     def _apply_translations(brand: Brand, variant_data: dict) -> dict:

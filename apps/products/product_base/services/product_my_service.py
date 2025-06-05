@@ -7,7 +7,7 @@ class ProductMyService:
     @staticmethod
     def get_my_products(view, request):
         cache_key = CacheKeyManager.make_key(
-            "product", "my_products", user_id=request.user.id
+            "base", "my_products", user_id=request.user.id
         )
         cached_data = cache.get(cache_key)
         if cached_data:

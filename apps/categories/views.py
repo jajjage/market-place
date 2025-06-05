@@ -6,7 +6,6 @@ from django.views.decorators.cache import cache_page
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from apps.categories.throttle import CategoryRateThrottle
-from apps.core.throttle import ThrottledException
 from apps.core.views import BaseViewSet
 from apps.core.permissions import IsOwnerOrReadOnly
 from apps.categories.models import Category
@@ -52,18 +51,6 @@ class CategoryViewSet(BaseViewSet):
             return queryset.select_related("parent")
 
         return queryset
-
-    def handle_exception(self, exc):
-        """Custom exception handling for throttling."""
-        if hasattr(exc, "default_code") and exc.default_code == "throttled":
-            # Convert DRF throttled exception to custom one
-            scope = (
-                getattr(self.get_throttles()[0], "scope", None)
-                if self.get_throttles()
-                else None
-            )
-            raise ThrottledException(wait=exc.wait, scope=scope)
-        return super().handle_exception(exc)
 
     def create(self, request, *args, **kwargs):
         """Create a new category using service layer."""

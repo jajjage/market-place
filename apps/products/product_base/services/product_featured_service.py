@@ -6,7 +6,7 @@ from apps.products.product_base.serializers import ProductListSerializer
 class ProductFeaturedService:
     @staticmethod
     def get_featured(view, request):
-        cache_key = CacheKeyManager.make_key("product", "featured")
+        cache_key = CacheKeyManager.make_key("base", "featured")
         cached_data = cache.get(cache_key)
         if cached_data:
             view.logger.info(f"Cache HIT for featured products: {cache_key}")

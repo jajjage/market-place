@@ -77,10 +77,10 @@ CACHES = {
         "LOCATION": os.environ.get("REDIS_URL", default="redis://redis:6379/1"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
+            "SERIALIZER": "django_redis.serializers.pickle.PickleSerializer",
             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
         },
-        "KEY_PREFIX": "brand_api",
+        "KEY_PREFIX": "safetrade",
         "TIMEOUT": 300,  # 5 minutes default
     },
     "long_term": {
@@ -89,7 +89,7 @@ CACHES = {
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
-        "KEY_PREFIX": "product_long",
+        "KEY_PREFIX": "safetrade_long",
         "TIMEOUT": 3600,  # 1 hour default
     },
 }
@@ -165,7 +165,7 @@ CACHE_HIT_RATIO_THRESHOLD = 80  # in percent
 # 4) Celery‐beat interval (in seconds) for the periodic performance check:
 PERFORMANCE_CHECK_INTERVAL_SECONDS = 300  # run every 5 minutes
 
-
+SLOW_REQUEST_THRESHOLD_SEC = 2  # log any request taking longer than 2 seconds
 # ─────────────────────────────────────────────────────
 # Create a “logs” directory next to this settings file:
 # ─────────────────────────────────────────────────────
@@ -355,62 +355,70 @@ CACHE_INVALIDATION_PATTERNS = {
 # -----------------------------------------------------------------------------
 CACHE_KEY_TEMPLATES = {
     "product_base": {
-        "detail": "product_base:detail:{id}",
-        "detail_by_shortcode": "product_base:detail_by_shortcode:{short_code}",
-        "list": "product_base:list:{page}:{filters}",
-        "my_products": "product_base:my_products:{user_id}:{page}:{filters}",
-        "featured": "product_base:featured",
-        "stats": "product_base:stats:{user_id}",
-        "watchers": "product_base:watchers:{id}",
-        "share_links": "product_base:share_links:{short_code}",
-        "by_condition": "product_base:by_condition:{condition_id}:{filters}",
-        "toggle_active": "product_base:toggle_active:{id}",
-        "toggle_featured": "product_base:toggle_featured:{id}",
+        "detail": "base:detail:{id}",
+        "detail_by_shortcode": "base:detail_by_shortcode:{short_code}",
+        "list": "base:list:{page}:{filters}",
+        "my_products": "base:my_products:{user_id}:{page}:{filters}",
+        "featured": "base:featured",
+        "stats": "base:stats:{user_id}",
+        "watchers": "base:watchers:{id}",
+        "share_links": "base:share_links:{short_code}",
+        "by_condition": "base:by_condition:{condition_id}:{filters}",
+        "toggle_active": "base:toggle_active:{id}",
+        "toggle_featured": "base:toggle_featured:{id}",
         # Add more as needed for other endpoints
     },
     "product_breadcrumb": {
-        "product": "product_breadcrumb:product:{product_id}",
-        "all": "product_breadcrumb:all:*",
+        "product": "breadcrumb:product:{product_id}",
+        "all": "breadcrumb:all:*",
     },
-    "product_brand": {
-        # exact keys (no wildcard) → use make_key("brand", key_name, **kwargs)
-        "detail": "product_brand:detail:{id}",
-        "stats": "product_brand:stats:{id}",
-        # wildcard patterns → use make_pattern("brand", key_name, **kwargs)
-        "variants": "product_brand:variants:{id}:{variant_id}",  # for a single variant
-        "variants_all": "product_brand:variants:{id}:*",  # wildcard to delete all variants
-        "featured": "product_brands:featured:*",  # wildcard listing
-        "list": "product_brand:list:*",  # wildcard for all paginated lists
+    "brand": {
+        # Exact keys (no wildcard) → use make_key("brand", key_name, **kwargs)
+        "detail": "brand:detail:{id}",
+        "stats": "brand:stats:{id}",
+        "analytics": "brand:analytics:{brand_id}:{days}",  # Added missing analytics key
+        # Wildcard patterns → use make_pattern("brand", key_name, **kwargs)
+        "variants": "brand:variants:{id}:{variant_id}",  # for a single variant
+        "variants_all": "brand:variants:{id}:*",  # wildcard to delete all variants
+        "featured": "brand:featured:*",  # Fixed: changed from "brands:" to "brand:"
+        "list": "brand:list:*",  # wildcard for all paginated lists
+        # Additional patterns for comprehensive invalidation
+        "all_analytics": "brand:analytics:*",  # wildcard for all analytics
+        "all_stats": "brand:stats:*",  # wildcard for all stats
+        "all_details": "brand:detail:*",  # wildcard for all details
+    },
+    "brand_variant": {
+        "all": "brand:variants:{brand_id}:*",  # for invalidating all variants of a brand
     },
     "product_inventory": {
-        "detail": "product_inventory:detail:{id}",
-        "price_stats": "product_inventory:price_stats:{id}",
-        "stock": "product_inventory:stock:{id}:{variant_id}",
-        "stock_all": "product_inventory:stock:{id}:*",  # wildcard for all stock keys of an item
-        "list": "product_inventory:list:*",
+        "detail": "inventory:detail:{id}",
+        "price_stats": "inventory:price_stats:{id}",
+        "stock": "inventory:stock:{id}:{variant_id}",
+        "stock_all": "inventory:stock:{id}:*",  # wildcard for all stock keys of an item
+        "list": "inventory:list:*",
     },
     "product_watchlist": {
-        "user_list": "product_watchlist:user:{id}:items",  # for a single user’s watchlist
-        "items_all": "product_watchlist:items:{id}:*",  # wildcard to delete all items of a user
+        "user_list": "watchlist:user:{id}:items",  # for a single user’s watchlist
+        "items_all": "watchlist:items:{id}:*",  # wildcard to delete all items of a user
     },
     # Cache configuration in settings
     "product_image": {
-        "list": "product_image:list:{product_id}",
-        "primary": "product_image:primary:{product_id}",
-        "variants": "product_image:variants:{product_id}",
-        "variants_all": "product_image:variants:{product_id}:*",  # For invalidation
+        "list": "image:list:{product_id}",
+        "primary": "image:primary:{product_id}",
+        "variants": "image:variants:{product_id}",
+        "variants_all": "image:variants:{product_id}:*",  # For invalidation
     },
     "product_detail": {
-        "list": "product_detail:list:{product_id}",
-        "highlighted": "product_detail:highlighted:{product_id}",
-        "template": "product_detail:template:{template_id}",
-        "detail_type": "product_detail:type:{detail_type}",
+        "list": "detail:list:{product_id}",
+        "highlighted": "detail:highlighted:{product_id}",
+        "template": "detail:template:{template_id}",
+        "detail_type": "detail:type:{detail_type}",
     },
     "product_meta": {
-        "detail": "product_meta:detail:{id}",
-        "list": "product_meta:list",
-        "featured": "product_meta:featured",
-        "views_buf": "product_meta:views_buf:{id}",
+        "detail": "meta:detail:{id}",
+        "list": "meta:list",
+        "featured": "meta:featured",
+        "views_buf": "meta:views_buf:{id}",
     },
     # …add new resources here as needed…
 }

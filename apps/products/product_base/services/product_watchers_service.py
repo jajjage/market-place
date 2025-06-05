@@ -8,7 +8,7 @@ from django.db.models.functions import Concat
 class ProductWatchersService:
     @staticmethod
     def get_watchers(view, request, pk=None):
-        cache_key = CacheKeyManager.make_key("product", "watchers", id=pk)
+        cache_key = CacheKeyManager.make_key("base", "watchers", id=pk)
         cached_data = cache.get(cache_key)
         if cached_data:
             view.logger.info(f"Cache HIT for watchers: {cache_key}")

@@ -13,7 +13,7 @@ class ProductDetailService:
     def retrieve_by_shortcode(view, request, *args, **kwargs):
         short_code = kwargs.get("short_code")
         cache_key = CacheKeyManager.make_key(
-            "product", "detail_by_shortcode", short_code=short_code
+            "base", "detail_by_shortcode", short_code=short_code
         )
         cached_data = cache.get(cache_key)
         if cached_data:

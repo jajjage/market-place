@@ -1,10 +1,13 @@
 from rest_framework import serializers
+
+from apps.core.serializers import TimestampedModelSerializer
 from .models import Brand, BrandRequest, BrandVariant
 
 
-class BrandListSerializer(serializers.ModelSerializer):
+class BrandListSerializer(TimestampedModelSerializer):
     """Lightweight serializer for brand lists"""
 
+    social_media_data = serializers.SerializerMethodField()
     product_count = serializers.IntegerField(
         source="cached_product_count", read_only=True
     )
@@ -24,12 +27,15 @@ class BrandListSerializer(serializers.ModelSerializer):
             "is_featured",
             "product_count",
             "average_rating",
+            "social_media_data",
         ]
 
+    def get_social_media_data(self, obj):
+        # obj.social_media is already a dict because JSONField → Python dict
+        return obj.social_media or {}
 
-class BrandDetailSerializer(serializers.ModelSerializer):
-    """Detailed serializer for single brand view"""
 
+class BrandDetailSerializer(TimestampedModelSerializer):
     stats = serializers.SerializerMethodField()
     social_links = serializers.SerializerMethodField()
 
@@ -48,7 +54,7 @@ class BrandDetailSerializer(serializers.ModelSerializer):
         ]
 
 
-class BrandCreateSerializer(serializers.ModelSerializer):
+class BrandCreateSerializer(TimestampedModelSerializer):
     """Serializer for creating brands (admin only)"""
 
     class Meta:
@@ -61,7 +67,7 @@ class BrandCreateSerializer(serializers.ModelSerializer):
         return value
 
 
-class BrandRequestSerializer(serializers.ModelSerializer):
+class BrandRequestSerializer(TimestampedModelSerializer):
     """Serializer for brand requests"""
 
     requested_by_username = serializers.CharField(
@@ -74,7 +80,7 @@ class BrandRequestSerializer(serializers.ModelSerializer):
         read_only_fields = ["requested_by", "status", "processed_by", "created_brand"]
 
 
-class BrandVariantSerializer(serializers.ModelSerializer):
+class BrandVariantSerializer(TimestampedModelSerializer):
     """Serializer for brand variants"""
 
     class Meta:

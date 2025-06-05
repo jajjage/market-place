@@ -11,7 +11,8 @@ from django.core.files.base import ContentFile
 from django.conf import settings
 from PIL import Image
 import mimetypes
-from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
+from apps.core.utils.cache_key_manager import CacheKeyManager
+from apps.core.utils.cache_manager import CacheManager
 from apps.products.product_image.models import ProductImageVariant, ProductImage
 
 logger = logging.getLogger("images_performance")
@@ -357,7 +358,7 @@ class ProductImageService:
         query.update(is_primary=False)
 
     @staticmethod
-    def get_image_variants(product_id: int) -> Dict[str, List["ProductImage"]]:
+    def get_images_by_variant(product_id: int) -> Dict[str, List["ProductImage"]]:
         """Get images grouped by variant"""
         cache_key = CacheKeyManager.make_key(
             "product_image", "variants", product_id=product_id

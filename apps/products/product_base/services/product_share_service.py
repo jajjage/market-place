@@ -11,7 +11,7 @@ class ProductShareService:
     @staticmethod
     def get_share_links(view, request, short_code=None):
         cache_key = CacheKeyManager.make_key(
-            "product", "share_links", short_code=short_code
+            "base", "share_links", short_code=short_code
         )
         cached_data = cache.get(cache_key)
         if cached_data:

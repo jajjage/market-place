@@ -9,6 +9,8 @@ from django.core.cache import cache
 from typing import List, Dict
 
 from apps.products.product_base.models import Product
+from apps.core.utils.cache_manager import CacheManager
+from apps.core.utils.cache_key_manager import CacheKeyManager
 
 from .models import (
     ProductVariantType,
@@ -25,28 +27,12 @@ class ProductVariantService:
     CACHE_TIMEOUT = CACHE_TTL  # e.g. 300 seconds (5 minutes)
 
     @staticmethod
-    def get_cache_key(view_name: str, **kwargs) -> str:
-        """
-        Generate a cache key for variant lookups.
-        Allows parameters like active_only, with_options, product_id.
-        """
-        active_only = kwargs.get("active_only", "")
-        with_options = kwargs.get("with_options", "")
-        product_id = kwargs.get("product_id", "")
-
-        key_parts = [
-            str(part) for part in [active_only, with_options, product_id] if part != ""
-        ]
-        key_suffix = ":".join(key_parts) if key_parts else "default"
-        return f"variants:{view_name}:{key_suffix}"
-
-    @staticmethod
     def get_variant_types(active_only: bool = True):
         """
         Return a QuerySet (cached) of ProductVariantType, optionally filtering to is_active=True.
         """
-        cache_key = ProductVariantService.get_cache_key(
-            "variant_types", active_only=active_only
+        cache_key = CacheKeyManager.make_key(
+            "product_variant_types", active_only=active_only
         )
         cached = cache.get(cache_key)
         if cached is not None:
@@ -66,8 +52,8 @@ class ProductVariantService:
         Return a list of ProductVariant for a given product_id (cached).
         If with_options=True, do a prefetch on variant options.
         """
-        cache_key = ProductVariantService.get_cache_key(
-            "product_variants", product_id=product_id, with_options=with_options
+        cache_key = CacheKeyManager.make_key(
+            "product_variant", product_id=product_id, with_options=with_options
         )
         cached = cache.get(cache_key)
         if cached is not None:
@@ -85,48 +71,12 @@ class ProductVariantService:
         return result
 
     @staticmethod
-    @transaction.atomic
-    def create_variant_combination(
-        product_id: int, option_ids: List[int], sku: str, **kwargs
-    ) -> ProductVariant:
-        """
-        Create a single variant for product_id using exactly the provided option_ids.
-        Raises ValueError/ValidationError if the option_ids do not correspond to unique variant types.
-        """
-        options = ProductVariantOption.objects.filter(id__in=option_ids, is_active=True)
-        variant_types = set(option.variant_type_id for option in options)
-
-        if len(variant_types) != len(option_ids):
-            raise ValueError("Options must belong to different variant types")
-
-        variant = ProductVariant.objects.create(
-            product_id=product_id, sku=sku, **kwargs
-        )
-        variant.options.set(options)
-
-        # Clear any cached “product_variants” for this product (both with and without options).
-        cache.delete(
-            ProductVariantService.get_cache_key(
-                "product_variants", product_id=product_id, with_options=True
-            )
-        )
-        cache.delete(
-            ProductVariantService.get_cache_key(
-                "product_variants", product_id=product_id, with_options=False
-            )
-        )
-
-        return variant
-
-    @staticmethod
     def get_variant_matrix(product_id: int) -> Dict:
         """
         Build a “matrix” keyed by “type1:slug1|type2:slug2|...” → { id, sku, price, stock, options: […] }.
         Cached per product.
         """
-        cache_key = ProductVariantService.get_cache_key(
-            "variant_matrix", product_id=product_id
-        )
+        cache_key = CacheKeyManager.make_key("variant_matrix", product_id=product_id)
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
@@ -159,6 +109,31 @@ class ProductVariantService:
 
         cache.set(cache_key, matrix, ProductVariantService.CACHE_TIMEOUT)
         return matrix
+
+    @staticmethod
+    @transaction.atomic
+    def create_variant_combination(
+        product_id: int, option_ids: List[int], sku: str, **kwargs
+    ) -> ProductVariant:
+        """
+        Create a single variant for product_id using exactly the provided option_ids.
+        Raises ValueError/ValidationError if the option_ids do not correspond to unique variant types.
+        """
+        options = ProductVariantOption.objects.filter(id__in=option_ids, is_active=True)
+        variant_types = set(option.variant_type_id for option in options)
+
+        if len(variant_types) != len(option_ids):
+            raise ValueError("Options must belong to different variant types")
+
+        variant = ProductVariant.objects.create(
+            product_id=product_id, sku=sku, **kwargs
+        )
+        variant.options.set(options)
+
+        # Clear any cached “product_variants” for this product (both with and without options).
+        CacheManager.invalidate("product_variant", product_id=product_id)
+
+        return variant
 
     @staticmethod
     @transaction.atomic
@@ -208,19 +183,7 @@ class ProductVariantService:
             created_variants.append(variant)
 
         # Clear caches
-        cache.delete(
-            ProductVariantService.get_cache_key(
-                "product_variants", product_id=product_id, with_options=True
-            )
-        )
-        cache.delete(
-            ProductVariantService.get_cache_key(
-                "product_variants", product_id=product_id, with_options=False
-            )
-        )
-        cache.delete(
-            ProductVariantService.get_cache_key("variant_matrix", product_id=product_id)
-        )
+        CacheManager.invalidate("product_variant", product_id=product_id)
 
         return created_variants
 

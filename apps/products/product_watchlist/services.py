@@ -6,7 +6,8 @@ from django.conf import settings
 from typing import List, Dict, Any, Optional
 
 from apps.products.product_base.models import Product
-
+from apps.core.utils.cache_manager import CacheManager
+from apps.core.utils.cache_key_manager import CacheKeyManager
 
 from .models import ProductWatchlistItem
 
@@ -21,15 +22,7 @@ class WatchlistService:
     @staticmethod
     def get_cache_key(view_name: str, **kwargs) -> str:
         """Generate a cache key for the view"""
-        user_id = kwargs.get("user_id", "")
-        pk = kwargs.get("pk", "")
-        product_id = kwargs.get("product_id", "")
-
-        # Create a more specific key based on the view
-        key_parts = [str(part) for part in [user_id, pk, product_id] if part]
-        key_suffix = ":".join(key_parts) if key_parts else "default"
-
-        return f"watchlist:{view_name}:{key_suffix}"
+        return CacheKeyManager.make_key("watchlist", view_name, **kwargs)
 
     @staticmethod
     def get_user_watchlist_queryset(user, user_id: Optional[int] = None):
@@ -147,17 +140,14 @@ class WatchlistService:
         """
         Toggle product in watchlist and invalidate related cache.
         """
-        # Validate product exists and is active
         product = get_object_or_404(Product, id=product_id, is_active=True)
-
-        # Use get_or_create for atomic operation
         watchlist_item, created = ProductWatchlistItem.objects.get_or_create(
             user=user, product=product, defaults={}
         )
 
-        # Invalidate related cache keys
-        WatchlistService._invalidate_user_cache(user.id)
-        WatchlistService._invalidate_product_cache(product_id)
+        # Invalidate related cache keys using CacheManager
+        CacheManager.invalidate("watchlist", user_id=user.id)
+        CacheManager.invalidate("watchlist", product_id=product_id)
 
         if created:
             return {"status": "added", "message": "Product added to watchlist"}
@@ -198,8 +188,10 @@ class WatchlistService:
 
             # Invalidate cache for user and affected products
             WatchlistService._invalidate_user_cache(user.id)
-            for product_id in new_product_ids:
-                WatchlistService._invalidate_product_cache(product_id)
+
+            for pid in product_ids:
+                CacheManager.invalidate("watchlist", user_id=user.id)
+                CacheManager.invalidate("watchlist", product_id=pid)
 
         return result
 
@@ -216,8 +208,10 @@ class WatchlistService:
         if removed_count > 0:
             # Invalidate cache for user and affected products
             WatchlistService._invalidate_user_cache(user.id)
-            for product_id in product_ids:
-                WatchlistService._invalidate_product_cache(product_id)
+
+            for pid in product_ids:
+                CacheManager.invalidate("watchlist", user_id=user.id)
+                CacheManager.invalidate("watchlist", product_id=pid)
 
         return removed_count
 

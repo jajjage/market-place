@@ -1,5 +1,5 @@
 from django.db import models
-from django.db.models import Avg, Count, Q, Prefetch
+from django.db.models import Count, Q, Prefetch
 from django.core.cache import cache
 from apps.core.utils.cache_key_manager import CacheKeyManager
 
@@ -26,10 +26,7 @@ class BrandQuerySet(models.QuerySet):
                 queryset=Product.objects.select_related().filter(is_active=True),
             )
         ).annotate(
-            active_product_count=Count("products", filter=Q(products__is_active=True)),
-            avg_rating=Avg(
-                "products__average_rating", filter=Q(products__is_active=True)
-            ),
+            active_product_count=Count("products", filter=Q(products__is_active=True))
         )
 
     def search(self, query):
@@ -73,6 +70,10 @@ class BrandQuerySet(models.QuerySet):
         return self.filter(
             cached_product_count__gte=5, cached_average_rating__gte=3.5, is_active=True
         ).order_by("-cached_product_count", "-cached_average_rating")[:limit]
+
+    def with_stats(self):
+        """Alias for consistency with manager"""
+        return self.with_product_stats()
 
 
 class BrandManager(models.Manager):

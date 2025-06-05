@@ -1,6 +1,7 @@
 # apps/core/utils/cache_manager.py
 
 import logging
+from typing import Dict, List
 from django.conf import settings
 
 logger = logging.getLogger("monitoring")  # or create a new logger if desired
@@ -59,7 +60,7 @@ class CacheKeyManager:
             )
             raise
 
-        # Prepend Django’s key prefix (if any):
+        # Prepend Django's key prefix (if any):
         prefix = settings.CACHES["default"].get("KEY_PREFIX", "")
         if prefix:
             return f"{prefix}:{filled}"
@@ -94,3 +95,50 @@ class CacheKeyManager:
         if prefix:
             return f"{prefix}:{filled}"
         return filled
+
+    @staticmethod
+    def get_available_templates(resource_name: str) -> Dict[str, str]:
+        """
+        Get all available cache key templates for a resource.
+        Useful for debugging and documentation.
+
+        Example:
+            templates = CacheKeyManager.get_available_templates("brand")
+            # Returns: {"detail": "brand:detail:{id}", "stats": "brand:stats:{id}", ...}
+        """
+        templates = getattr(settings, "CACHE_KEY_TEMPLATES", {})
+        return templates.get(resource_name, {})
+
+    @staticmethod
+    def validate_template(resource_name: str, key_name: str, **kwargs) -> bool:
+        """
+        Validate that all required parameters are provided for a template.
+
+        Example:
+            valid = CacheKeyManager.validate_template("brand", "detail", id=42)
+            # Returns True if all placeholders can be filled
+        """
+        try:
+            CacheKeyManager.make_key(resource_name, key_name, **kwargs)
+            return True
+        except (KeyError, ValueError):
+            return False
+
+    @staticmethod
+    def get_template_placeholders(resource_name: str, key_name: str) -> List[str]:
+        """
+        Extract placeholder names from a template.
+
+        Example:
+            placeholders = CacheKeyManager.get_template_placeholders("brand", "analytics")
+            # Returns: ["brand_id", "days"]
+        """
+        import re
+
+        try:
+            raw_template = CacheKeyManager._get_template(resource_name, key_name)
+            # Find all {placeholder} patterns
+            placeholders = re.findall(r"\{([^}]+)\}", raw_template)
+            return placeholders
+        except KeyError:
+            return []

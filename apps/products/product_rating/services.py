@@ -11,6 +11,7 @@ from .models import (
     ProductRatingAggregate,
     RatingHelpfulness,
 )
+from apps.core.utils.cache_key_manager import CacheKeyManager
 
 CACHE_TTL = getattr(settings, "RATINGS_CACHE_TTL", 300)
 
@@ -127,17 +128,7 @@ class ProductRatingService:
 
     @staticmethod
     def get_cache_key(view_name: str, **kwargs) -> str:
-        """
-        Generate a cache key. We include only non-empty kwargs: page, per_page, product_id.
-        Example: get_cache_key("rating_aggregate", product_id=42) -> "variants:rating_aggregate:42"
-        """
-        page = kwargs.get("page", "")
-        per_page = kwargs.get("per_page", "")
-        product_id = kwargs.get("product_id", "")
-
-        key_parts = [str(part) for part in [page, per_page, product_id] if part != ""]
-        key_suffix = ":".join(key_parts) if key_parts else "default"
-        return f"variants:{view_name}:{key_suffix}"
+        return CacheKeyManager.make_key("product_rating", view_name, **kwargs)
 
     @staticmethod
     def delete_product_ratings_cache(product_id: int):

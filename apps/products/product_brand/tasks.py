@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 @shared_task(bind=True, base=BaseTaskWithRetry)
 def update_brand_stats(self, brand_id: int):
     """Update brand statistics asynchronously"""
+    from apps.products.product_brand.services import BrandService
+
     try:
         brand = Brand.objects.get(id=brand_id)
         stats = brand._calculate_stats()
@@ -23,7 +25,7 @@ def update_brand_stats(self, brand_id: int):
         )
 
         # Invalidate cache
-        brand.invalidate_cache()
+        BrandService.invalidate_brand_cache(brand_id)
 
         logger.info(f"Updated stats for brand {brand.name}")
 

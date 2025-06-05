@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.utils.text import slugify
 from apps.categories.serializers import CategoryDetailSerializer
 from apps.core.serializers import TimestampedModelSerializer
+from apps.products.product_brand.services import BrandService
 from apps.products.product_breadcrumb.services import BreadcrumbService
 from apps.products.product_condition.models import ProductCondition
 from .models import Product
@@ -98,6 +99,7 @@ class ProductListSerializer(TimestampedModelSerializer):
     Optimized for displaying products in listings.
     """
 
+    brand_name = serializers.SerializerMethodField(read_only=True)
     originalPrice = serializers.DecimalField(
         source="original_price", max_digits=10, decimal_places=2
     )
@@ -143,8 +145,11 @@ class ProductListSerializer(TimestampedModelSerializer):
             "in_escrow_inventory",
             "available_inventory",
             "total_inventory",
-            "brand",
+            "brand_name",
         ]
+
+    def get_brand_name(self, obj):
+        return obj.brand.name
 
     def get_seller(self, obj):
         profile_obj = obj.seller.profile
@@ -171,6 +176,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     Includes all information including nested category and seller details.
     """
 
+    brand_detail = serializers.SerializerMethodField(read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
     variant_summary = serializers.SerializerMethodField()
 
@@ -236,6 +242,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "total_inventory",
             "is_featured",
             "status",
+            "brand",
             "slug",
             "short_code",
             "images",
@@ -356,6 +363,11 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     def get_extra_details(self, obj):
         details = obj.productdetail_set.all()
         return ProductExtraDetailSerializer(details, many=True).data
+
+    def get_brand_detail(self, obj):
+        brand = BrandService.get_brand_detail(obj.brand_id)
+
+        return brand if brand else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

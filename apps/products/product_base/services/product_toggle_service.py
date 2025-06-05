@@ -7,7 +7,7 @@ class ProductToggleService:
         product = view.get_object()
         product.is_active = not product.is_active
         product.save()
-        CacheManager.invalidate("product", id=product.pk)
+        CacheManager.invalidate("base", id=product.pk)
         return view.success_response(data=product.is_active)
 
     @staticmethod
@@ -15,5 +15,5 @@ class ProductToggleService:
         product = view.get_object()
         product.is_featured = not product.is_featured
         product.save()
-        CacheManager.invalidate("product", id=product.pk)
+        CacheManager.invalidate("base", id=product.pk)
         return view.success_response(data=product.is_featured)
