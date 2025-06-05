@@ -19,7 +19,7 @@ from .serializers import (
     ProductStatsSerializer,
 )
 from .utils.product_filters import ProductFilter
-from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
+from apps.core.utils.cache_manager import CacheManager
 from apps.products.product_base.utils.rate_limiting import (
     ProductListRateThrottle,
     ProductStatsRateThrottle,
@@ -101,10 +101,6 @@ class ProductViewSet(BaseViewSet):
 
         return queryset
 
-    def get_cache_key(self, view_name, **kwargs):
-        # Use centralized cache key manager
-        return CacheKeyManager.make_key("product", view_name, **kwargs)
-
     def get_serializer_class(self):
         """
         Return different serializers based on the action.
@@ -151,7 +147,12 @@ class ProductViewSet(BaseViewSet):
 
     def perform_update(self, serializer):
         instance = serializer.instance
-        CacheManager.invalidate("product", id=instance.pk)
+        CacheManager.invalidate("product_base", id=instance.pk)
+        serializer.save()
+
+    def perform_create(self, serializer):
+        instance = serializer.instance
+        CacheManager.invalidate("product_base", id=instance.pk)
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -198,12 +199,6 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
     serializer_class = ProductDetailSerializer
     lookup_field = "short_code"
     permission_classes = [permissions.AllowAny]
-
-    def get_cache_key(self, view_name, **kwargs):
-        """Generate a cache key for the view"""
-        key = f"product:{view_name}:{kwargs.get('pk', '')}:{kwargs.get('user_id', '')}"
-        self.logger.debug("Generated cache key: %s", key)
-        return key
 
     @method_decorator(cache_page(60 * 5))  # Cache for 5 minutes
     def retrieve(self, request, *args, **kwargs):

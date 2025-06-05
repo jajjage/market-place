@@ -307,36 +307,6 @@ if os.environ.get("GITHUB_ACTIONS"):
     LOGGING["loggers"]["utils.rate_limiting"]["handlers"] = ["console"]
 
 # -----------------------------------------------------------------------------
-# Cache Invalidation Patterns
-# -----------------------------------------------------------------------------
-
-CACHE_INVALIDATION_PATTERNS = {
-    "brand": [
-        ("BRAND_DETAIL", {"id": "{id}"}),
-        ("BRAND_STATS", {"id": "{id}"}),
-        "brand:variants:{id}:*",
-        "brands:featured:*",
-        "brand:list:*",
-    ],
-    "inventory": [
-        ("INVENTORY_DETAIL", {"id": "{id}"}),
-        ("INVENTORY_PRICE", {"id": "{id}"}),
-        "inventory:stock:{id}:*",
-        "inventory:list:*",
-    ],
-    "detail": [
-        ("DETAIL_PAGE", {"id": "{id}"}),
-        "detail:related:{id}:*",
-    ],
-    "watchlist": [
-        ("WATCHLIST_USER", {"id": "{id}"}),
-        "watchlist:items:{id}:*",
-    ],
-    # …etc…
-}
-
-
-# -----------------------------------------------------------------------------
 # CENTRALIZED CACHE-KEY TEMPLATES
 #
 # For each “resource” you want to cache, list every “key name” you might use.
@@ -359,12 +329,12 @@ CACHE_KEY_TEMPLATES = {
         "detail": "base:detail:{id}",
         "detail_by_shortcode": "base:detail_by_shortcode:{short_code}",
         "list": "base:list:{page}:{filters}",
-        "my_products": "base:my_products:{user_id}:{page}:{filters}",
+        "my_products": "base:my_products:{user_id}",
         "featured": "base:featured",
         "stats": "base:stats:{user_id}",
         "watchers": "base:watchers:{id}",
         "share_links": "base:share_links:{short_code}",
-        "by_condition": "base:by_condition:{condition_id}:{filters}",
+        "by_condition": "base:by_condition:{condition_id}",
         "toggle_active": "base:toggle_active:{id}",
         "toggle_featured": "base:toggle_featured:{id}",
         # Add more as needed for other endpoints

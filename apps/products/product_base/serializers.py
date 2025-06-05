@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.utils.text import slugify
+from apps.categories.models import Category
 from apps.categories.serializers import CategoryDetailSerializer
 from apps.core.serializers import TimestampedModelSerializer
 from apps.products.product_base.utils import breadcrumbs
@@ -28,22 +29,26 @@ from apps.products.product_detail.serializers import (
 )
 
 
-class ProductCreateSerializer(serializers.ModelSerializer):
+class ProductCreateSerializer(TimestampedModelSerializer):
     """
     Minimal serializer for creating products.
     Only title is required, other fields can be updated later.
     """
 
+    # Use PrimaryKeyRelatedField to accept IDs instead of instances
+    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+    condition = serializers.PrimaryKeyRelatedField(
+        queryset=ProductCondition.objects.all()
+    )
+
     class Meta:
         model = Product
-        fields = ["id", "title", "category"]
+        fields = ["id", "title", "category", "condition"]
         read_only_fields = [
             "id",
             "seller",
             "slug",
             "short_code",
-            "category",
-            "condition",
         ]
 
     def create(self, validated_data):
@@ -54,26 +59,18 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         validated_data.setdefault("price", 0.00)
         validated_data.setdefault("description", "")
 
-        # Get default category and condition
-        # IMPORTANT: We need to query these objects first and make sure they exist
-        category = validated_data.get("category")
-        if not category:
-            raise serializers.ValidationError(
-                "At least one category must exist in the system"
-            )
+        # Category and condition are already converted to instances by DRF
+        if not validated_data.get("category"):
+            raise serializers.ValidationError("You need to provide category")
 
-        default_condition = ProductCondition.objects.first()
-        if not default_condition:
-            raise serializers.ValidationError(
-                "At least one product condition must exist in the system"
-            )
-        validated_data["condition"] = default_condition
+        if not validated_data.get("condition"):
+            raise serializers.ValidationError("You need to provide condition")
 
         # Create the product with minimal info
         return super().create(validated_data)
 
 
-class ProductUpdateSerializer(serializers.ModelSerializer):
+class ProductUpdateSerializer(TimestampedModelSerializer):
     condition_id = serializers.PrimaryKeyRelatedField(
         source="condition",
         queryset=ProductCondition.objects.filter(is_active=True),

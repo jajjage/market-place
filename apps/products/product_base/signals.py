@@ -6,6 +6,7 @@ from apps.products.product_base.utils.social_sharing import (
     create_unique_short_code,
     generate_seo_friendly_slug,
 )
+from apps.products.product_breadcrumb.services import BreadcrumbService
 from apps.products.product_metadata.models import ProductMeta
 
 logger = logging.getLogger(__name__)
@@ -65,3 +66,15 @@ def ensure_product_meta(sender, instance, created, **kwargs):
             featured=False,
             seo_keywords=instance.slug or "",
         )
+
+
+@receiver(post_save, sender=Product)
+def create_or_update_transaction_breadcrumbs(sender, instance, created, **kwargs):
+    """
+    Signal handler to generate/update breadcrumbs for a Transaction.
+    """
+    # This ensures that breadcrumbs are generated when a transaction is created
+    # or when its main details are updated (if needed).
+    # You might want to refine when this is called based on what triggers a "main" breadcrumb path change.
+    BreadcrumbService.generate_breadcrumbs_for_transaction(instance)
+    # You'd have similar signals for Product, Dispute, UserProfile, etc
