@@ -49,6 +49,16 @@ class EscrowTransactionViewSet(BaseViewSet):
     ordering_fields = ["created_at", "updated_at", "status", "amount"]
     ordering = ["-created_at"]
 
+    def get_serializer_context(self):
+        """
+        Ensures the request context is passed to the serializer.
+        This is often implicitly done by ModelViewSet, but explicitly defining it
+        is good practice or necessary for custom ViewSets.
+        """
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
     def get_permissions(self):
         """
         Custom permissions:

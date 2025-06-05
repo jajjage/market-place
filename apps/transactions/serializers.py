@@ -2,7 +2,9 @@
 from rest_framework import serializers
 from apps.core.serializers import TimestampedModelSerializer
 from apps.products.product_base.models import Product
+from apps.products.product_breadcrumb.serializers import BreadcrumbSerializer
 from apps.transactions.models import EscrowTransaction, TransactionHistory
+from apps.transactions.utils import breadcrumbs
 from apps.transactions.utils.statuses import ESCROW_STATUSES
 
 
@@ -108,6 +110,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
 class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
     """Detailed serializer for escrow transactions"""
 
+    breadcrumbs = BreadcrumbSerializer(many=True, read_only=True)
     product_details = serializers.SerializerMethodField()
     buyer_details = serializers.SerializerMethodField()
     seller_details = serializers.SerializerMethodField()
@@ -141,6 +144,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "updated_at",
             "history",
             "next_actions",
+            "breadcrumbs",
         ]
 
     def get_product_details(self, obj):
@@ -155,6 +159,10 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
                 else None
             ),
         }
+
+    def get_breadcrumbs(self, obj):
+        context = self.context
+        return breadcrumbs(context, obj)
 
     def get_buyer_details(self, obj):
         if obj.buyer:

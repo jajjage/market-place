@@ -17,7 +17,7 @@ def check_database_performance():
     with connection.cursor() as cursor:
         # Build a single SQL query that matches any of the table patterns
         # e.g. WHERE query ~ 'brands_|inventory_|...'
-        regex_union = "|".join([p.strip("^").strip(".*") for p in patterns])
+        regex_union = "|".join([f"({p})" for p in patterns])
         sql = """
             SELECT query, mean_time, calls, total_time
             FROM pg_stat_statements

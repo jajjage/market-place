@@ -1,74 +1,85 @@
-from datetime import time
+# apps/breadcrumbs/services.py (Conceptual changes)
+from datetime import time  # Assuming time is imported for performance logging
 import logging
 from typing import List, Dict, Any
-from django.db import transaction
+from django.db import transaction, models
 from django.core.exceptions import ValidationError
+from django.core.cache import cache
+from django.contrib.contenttypes.models import ContentType
+
+# Assuming you have CacheKeyManager and CacheManager
 from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.utils.cache_manager import CacheManager
-from django.core.cache import cache
 from .models import Breadcrumb
 
 logger = logging.getLogger("breadcrumbs_performance")
 
 
 class BreadcrumbService:
-    """
-    Service for managing breadcrumb operations with caching and optimization
-    """
-
     @staticmethod
-    def get_product_breadcrumbs(product_id: int) -> List[Dict[str, Any]]:
-        """Get breadcrumbs for a specific product with caching"""
+    def get_breadcrumbs_for_object(obj: models.Model) -> List[Dict[str, Any]]:
+        """
+        Get breadcrumbs for a specific object (Product, Transaction, User, etc.) with caching.
+        Accepts the model instance directly for convenience.
+        """
         start_time = time.time()
 
-        # Try cache first
-        cache_key = CacheKeyManager.make_key(
-            "breadcrumb", "product", product_id=product_id
-        )
-        cached_breadcrumbs = cache.get(cache_key)
+        content_type = ContentType.objects.get_for_model(obj)
+        if CacheManager.cache_exists("breadcrumb", "object", object_id=obj.pk):
+            cache_key = CacheKeyManager.make_key(
+                "breadcrumb", "object", object_id=obj.pk
+            )
+            cached_breadcrumbs = cache.get(cache_key)
+            if cached_breadcrumbs:
+                logger.info(
+                    f"Retrieved breadcrumbs from cache for {content_type.app_label}.{content_type.model} ID {obj.pk}"
+                )
+                return cached_breadcrumbs
 
-        if cached_breadcrumbs:
-            logger.info(f"Retrieved breadcrumbs from cache for product {product_id}")
-            return cached_breadcrumbs
-
-        # Query database with select_related for optimization
+        # Fetch from database and cache
+        cache_key = CacheKeyManager.make_key("breadcrumb", "object", object_id=obj.pk)
         breadcrumbs = list(
-            Breadcrumb.objects.filter(product_id=product_id)
-            .select_related("product")
+            Breadcrumb.objects.filter(content_type=content_type, object_id=obj.pk)
             .values("name", "href", "order")
             .order_by("order")
         )
 
-        # Cache for 1 hour
         cache.set(cache_key, breadcrumbs, 3600)
 
         end_time = time.time()
         logger.info(
-            f"Fetched {len(breadcrumbs)} breadcrumbs for product {product_id} in {(end_time - start_time) * 1000:.2f}ms"
+            f"Fetched {len(breadcrumbs)} breadcrumbs for {content_type.app_label}.{content_type.model} ID {obj.pk} in {(end_time - start_time) * 1000:.2f}ms"
         )
-
         return breadcrumbs
 
+    # B. Generalizing `bulk_create_breadcrumbs`
     @staticmethod
     def bulk_create_breadcrumbs(
-        product_id: int, breadcrumb_data: List[Dict[str, Any]]
+        obj: models.Model, breadcrumb_data: List[Dict[str, Any]]
     ) -> List[Breadcrumb]:
-        """Bulk create breadcrumbs for a product"""
+        """
+        Bulk create breadcrumbs for a specific object.
+        Deletes existing breadcrumbs for this object before creating new ones.
+        """
         start_time = time.time()
+        content_type = ContentType.objects.get_for_model(obj)
 
         try:
             with transaction.atomic():
-                # Delete existing breadcrumbs
-                Breadcrumb.objects.filter(product_id=product_id).delete()
+                # Delete existing breadcrumbs for this specific object
+                Breadcrumb.objects.filter(
+                    content_type=content_type, object_id=obj.pk
+                ).delete()
 
-                # Create new breadcrumbs
                 breadcrumbs_to_create = []
                 for i, data in enumerate(breadcrumb_data):
                     breadcrumbs_to_create.append(
                         Breadcrumb(
-                            product_id=product_id,
+                            content_type=content_type,
+                            object_id=obj.pk,
                             name=data["name"],
                             href=data["href"],
+                            # Ensure order is set, use loop index if not provided
                             order=data.get("order", i),
                         )
                     )
@@ -77,29 +88,46 @@ class BreadcrumbService:
                     breadcrumbs_to_create
                 )
 
-                # Invalidate cache
-                CacheManager.invalidate("breadcrumb", product_id=product_id)
-
+                # Invalidate cache for this specific object
+                CacheManager.invalidate_key(
+                    "breadcrumb",
+                    "object",
+                    object_id=obj.pk,
+                )
+                # Cache the newly created breadcrumbs
+                cache_key = CacheKeyManager.make_key(
+                    "breadcrumb", "object", object_id=obj.pk
+                )
+                cache.set(cache_key, list(created_breadcrumbs), 3600)
                 end_time = time.time()
                 logger.info(
-                    f"Bulk created {len(created_breadcrumbs)} breadcrumbs for product {product_id} in {(end_time - start_time) * 1000:.2f}ms"
+                    f"Bulk created {len(created_breadcrumbs)} breadcrumbs for {content_type.app_label}.{content_type.model} ID {obj.pk} in {(end_time - start_time) * 1000:.2f}ms"
                 )
-
                 return created_breadcrumbs
 
         except Exception as e:
             logger.error(
-                f"Error bulk creating breadcrumbs for product {product_id}: {str(e)}"
+                f"Error bulk creating breadcrumbs for {content_type.app_label}.{content_type.model} ID {obj.pk}: {str(e)}"
             )
             raise ValidationError(f"Failed to create breadcrumbs: {str(e)}")
 
     @staticmethod
     def update_breadcrumb(breadcrumb_id: int, data: Dict[str, Any]) -> Breadcrumb:
-        """Update a single breadcrumb"""
+        """
+        Update a single breadcrumb segment identified by its ID.
+        Invalidates the cache for the associated content object.
+        """
         try:
-            breadcrumb = Breadcrumb.objects.select_related("product").get(
+            # Fetch the breadcrumb along with its content_type to get app_label and model name
+            breadcrumb = Breadcrumb.objects.select_related("content_type").get(
                 id=breadcrumb_id
             )
+
+            # Store old content_type and object_id before potential changes,
+            # though typically the content_object itself won't change for a breadcrumb segment.
+            # We need these to invalidate the correct cache.
+            old_content_type = breadcrumb.content_type
+            old_object_id = breadcrumb.object_id
 
             for field, value in data.items():
                 if hasattr(breadcrumb, field):
@@ -107,64 +135,171 @@ class BreadcrumbService:
 
             breadcrumb.save()
 
-            # Invalidate cache for the product
-            CacheManager.invalidate("breadcrumb", product_id=breadcrumb.product_id)
+            # Invalidate cache for the content object this breadcrumb belongs to
+            CacheManager.invalidate_key(
+                "breadcrumb",
+                "object",
+                object_id=old_object_id,
+            ),
 
-            logger.info(f"Updated breadcrumb {breadcrumb_id}")
+            logger.info(
+                f"Updated breadcrumb {breadcrumb_id} for {old_content_type.model} ID {old_object_id}"
+            )
             return breadcrumb
 
         except Breadcrumb.DoesNotExist:
+            logger.error(f"Breadcrumb with ID {breadcrumb_id} not found for update.")
             raise ValidationError("Breadcrumb not found")
+        except Exception as e:
+            logger.error(f"Error updating breadcrumb {breadcrumb_id}: {str(e)}")
+            raise ValidationError(f"Failed to update breadcrumb: {str(e)}")
 
     @staticmethod
     def delete_breadcrumb(breadcrumb_id: int):
-        """Delete a breadcrumb"""
+        """
+        Delete a single breadcrumb segment identified by its ID.
+        Invalidates the cache for the associated content object.
+        """
         try:
-            breadcrumb = Breadcrumb.objects.get(id=breadcrumb_id)
-            product_id = breadcrumb.product_id
+            # Fetch the breadcrumb along with its content_type to get app_label and model name
+            breadcrumb = Breadcrumb.objects.select_related("content_type").get(
+                id=breadcrumb_id
+            )
+
+            content_type = breadcrumb.content_type
+            object_id = breadcrumb.object_id
+
             breadcrumb.delete()
 
-            # Invalidate cache
-            CacheManager.invalidate("breadcrumb", product_id=product_id)
+            # Invalidate cache for the content object this breadcrumb belonged to
+            CacheManager.invalidate_key(
+                "breadcrumb",
+                "object",
+                object_id=object_id,
+            ),
 
-            logger.info(f"Deleted breadcrumb {breadcrumb_id}")
+            logger.info(
+                f"Deleted breadcrumb {breadcrumb_id} for {content_type.model} ID {object_id}"
+            )
 
         except Breadcrumb.DoesNotExist:
+            logger.error(f"Breadcrumb with ID {breadcrumb_id} not found for deletion.")
             raise ValidationError("Breadcrumb not found")
+        except Exception as e:
+            logger.error(f"Error deleting breadcrumb {breadcrumb_id}: {str(e)}")
+            raise ValidationError(f"Failed to delete breadcrumb: {str(e)}")
 
+    # For now, let's focus on get and bulk_create.
+
+    # D. New methods to generate breadcrumbs for different object types
     @staticmethod
-    def create_default_breadcrumbs(product) -> List[Breadcrumb]:
-        """Create default breadcrumbs based on product category structure"""
+    def generate_breadcrumbs_for_product(product) -> List[Breadcrumb]:
+        """
+        Generates and saves breadcrumbs for a Product (re-using existing logic).
+        """
         default_breadcrumbs = [
             {"name": "TrustLock", "href": "/", "order": 0},
         ]
 
-        # Add category-based breadcrumbs if product has category
         if hasattr(product, "category") and product.category:
-            category = product.category
-            category_breadcrumbs = []
-
-            # Build category hierarchy
             categories = []
-            current_category = category
+            current_category = product.category
             while current_category:
                 categories.append(current_category)
                 current_category = getattr(current_category, "parent", None)
-
-            # Reverse to get root to leaf order
             categories.reverse()
 
             for i, cat in enumerate(categories):
-                category_breadcrumbs.append(
+                default_breadcrumbs.append(
                     {
                         "name": cat.name,
                         "href": f"/explore?category={cat.slug}",
                         "order": i + 1,
                     }
                 )
-
-            default_breadcrumbs.extend(category_breadcrumbs)
-
-        return BreadcrumbService.bulk_create_breadcrumbs(
-            product.id, default_breadcrumbs
+        # Add the product itself as the last breadcrumb
+        default_breadcrumbs.append(
+            {
+                "name": product.title,
+                "href": product.get_absolute_url(),
+                "order": len(default_breadcrumbs),
+            }
         )
+
+        return BreadcrumbService.bulk_create_breadcrumbs(product, default_breadcrumbs)
+
+    @staticmethod
+    def generate_breadcrumbs_for_transaction(transaction) -> List[Breadcrumb]:
+        """
+        Generates and saves breadcrumbs for a Transaction.
+        You'll need to define how your Transaction model's get_absolute_url() works.
+        """
+        breadcrumbs = [
+            {"name": "TrustLock", "href": "/", "order": 0},
+            {"name": "My Transactions", "href": "/transactions/", "order": 1},
+            {
+                "name": f"Transaction #{transaction.id}",
+                "href": transaction.get_absolute_url(),
+                "order": 2,
+            },
+            # You might add more steps based on the transaction's status or sub-pages
+            # E.g., if on a dispute page for this transaction:
+            # {"name": "View Details", "href": transaction.get_absolute_url(), "order": 3},
+            # {"name": "Dispute Resolution", "href": f"/transactions/{transaction.id}/dispute/", "order": 4},
+        ]
+        return BreadcrumbService.bulk_create_breadcrumbs(transaction, breadcrumbs)
+
+    @staticmethod
+    def generate_breadcrumbs_for_dispute(dispute) -> List[Breadcrumb]:
+        """
+        Generates and saves breadcrumbs for a Dispute.
+        Assumes dispute has a get_absolute_url() and possibly a link to its transaction.
+        """
+        breadcrumbs = [
+            {"name": "TrustLock", "href": "/", "order": 0},
+            {"name": "My Disputes", "href": "/disputes/", "order": 1},
+        ]
+        # Link to the parent transaction if applicable
+        if hasattr(dispute, "transaction") and dispute.transaction:
+            breadcrumbs.append(
+                {
+                    "name": f"Transaction #{dispute.transaction.id}",
+                    "href": dispute.transaction.get_absolute_url(),
+                    "order": 2,
+                }
+            )
+            breadcrumbs.append(
+                {
+                    "name": f"Dispute #{dispute.id}",
+                    "href": dispute.get_absolute_url(),
+                    "order": 3,
+                }
+            )
+        else:
+            breadcrumbs.append(
+                {
+                    "name": f"Dispute #{dispute.id}",
+                    "href": dispute.get_absolute_url(),
+                    "order": 2,
+                }
+            )
+
+        return BreadcrumbService.bulk_create_breadcrumbs(dispute, breadcrumbs)
+
+    @staticmethod
+    def generate_breadcrumbs_for_user_profile(user_profile) -> List[Breadcrumb]:
+        """
+        Generates and saves breadcrumbs for a User Profile.
+        Assumes user_profile has a get_absolute_url().
+        """
+        breadcrumbs = [
+            {"name": "TrustLock", "href": "/", "order": 0},
+            {"name": "My Account", "href": "/account/", "order": 1},
+            {
+                "name": "Profile Settings",
+                "href": user_profile.get_absolute_url(),
+                "order": 2,
+            },
+            # Add more specific profile sub-pages here if needed, e.g., /account/settings/security/
+        ]
+        return BreadcrumbService.bulk_create_breadcrumbs(user_profile, breadcrumbs)

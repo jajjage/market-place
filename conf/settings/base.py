@@ -158,9 +158,12 @@ REST_FRAMEWORK = {
         "vote_helpful": "100/hour",
         "category": "1000/hour",
         "product_condition": "2000/hour",
+        "product_list": "1000/min",
+        "product_detail": "1000/min",
+        "product_create": "100/min",
         "brand_search": "30/min",
         "brand_create": "100/min",
-        "breadcrumb": "200/hour",
+        "breadcrumb": "200/min",
     },
 }
 

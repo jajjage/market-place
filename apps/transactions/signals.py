@@ -3,7 +3,9 @@ from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.utils import timezone
 from django.conf import settings
-
+from apps.products.product_breadcrumb.services import (
+    BreadcrumbService,
+)
 from apps.transactions.models import EscrowTransaction
 from apps.transactions.tasks.transitions_tasks import (
     schedule_auto_inspection,
@@ -174,8 +176,20 @@ def ensure_tracking_id(sender, instance, **kwargs):
         and instance.buyer
         and instance.seller
     ):
-        from apps.products.services.inventory import InventoryService
+        from apps.products.product_inventory.services import InventoryService
 
         instance.tracking_id = InventoryService.generate_tracking_id(
             instance.product, instance.buyer, instance.seller
         )
+
+
+@receiver(post_save, sender=EscrowTransaction)
+def create_or_update_transaction_breadcrumbs(sender, instance, created, **kwargs):
+    """
+    Signal handler to generate/update breadcrumbs for a Transaction.
+    """
+    # This ensures that breadcrumbs are generated when a transaction is created
+    # or when its main details are updated (if needed).
+    # You might want to refine when this is called based on what triggers a "main" breadcrumb path change.
+    BreadcrumbService.generate_breadcrumbs_for_transaction(instance)
+    # You'd have similar signals for Product, Dispute, UserProfile, etc

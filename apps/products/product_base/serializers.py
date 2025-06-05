@@ -2,8 +2,9 @@ from rest_framework import serializers
 from django.utils.text import slugify
 from apps.categories.serializers import CategoryDetailSerializer
 from apps.core.serializers import TimestampedModelSerializer
+from apps.products.product_base.utils import breadcrumbs
 from apps.products.product_brand.services import BrandService
-from apps.products.product_breadcrumb.services import BreadcrumbService
+from apps.products.product_breadcrumb.serializers import BreadcrumbSerializer
 from apps.products.product_condition.models import ProductCondition
 from .models import Product
 
@@ -223,6 +224,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     metadata = serializers.SerializerMethodField()
     watchlist_items = serializers.SerializerMethodField()
     extra_details = serializers.SerializerMethodField()
+    breadcrumbs = BreadcrumbSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
@@ -267,6 +269,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "metadata",
             "watchlist_items",
             "extra_details",
+            "breadcrumbs",
         ]
 
     def get_seller(self, obj):
@@ -328,16 +331,8 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         return ProductDetailItemSerializer(details, many=True).data
 
     def get_breadcrumbs(self, obj):
-        """Get breadcrumbs for the product"""
-        if hasattr(obj, "_prefetched_breadcrumbs"):
-            # Use prefetched data if available
-            return [
-                {"name": bc.name, "href": bc.href, "order": bc.order}
-                for bc in obj._prefetched_breadcrumbs
-            ]
-        else:
-            # Fallback to service method
-            return BreadcrumbService.get_product_breadcrumbs(obj.id)
+        context = self.context
+        return breadcrumbs(context, obj)
 
     def get_metadata(self, obj):
         meta = getattr(obj, "meta", None)

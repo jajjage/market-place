@@ -1,4 +1,5 @@
 from django.db import models
+from django.urls import reverse
 
 from apps.core.models import BaseModel
 
@@ -22,3 +23,6 @@ class Category(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def get_absolute_url(self):
+        return reverse("categories:detail", kwargs={"category_slug": self.slug})

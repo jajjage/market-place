@@ -1,4 +1,5 @@
 from django.db import models
+from django.urls import reverse
 from django.utils import timezone
 from django.conf import settings
 
@@ -133,3 +134,7 @@ class TransactionHistory(BaseModel):
 
     def __str__(self):
         return f"{self.transaction.id} changed to {self.status} at {self.timestamp}"
+
+    def get_absolute_url(self):
+        # This should return the URL for the transaction detail page
+        return reverse("transactions:detail", kwargs={"transaction_id": self.id})

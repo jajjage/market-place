@@ -155,8 +155,9 @@ PERFORMANCE_API_PREFIXES = {
 SLOW_QUERY_MS_THRESHOLD = 1000  # log any query whose mean_time > 1000ms
 # Which “table patterns” (regex) to check in pg_stat_statements:
 PG_TABLE_PATTERNS = [
-    r"^product_.*",  # e.g. product_images, product_variants, etc.
-    # add whatever patterns you care about
+    r"^product_.*",  # e.g., product_images, product_variants, etc.
+    r"^transaction_.*",  # Example for another pattern
+    r"^customer_.*",
 ]
 
 # 3) Cache‐hit ratio threshold:
@@ -368,8 +369,8 @@ CACHE_KEY_TEMPLATES = {
         "toggle_featured": "base:toggle_featured:{id}",
         # Add more as needed for other endpoints
     },
-    "product_breadcrumb": {
-        "product": "breadcrumb:product:{product_id}",
+    "breadcrumb": {
+        "object": "breadcrumb:object:{object_id}",
         "all": "breadcrumb:all:*",
     },
     "brand": {
