@@ -1,4 +1,3 @@
-import uuid
 from django.db import models
 from django.contrib.contenttypes.fields import GenericRelation
 from django.conf import settings
@@ -125,48 +124,3 @@ class Product(BaseModel):
         if self.original_price and self.original_price > self.price:
             return int(((self.original_price - self.price) / self.original_price) * 100)
         return 0
-
-    def get_breadcrumb_path(self):
-        """Generate complete dynamic breadcrumb path"""
-        breadcrumbs = []
-
-        # Add home
-        breadcrumbs.append(
-            {"id": str(uuid.uuid4()), "name": "TrustLock", "href": "/", "order": 0}
-        )
-
-        # Add category hierarchy
-        if hasattr(self, "category") and self.category:
-            category_path = self.category.get_breadcrumb_path()
-            for i, category in enumerate(category_path):
-                breadcrumbs.append(
-                    {
-                        "id": str(category.id),
-                        "name": category.name,
-                        "href": f"/explore?category={category.slug}",
-                        "order": i + 1,
-                    }
-                )
-
-        # Add brand
-        if hasattr(self, "brand") and self.brand:
-            breadcrumbs.append(
-                {
-                    "id": str(self.brand.id),
-                    "name": self.brand.name,
-                    "href": f"/explore?brand={self.brand.slug}",
-                    "order": len(breadcrumbs),
-                }
-            )
-
-        # Add current product (no href since it's current page)
-        breadcrumbs.append(
-            {
-                "id": str(self.id),
-                "name": self.title,
-                "href": None,  # Current page, no link
-                "order": len(breadcrumbs),
-            }
-        )
-
-        return breadcrumbs

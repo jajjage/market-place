@@ -22,7 +22,6 @@ from .serializers import (
 )
 from .services import BrandService, BrandRequestService, BrandVariantService
 from .utils.filters import BrandFilter
-from .utils.pagination import BrandPagination
 
 
 @method_decorator(
@@ -49,7 +48,6 @@ class BrandViewSet(BaseViewSet):
     cache_list_seconds = 300  # List is cached for 5 minutes
     cache_retrieve_seconds = 600
     queryset = Brand.objects.all()
-    pagination_class = BrandPagination
     filter_backends = [
         DjangoFilterBackend,
         filters.SearchFilter,
