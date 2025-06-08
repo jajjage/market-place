@@ -19,7 +19,6 @@ from .serializers import (
     ProductStatsSerializer,
 )
 from .utils.product_filters import ProductFilter
-from apps.core.utils.cache_manager import CacheManager
 from apps.products.product_base.utils.rate_limiting import (
     ProductListRateThrottle,
     ProductStatsRateThrottle,
@@ -44,6 +43,9 @@ from apps.products.product_base.services.product_toggle_service import (
 )
 from apps.products.product_base.services.product_detail_service import (
     ProductDetailService,
+)
+from apps.products.product_base.services.product_list_service import (
+    ProductListService,
 )
 
 
@@ -81,25 +83,34 @@ class ProductViewSet(BaseViewSet):
         return context
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        """
+        Get optimized and cached queryset.
+        """
+        # Start with the base queryset (this should always be a QuerySet)
+        base_queryset = super().get_queryset()
 
-        # Optimize queries for related fields
-        queryset = queryset.select_related(
-            "brand", "category", "condition", "seller"
-        ).prefetch_related("images", "variants", "watchers", "breadcrumbs")
-
-        # For list action, show only active products to non-staff
+        # Apply permission-based filtering FIRST (while it's still a QuerySet)
         if self.action == "list" and not self.request.user.is_staff:
-            queryset = queryset.filter(is_active=True)
-
-        # For detail, update, delete: only owner or staff can access
+            base_queryset = base_queryset.filter(is_active=True)
         elif self.action in ["retrieve", "update", "partial_update", "destroy"]:
             if not self.request.user.is_staff:
-                queryset = queryset.filter(seller=self.request.user)
+                base_queryset = base_queryset.filter(seller=self.request.user)
+        # request = self.request
+        # Then apply caching and optimization (ensure this returns a QuerySet)
+        optimized_queryset = ProductListService.get_cached_product_list(
+            self, base_queryset
+        )
 
-        # For other actions like create or custom actions, the base queryset is used
+        # Ensure we're returning a QuerySet
+        if not hasattr(optimized_queryset, "filter"):
+            # If somehow we got a list, convert back to QuerySet
+            if isinstance(optimized_queryset, (list, tuple)) and optimized_queryset:
+                product_ids = [item.id for item in optimized_queryset]
+                return base_queryset.filter(id__in=product_ids)
+            else:
+                return base_queryset
 
-        return queryset
+        return optimized_queryset
 
     def get_serializer_class(self):
         """
@@ -146,18 +157,24 @@ class ProductViewSet(BaseViewSet):
         return ProductStatsService.get_stats_view(self, request)
 
     def perform_update(self, serializer):
-        instance = serializer.instance
-        CacheManager.invalidate("product_base", id=instance.pk)
         serializer.save()
+        instance = serializer.instance
+        ProductListService.invalidate_product_list_caches()
 
     def perform_create(self, serializer):
-        instance = serializer.instance
-        CacheManager.invalidate("product_base", id=instance.pk)
         serializer.save()
 
-    def perform_destroy(self, instance):
-        CacheManager.invalidate("product", id=instance.pk)
-        instance.delete()
+        # Now the instance exists and has an ID
+        instance = serializer.instance
+        print(f"Created product with ID: {instance.id}")
+
+        # Invalidate cache after the instance is created
+        ProductListService.invalidate_product_list_caches()
+
+    def perform_destroy(self, serializer):
+        serializer.delete()
+        instance = serializer.instance
+        ProductListService.invalidate_product_list_caches()
 
     @action(detail=True, url_path="toggle-active", methods=["post"])
     def toggle_active(self, request, pk=None):
@@ -191,7 +208,7 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
     Used for both viewing and sharing via short URLs.
     """
 
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger("products_performance")
     CACHE_TTL = 60 * 15  # 15 minutes cache
     STATS_CACHE_TTL = 60 * 30  # 30 minutes cache for stats
 
@@ -200,7 +217,7 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
     lookup_field = "short_code"
     permission_classes = [permissions.AllowAny]
 
-    @method_decorator(cache_page(60 * 5))  # Cache for 5 minutes
+    @method_decorator(cache_page(CACHE_TTL))  # Cache for 15 minutes
     def retrieve(self, request, *args, **kwargs):
         return ProductDetailService.retrieve_by_shortcode(
             self, request, *args, **kwargs

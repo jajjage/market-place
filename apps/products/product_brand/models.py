@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.db import models
-from django.urls import reverse
 from django.utils.text import slugify
 from django.core.cache import cache
 from django.db.models import Avg
@@ -65,8 +64,14 @@ class Brand(BaseModel):
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
 
-    def get_absolute_url(self):
-        return reverse("brand-detail", kwargs={"slug": self.slug})
+    def get_breadcrumb_data(self):
+        """Get brand breadcrumb data"""
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "href": f"/explore?brand={self.slug}",  # Adjust URL as needed
+            "order": None,  # Will be set dynamically
+        }
 
     @property
     def cache_key(self):

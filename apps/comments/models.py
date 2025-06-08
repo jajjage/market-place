@@ -1,4 +1,6 @@
 from django.db import models
+from apps.products.product_breadcrumb.models import Breadcrumb
+from django.contrib.contenttypes.fields import GenericRelation
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
 
@@ -29,6 +31,7 @@ class UserRating(BaseModel):
         validators=[MinValueValidator(1), MaxValueValidator(5)]
     )
     comment = models.TextField(blank=True)
+    breadcrumbs = GenericRelation(Breadcrumb)
 
     class Meta:
         # Ensure a user can only rate another user once per transaction

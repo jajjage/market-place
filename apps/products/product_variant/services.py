@@ -53,7 +53,7 @@ class ProductVariantService:
         If with_options=True, do a prefetch on variant options.
         """
         cache_key = CacheKeyManager.make_key(
-            "product_variant", product_id=product_id, with_options=with_options
+            "product_variant", "list_product_variants", product_id=product_id
         )
         cached = cache.get(cache_key)
         if cached is not None:

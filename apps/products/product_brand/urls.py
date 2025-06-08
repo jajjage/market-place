@@ -5,8 +5,8 @@ from rest_framework.routers import DefaultRouter
 from .views import BrandVariantViewSet, BrandViewSet, BrandRequestViewSet
 
 router = DefaultRouter()
-router.register(r"brands", BrandViewSet)
-router.register(r"brand-requests", BrandRequestViewSet)
+router.register(r"brands", BrandViewSet, basename="brands")
+router.register(r"brand-requests", BrandRequestViewSet, basename="brand-requests")
 
 # Nested router for variants
 brands_router = routers.NestedDefaultRouter(router, r"brands", lookup="brand")

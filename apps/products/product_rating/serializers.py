@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
+from apps.core.serializers import TimestampedModelSerializer, UserShortSerializer
+
 from .models import (
     ProductRating,
     ProductRatingAggregate,
@@ -10,14 +12,51 @@ from .models import (
 User = get_user_model()
 
 
-class RatingUserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ["id", "username", "first_name"]
+class ProductRatingsSummarySerializer(serializers.Serializer):
+    """
+    Serializer for product ratings summary.
+    This works with Product instances, not ProductRating instances.
+    """
+
+    average_rating = serializers.SerializerMethodField()
+    total_ratings = serializers.SerializerMethodField()
+    # rating_breakdown = serializers.SerializerMethodField()
+
+    def get_average_rating(self, obj):
+        """Get average rating - uses annotated field if available, otherwise calculates"""
+        # Use annotated field if available (more efficient)
+        if hasattr(obj, "average_rating") and obj.average_rating is not None:
+            return round(float(obj.average_rating), 2)
+
+        # Fallback to calculation using prefetched ratings
+        ratings = obj.ratings.all()
+        if ratings:
+            return round(sum(r.rating for r in ratings) / len(ratings), 2)
+        return 0.0
+
+    def get_total_ratings(self, obj):
+        """Get total number of ratings - uses annotated field if available"""
+        # Use annotated field if available (more efficient)
+        if hasattr(obj, "total_ratings"):
+            return obj.total_ratings
+
+        # Fallback to count using prefetched ratings
+        return obj.ratings.count()
+
+    # def get_rating_breakdown(self, obj):
+    #     """Get breakdown of ratings by star count (1-5)"""
+    #     from collections import Counter
+
+    #     # Use prefetched ratings to avoid additional queries
+    #     ratings = [r.rating for r in obj.ratings.all()]
+    #     breakdown = Counter(ratings)
+
+    #     # Return breakdown for stars 1-5
+    #     return {f"{i}_star": breakdown.get(i, 0) for i in range(1, 6)}
 
 
-class ProductRatingsSerializer(serializers.ModelSerializer):
-    user = RatingUserSerializer(read_only=True)
+class ProductRatingsSerializer(TimestampedModelSerializer):
+    user = UserShortSerializer(read_only=True)
     helpfulness_ratio = serializers.ReadOnlyField()
     can_vote = serializers.SerializerMethodField()
     user_vote = serializers.SerializerMethodField()
@@ -69,7 +108,7 @@ class RatingBreakdownSerializer(serializers.Serializer):
         return round((obj["count"] / total) * 100, 1)
 
 
-class ProductRatingAggregateSerializer(serializers.ModelSerializer):
+class ProductRatingAggregateSerializer(TimestampedModelSerializer):
     average = serializers.DecimalField(
         source="average_rating", max_digits=3, decimal_places=2
     )

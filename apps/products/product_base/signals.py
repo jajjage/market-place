@@ -1,12 +1,14 @@
-from django.db.models.signals import pre_save, post_save
+from django.db.models.signals import pre_save, post_save, post_delete
 from django.dispatch import receiver
 import logging
 from apps.products.product_base.models import Product
+from apps.products.product_base.services.product_list_service import ProductListService
 from apps.products.product_base.utils.social_sharing import (
     create_unique_short_code,
     generate_seo_friendly_slug,
 )
-from apps.products.product_breadcrumb.services import BreadcrumbService
+
+# from apps.products.product_breadcrumb.services import BreadcrumbService
 from apps.products.product_metadata.models import ProductMeta
 
 logger = logging.getLogger(__name__)
@@ -68,13 +70,40 @@ def ensure_product_meta(sender, instance, created, **kwargs):
         )
 
 
+# @receiver(post_save, sender=Product)
+# def create_or_update_product_breadcrumbs(sender, instance, created, **kwargs):
+#     """
+#     Signal handler to generate/update breadcrumbs for a Transaction.
+#     """
+#     # This ensures that breadcrumbs are generated when a transaction is created
+#     # or when its main details are updated (if needed).
+#     # You might want to refine when this is called based on what triggers a "main" breadcrumb path change.
+#     BreadcrumbService.generate_breadcrumbs_for_product(instance)
+#     # You'd have similar signals for Product, Dispute, UserProfile, etc
+
+
 @receiver(post_save, sender=Product)
-def create_or_update_transaction_breadcrumbs(sender, instance, created, **kwargs):
-    """
-    Signal handler to generate/update breadcrumbs for a Transaction.
-    """
-    # This ensures that breadcrumbs are generated when a transaction is created
-    # or when its main details are updated (if needed).
-    # You might want to refine when this is called based on what triggers a "main" breadcrumb path change.
-    BreadcrumbService.generate_breadcrumbs_for_transaction(instance)
-    # You'd have similar signals for Product, Dispute, UserProfile, etc
+def invalidate_product_cache_on_save_debug(sender, instance, created, **kwargs):
+    """Enhanced signal handler with debugging"""
+    logger.info("=== CACHE INVALIDATION TRIGGERED ===")
+    logger.info(f"Product: {instance.short_code}, Created: {created}")
+
+    # Use the fixed invalidation method
+    ProductListService.invalidate_product_list_caches()
+
+    logger.info(f"Cache invalidation completed for product: {instance.short_code}")
+
+
+@receiver(post_delete, sender=Product)
+def invalidate_product_cache_on_delete(sender, instance, **kwargs):
+    """Enhanced cache invalidation on product deletion."""
+    ProductListService.invalidate_product_list_caches()
+
+    logger.info(f"Cache invalidated for deleted product: {instance.short_code}")
+
+
+@receiver(post_save, sender="product_variant.ProductVariant")
+def invalidate_product_cache_on_variant_change(sender, instance, **kwargs):
+    """Invalidate cache when product variants change."""
+    if hasattr(instance, "product"):
+        ProductListService.invalidate_product_cache(instance.product)

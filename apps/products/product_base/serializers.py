@@ -2,18 +2,23 @@ from rest_framework import serializers
 from django.utils.text import slugify
 from apps.categories.models import Category
 from apps.categories.serializers import CategoryDetailSerializer
-from apps.core.serializers import TimestampedModelSerializer
-from apps.products.product_base.utils import breadcrumbs
-from apps.products.product_brand.services import BrandService
-from apps.products.product_breadcrumb.serializers import BreadcrumbSerializer
+from apps.core.serializers import (
+    BreadcrumbSerializer,
+    TimestampedModelSerializer,
+    UserShortSerializer,
+)
+
+# from apps.products.product_brand.services import BrandService
+from apps.products.product_brand.models import Brand
 from apps.products.product_condition.models import ProductCondition
 from .models import Product
 
 from apps.products.product_condition.serializers import ProductConditionDetailSerializer
 from apps.products.product_image.serializers import ProductImageSerializer
-from apps.products.product_rating.serializers import ProductRatingsSerializer
+from apps.products.product_rating.serializers import (
+    ProductRatingsSummarySerializer,
+)
 from apps.products.product_variant.serializers import ProductVariantSerializer
-from apps.users.serializers import PublicUserProfileSerializer
 from apps.products.product_brand.serializers import BrandListSerializer
 from apps.products.product_watchlist.serializers import (
     ProductWatchlistItemListSerializer,
@@ -36,14 +41,19 @@ class ProductCreateSerializer(TimestampedModelSerializer):
     """
 
     # Use PrimaryKeyRelatedField to accept IDs instead of instances
-    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(), write_only=True
+    )
     condition = serializers.PrimaryKeyRelatedField(
-        queryset=ProductCondition.objects.all()
+        queryset=ProductCondition.objects.all(), write_only=True
+    )
+    brand = serializers.PrimaryKeyRelatedField(
+        queryset=Brand.objects.all(), write_only=True
     )
 
     class Meta:
         model = Product
-        fields = ["id", "title", "category", "condition"]
+        fields = ["id", "title", "category", "condition", "brand"]
         read_only_fields = [
             "id",
             "seller",
@@ -64,6 +74,9 @@ class ProductCreateSerializer(TimestampedModelSerializer):
             raise serializers.ValidationError("You need to provide category")
 
         if not validated_data.get("condition"):
+            raise serializers.ValidationError("You need to provide condition")
+
+        if not validated_data.get("brand"):
             raise serializers.ValidationError("You need to provide condition")
 
         # Create the product with minimal info
@@ -97,7 +110,7 @@ class ProductListSerializer(TimestampedModelSerializer):
     Optimized for displaying products in listings.
     """
 
-    brand_name = serializers.SerializerMethodField(read_only=True)
+    # brand_name = serializers.SerializerMethodField(read_only=True)
     originalPrice = serializers.DecimalField(
         source="original_price", max_digits=10, decimal_places=2
     )
@@ -105,17 +118,13 @@ class ProductListSerializer(TimestampedModelSerializer):
         source="escrow_fee", max_digits=10, decimal_places=2
     )
 
-    # Read‐only nested representation
-    condition = ProductConditionDetailSerializer(read_only=True)
-
     seller = serializers.SerializerMethodField()
-    ratings = ProductRatingsSerializer(source="*", read_only=True)
+    ratings = ProductRatingsSummarySerializer(source="*", read_only=True)
 
     category_name = serializers.CharField(source="category.name", read_only=True)
     condition_name = serializers.CharField(source="condition.name", read_only=True)
     image_url = serializers.SerializerMethodField()
     discount_percent = serializers.SerializerMethodField()
-    brand = BrandListSerializer(read_only=True)
 
     class Meta:
         model = Product
@@ -136,22 +145,21 @@ class ProductListSerializer(TimestampedModelSerializer):
             "seller",
             "escrowFee",
             "location",
-            "condition",
             "description",
             "image_url",
             "discount_percent",
             "in_escrow_inventory",
             "available_inventory",
             "total_inventory",
-            "brand_name",
+            # "brand_name",
         ]
 
-    def get_brand_name(self, obj):
-        return obj.brand.name
+    # def get_brand_name(self, obj):
+    #     return obj.brand.name
 
     def get_seller(self, obj):
-        profile_obj = obj.seller.profile
-        return PublicUserProfileSerializer(profile_obj, context=self.context).data
+        profile_obj = obj.seller
+        return UserShortSerializer(profile_obj, context=self.context).data
 
     def get_image_url(self, obj):
         request = self.context.get("request")
@@ -174,7 +182,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     Includes all information including nested category and seller details.
     """
 
-    brand_detail = serializers.SerializerMethodField(read_only=True)
+    # brand_detail = serializers.SerializerMethodField(read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
     variant_summary = serializers.SerializerMethodField()
 
@@ -209,7 +217,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     )
     images = ProductImageSerializer(many=True, read_only=True)
     seller = serializers.SerializerMethodField()
-    ratings = ProductRatingsSerializer(source="*", read_only=True)
+    ratings = ProductRatingsSummarySerializer(source="*", read_only=True)
     variants = serializers.SerializerMethodField()
     details = serializers.SerializerMethodField()
     breadcrumbs = serializers.SerializerMethodField()
@@ -221,7 +229,6 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     metadata = serializers.SerializerMethodField()
     watchlist_items = serializers.SerializerMethodField()
     extra_details = serializers.SerializerMethodField()
-    breadcrumbs = BreadcrumbSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
@@ -266,12 +273,11 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "metadata",
             "watchlist_items",
             "extra_details",
-            "breadcrumbs",
         ]
 
     def get_seller(self, obj):
-        profile_obj = obj.seller.profile
-        return PublicUserProfileSerializer(profile_obj, context=self.context).data
+        profile_obj = obj.seller
+        return UserShortSerializer(profile_obj, context=self.context).data
 
     def get_variant_summary(self, obj):
         """Get variant summary with statistics"""
@@ -328,8 +334,9 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         return ProductDetailItemSerializer(details, many=True).data
 
     def get_breadcrumbs(self, obj):
-        context = self.context
-        return breadcrumbs(context, obj)
+        """Get dynamic breadcrumbs"""
+        breadcrumb_data = obj.get_breadcrumb_path()
+        return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
     def get_metadata(self, obj):
         meta = getattr(obj, "meta", None)
@@ -353,13 +360,13 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         ).data
 
     def get_extra_details(self, obj):
-        details = obj.productdetail_set.all()
+        details = obj.product_details.all()
         return ProductExtraDetailSerializer(details, many=True).data
 
-    def get_brand_detail(self, obj):
-        brand = BrandService.get_brand_detail(obj.brand_id)
+    # def get_brand_detail(self, obj):
+    #     brand = BrandService.get_brand_detail(obj.brand_id)
 
-        return brand if brand else None
+    #     return brand if brand else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

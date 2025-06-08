@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.core.serializers import TimestampedModelSerializer
+from apps.core.serializers import BreadcrumbSerializer, TimestampedModelSerializer
 
 from .models import Category
 
@@ -41,6 +41,7 @@ class CategoryDetailSerializer(TimestampedModelSerializer):
     Detailed category serializer with parent info and recursive subcategories.
     """
 
+    breadcrumbs = serializers.SerializerMethodField()
     parent_name = serializers.CharField(
         source="parent.name", read_only=True, allow_null=True
     )
@@ -56,6 +57,7 @@ class CategoryDetailSerializer(TimestampedModelSerializer):
             "parent",
             "parent_name",
             "subcategories",
+            "breadcrumbs",
             "products_count",
             "is_active",
             "created_at",
@@ -64,7 +66,11 @@ class CategoryDetailSerializer(TimestampedModelSerializer):
 
     def get_products_count(self, obj):
         """Get count of products in this category."""
-        return obj.product_set.count()
+        return obj.products.count()
+
+    def get_breadcrumbs(self, obj):
+        breadcrumb_data = obj.get_breadcrumb_data()
+        return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
 
 class CategoryWriteSerializer(TimestampedModelSerializer):

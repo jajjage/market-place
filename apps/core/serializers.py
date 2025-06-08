@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
+
 User = get_user_model()
 
 
@@ -24,6 +25,20 @@ class TimestampedModelSerializer(serializers.ModelSerializer):
 class UserShortSerializer(TimestampedModelSerializer):
     """Serializer for a short representation of the user."""
 
+    full_name = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
-        model = get_user_model()
-        fields = ["id", "first_name", "first_name", "last_name"]
+        model = User
+        fields = ["id", "first_name", "full_name"]
+
+    def get_full_name(self, obj):
+        return obj.get_full_name()
+
+
+class BreadcrumbSerializer(serializers.Serializer):
+    """Serializer for breadcrumb items"""
+
+    id = serializers.CharField()
+    name = serializers.CharField()
+    href = serializers.CharField(allow_null=True)
+    order = serializers.IntegerField()

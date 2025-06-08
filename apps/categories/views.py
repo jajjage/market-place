@@ -52,23 +52,13 @@ class CategoryViewSet(BaseViewSet):
 
         return queryset
 
-    def create(self, request, *args, **kwargs):
+    def perform_create(self, serializer):
         """Create a new category using service layer."""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
 
-        try:
-            category = CategoryService.create_category(
-                serializer.validated_data, user=request.user
-            )
-
-            response_serializer = CategoryDetailSerializer(
-                category, context={"request": request}
-            )
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        category = CategoryService.create_category(
+            serializer.validated_data, user=self.request.user
+        )
+        serializer.instance = category
 
     @extend_schema(
         parameters=[
@@ -133,7 +123,7 @@ class CategoryViewSet(BaseViewSet):
     @action(detail=True, methods=["get"])
     def products(self, request, pk=None):
         """Get products belonging to this category."""
-        from apps.products.serializers import ProductListSerializer
+        from apps.products.product_base.serializers import ProductListSerializer
 
         # Parse filters
         filters = {}

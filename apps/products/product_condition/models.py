@@ -67,10 +67,3 @@ class ProductCondition(BaseModel):
 
     def __str__(self):
         return f"{self.name} (Score: {self.quality_score})"
-
-    def save(self, *args, **kwargs):
-        if not self.slug:
-            from django.utils.text import slugify
-
-            self.slug = slugify(self.name)
-        super().save(*args, **kwargs)

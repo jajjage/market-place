@@ -64,19 +64,28 @@ class ProductConditionViewSet(BaseViewSet):
             throttle_classes = []
         return [throttle() for throttle in throttle_classes]
 
-    def create(self, request, *args, **kwargs):
-        """Create condition using service layer."""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
+    def perform_create(self, serializer):
+        """
+        Create or retrieve condition using service layer and attach the instance to the serializer.
+        Do NOT call super().perform_create(serializer) here, as the service handles persistence.
+        """
+        # Call your service to create or get the condition
         condition = ProductConditionService.create_condition(
-            serializer.validated_data, user=request.user
+            serializer.validated_data, user=self.request.user
         )
 
-        response_serializer = ProductConditionDetailSerializer(
-            condition, context={"request": request}
-        )
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        # Assign the created/retrieved instance to the serializer's instance attribute.
+        # This is crucial so that serializer.data (used by DRF's create method)
+        # will correctly reflect the object.
+        serializer.instance = condition
+
+        # You might also want to set the HTTP status code based on 'created'
+        # if your service layer were to return that information.
+        # For now, let's assume get_or_create logic in service is enough,
+        # and the overarching DRF create method will return 201.
+        # If you need different status codes (200 for existing, 201 for new),
+        # you'd move the get_or_create logic directly into the view's `create` method
+        # instead of `perform_create`.
 
     @method_decorator(cache_page(CACHE_TTL))  # Cache for 30 minutes
     @action(detail=False, methods=["get"])

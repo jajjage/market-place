@@ -1,10 +1,12 @@
+import uuid
 from django.db import models
+from django.contrib.contenttypes.fields import GenericRelation
 from django.conf import settings
-from django.urls import reverse
 
 
 from apps.core.models import BaseModel
 from apps.products.product_brand.models import Brand
+from apps.products.product_breadcrumb.models import Breadcrumb
 
 
 class Product(BaseModel):
@@ -24,6 +26,7 @@ class Product(BaseModel):
     short_code = models.CharField(
         max_length=200, unique=True, blank=True, null=True, db_index=True
     )
+    breadcrumbs = GenericRelation(Breadcrumb)
 
     # Pricing
     price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -34,7 +37,13 @@ class Product(BaseModel):
     escrow_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
 
     # Category and condition
-    category = models.ForeignKey("categories.Category", on_delete=models.PROTECT)
+    category = models.ForeignKey(
+        "categories.Category",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="products",
+    )
     condition = models.ForeignKey(
         "product_condition.ProductCondition",
         on_delete=models.SET_NULL,
@@ -117,5 +126,47 @@ class Product(BaseModel):
             return int(((self.original_price - self.price) / self.original_price) * 100)
         return 0
 
-    def get_absolute_url(self):
-        return reverse("product-detail", kwargs={"product_slug": self.slug})
+    def get_breadcrumb_path(self):
+        """Generate complete dynamic breadcrumb path"""
+        breadcrumbs = []
+
+        # Add home
+        breadcrumbs.append(
+            {"id": str(uuid.uuid4()), "name": "TrustLock", "href": "/", "order": 0}
+        )
+
+        # Add category hierarchy
+        if hasattr(self, "category") and self.category:
+            category_path = self.category.get_breadcrumb_path()
+            for i, category in enumerate(category_path):
+                breadcrumbs.append(
+                    {
+                        "id": str(category.id),
+                        "name": category.name,
+                        "href": f"/explore?category={category.slug}",
+                        "order": i + 1,
+                    }
+                )
+
+        # Add brand
+        if hasattr(self, "brand") and self.brand:
+            breadcrumbs.append(
+                {
+                    "id": str(self.brand.id),
+                    "name": self.brand.name,
+                    "href": f"/explore?brand={self.brand.slug}",
+                    "order": len(breadcrumbs),
+                }
+            )
+
+        # Add current product (no href since it's current page)
+        breadcrumbs.append(
+            {
+                "id": str(self.id),
+                "name": self.title,
+                "href": None,  # Current page, no link
+                "order": len(breadcrumbs),
+            }
+        )
+
+        return breadcrumbs

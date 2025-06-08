@@ -83,15 +83,15 @@ CACHES = {
         "KEY_PREFIX": "safetrade",
         "TIMEOUT": 300,  # 5 minutes default
     },
-    "long_term": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": os.environ.get("REDIS_URL", default="redis://redis:6379/2"),
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-        "KEY_PREFIX": "safetrade_long",
-        "TIMEOUT": 3600,  # 1 hour default
-    },
+    # "long_term": {
+    #     "BACKEND": "django_redis.cache.RedisCache",
+    #     "LOCATION": os.environ.get("REDIS_URL", default="redis://redis:6379/2"),
+    #     "OPTIONS": {
+    #         "CLIENT_CLASS": "django_redis.client.DefaultClient",
+    #     },
+    #     "KEY_PREFIX": "safetrade_long",
+    #     "TIMEOUT": 3600,  # 1 hour default
+    # },
 }
 USER_AGENTS_CACHE = "default"
 
@@ -325,19 +325,41 @@ if os.environ.get("GITHUB_ACTIONS"):
 # The code will always prepend Django’s KEY_PREFIX automatically.
 # -----------------------------------------------------------------------------
 CACHE_KEY_TEMPLATES = {
+    "product_catalog": {
+        # Your requested key pattern: product_catalog:all:page:{n}:sort:{criteria}:v{version}
+        "all_paginated": "product_catalog:all:page:{page}:sort:{sort_criteria}:v{version}",
+        "all_pattern": "product_catalog:all:*",  # For bulk deletion - NO PLACEHOLDERS
+        # Other catalog keys
+        "category_list": "product_catalog:category:{category_id}:page:{page}:sort:{sort_criteria}:v{version}",
+        "brand_list": "product_catalog:brand:{brand_id}:page:{page}:sort:{sort_criteria}:v{version}",
+        "search_results": "product_catalog:search:{search_hash}:page:{page}:sort:{sort_criteria}:v{version}",
+        # Wildcard patterns for bulk deletion - SOME REQUIRE PARAMS
+        "category_pattern": "product_catalog:category:{category_id}:*",  # Requires category_id
+        "brand_pattern": "product_catalog:brand:{brand_id}:*",  # Requires brand_id
+        "search_pattern": "product_catalog:search:*",  # No params needed
+    },
     "product_base": {
-        "detail": "base:detail:{id}",
-        "detail_by_shortcode": "base:detail_by_shortcode:{short_code}",
-        "list": "base:list:{page}:{filters}",
-        "my_products": "base:my_products:{user_id}",
-        "featured": "base:featured",
-        "stats": "base:stats:{user_id}",
-        "watchers": "base:watchers:{id}",
-        "share_links": "base:share_links:{short_code}",
-        "by_condition": "base:by_condition:{condition_id}",
-        "toggle_active": "base:toggle_active:{id}",
-        "toggle_featured": "base:toggle_featured:{id}",
-        # Add more as needed for other endpoints
+        "detail": "product_base:detail:{id}",
+        "detail_by_shortcode": "product_base:detail_by_shortcode:{short_code}",
+        # FIXED: Separate exact keys from patterns
+        "list": "product_base:list:{params}",  # For exact keys
+        "list_all_pattern": "product_base:list:*",  # For ALL list deletion - NO PARAMS NEEDED
+        "my_products": "product_base:my_products:{user_id}",
+        "my_products_pattern": "product_base:my_products:*",  # For ALL user products - NO PARAMS
+        "featured": "product_base:featured",
+        "stats": "product_base:stats:{user_id}",
+        "stats_pattern": "product_base:stats:*",  # For ALL user stats - NO PARAMS
+        "watchers": "product_base:watchers:{id}",
+        "watchers_pattern": "product_base:watchers:*",  # For ALL watchers - NO PARAMS
+        "share_links": "product_base:share_links:{short_code}",
+        "share_links_pattern": "product_base:share_links:*",  # For ALL share links - NO PARAMS
+        "by_condition": "product_base:by_condition:{condition_id}",
+        "by_condition_pattern": "product_base:by_condition:*",  # For ALL conditions - NO PARAMS
+        "toggle_active": "product_base:toggle_active:{id}",
+        "toggle_featured": "product_base:toggle_featured:{id}",
+        # Specific user patterns - REQUIRE user_id parameter
+        "user_specific_pattern": "product_base:my_products:{user_id}",  # Specific user only
+        "user_stats_pattern": "product_base:stats:{user_id}",  # Specific user stats
     },
     "breadcrumb": {
         "object": "breadcrumb:object:{object_id}",
@@ -360,6 +382,13 @@ CACHE_KEY_TEMPLATES = {
     },
     "brand_variant": {
         "all": "brand:variants:{brand_id}:*",  # for invalidating all variants of a brand
+    },
+    "product_condition": {
+        "detail": "condition:detail:{id}",
+        "list": "condition:list:*",
+        "active_conditions": "condition:active_conditions:{include_stats}",
+        "popular_conditions": "condition:popular_conditions:{limit}",
+        "analytics": "condition:analytics:{condition_id}",
     },
     "product_inventory": {
         "detail": "inventory:detail:{id}",
@@ -390,6 +419,18 @@ CACHE_KEY_TEMPLATES = {
         "list": "meta:list",
         "featured": "meta:featured",
         "views_buf": "meta:views_buf:{id}",
+    },
+    "category": {
+        "detail": "category:detail:{id}",
+        "list": "category:list",
+        "tree": "category:tree:{max_depth}:{include_inactive}",
+        "subcategory_ids": "category:subcategory_ids:{category_id}",
+        "popular_categories": "category:popular_categories:{limit}",
+        "breadcrumb_path": "category:breadcrumb_path:{category_id}",
+    },
+    "product_variant": {
+        "detail": "variant:detail:{id}",
+        "list_product_variants": "variant:list_product_variants:{product_id}",
     },
     # …add new resources here as needed…
 }

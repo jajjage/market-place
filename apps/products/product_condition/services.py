@@ -27,23 +27,27 @@ class ProductConditionService:
         cls, include_stats: bool = False
     ) -> List[ProductCondition]:
         """Get all active conditions with optional statistics."""
-        cache_key = CacheKeyManager.make_key(
+        if CacheManager.cache_exists(
             "product_condition", "active_conditions", include_stats=include_stats
-        )
-        cached_result = cache.get(cache_key)
-
-        if cached_result:
+        ):
+            cache_key = CacheKeyManager.make_key(
+                "product_condition", "active_conditions", include_stats=include_stats
+            )
+            cached_result = cache.get(cache_key)
             return cached_result
 
         queryset = ProductCondition.objects.filter(is_active=True)
 
         if include_stats:
             queryset = queryset.annotate(
-                products_count=Count("product", filter=Q(product__is_active=True)),
-                avg_price=Avg("product__price", filter=Q(product__is_active=True)),
+                products_count=Count("products", filter=Q(products__is_active=True)),
+                avg_price=Avg("products__price", filter=Q(products__is_active=True)),
             ).select_related("created_by")
 
         conditions = queryset.order_by("display_order", "name")
+        cache_key = CacheKeyManager.make_key(
+            "product_condition", "active_conditions", include_stats=include_stats
+        )
         cache.set(cache_key, conditions, cls.CACHE_TIMEOUT)
 
         return conditions
@@ -51,13 +55,16 @@ class ProductConditionService:
     @classmethod
     def get_popular_conditions(cls, limit: int = 10) -> List[ProductCondition]:
         """Get most popular conditions based on product usage."""
-        cache_key = CacheKeyManager.make_key(
+        if CacheManager.cache_exists(
             "product_condition", "popular_conditions", limit=limit
-        )
-        cached_result = cache.get(cache_key)
+        ):
+            cache_key = CacheKeyManager.make_key(
+                "product_condition", "popular_conditions", limit=limit
+            )
+            cached_result = cache.get(cache_key)
 
-        if cached_result:
-            return cached_result
+            if cached_result:
+                return cached_result
 
         conditions = (
             ProductCondition.objects.annotate(
@@ -71,19 +78,25 @@ class ProductConditionService:
         )
 
         result = list(conditions)
+        cache_key = CacheKeyManager.make_key(
+            "product_condition", "popular_conditions", limit=limit
+        )
         cache.set(cache_key, result, cls.CACHE_TIMEOUT)
         return result
 
     @classmethod
     def get_condition_analytics(cls, condition_id: int) -> Dict[str, Any]:
         """Get detailed analytics for a specific condition."""
-        cache_key = CacheKeyManager.make_key(
-            "product_condition", "condition_analytics", condition_id=condition_id
-        )
-        cached_result = cache.get(cache_key)
+        if CacheManager.cache_exists(
+            "product_condition", "analytics", condition_id=condition_id
+        ):
+            cache_key = CacheKeyManager.make_key(
+                "product_condition", "analytics", condition_id=condition_id
+            )
+            cached_result = cache.get(cache_key)
 
-        if cached_result:
-            return cached_result
+            if cached_result:
+                return cached_result
 
         try:
             condition = ProductCondition.objects.get(id=condition_id, is_active=True)
@@ -113,7 +126,9 @@ class ProductConditionService:
                 "out_of_stock": products.filter(stock_quantity=0).count(),
             },
         }
-
+        cache_key = CacheKeyManager.make_key(
+            "product_condition", "analytics", condition_id=condition_id
+        )
         cache.set(cache_key, analytics, cls.CACHE_TIMEOUT)
         return analytics
 
@@ -155,7 +170,7 @@ class ProductConditionService:
             if user:
                 data["created_by"] = user
 
-            condition = ProductCondition.objects.create(**data)
+            condition, created = ProductCondition.objects.get_or_create(**data)
             cls._clear_condition_caches()
 
             return condition

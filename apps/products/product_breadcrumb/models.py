@@ -10,7 +10,7 @@ class Breadcrumb(BaseModel):
     # Foreign key to ContentType which defines the type of linked object (e.g., Product, Transaction, User)
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     # The ID of the specific object instance (e.g., product_id, transaction_id, user_id)
-    object_id = models.PositiveIntegerField()
+    object_id = models.CharField(max_length=255)
     # The GenericForeignKey itself, allowing access to the linked object
     content_object = GenericForeignKey("content_type", "object_id")
 

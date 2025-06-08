@@ -1,11 +1,13 @@
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
 from django.core.cache import cache
+from django.db.models import Count, Prefetch, Q
 from django.conf import settings
 from typing import List, Dict, Optional, Any
 import logging
 
 from apps.categories.models import Category
+from apps.core.utils.cache_key_manager import CacheKeyManager
+from apps.core.utils.cache_manager import CacheManager
 from apps.products.product_base.models import Product
 
 logger = logging.getLogger(__name__)
@@ -28,10 +30,16 @@ class CategoryService:
         """
         Get hierarchical category tree with optimized queries and caching.
         """
-        cache_key = f"category_tree_{max_depth}_{include_inactive}"
-        cached_result = cache.get(cache_key)
-
-        if cached_result:
+        if CacheManager.cache_exists(
+            "category", "tree", max_depth=max_depth, include_inactive=include_inactive
+        ):
+            cache_key = CacheKeyManager.make_key(
+                "category",
+                "tree",
+                max_depth=max_depth,
+                include_inactive=include_inactive,
+            )
+            cached_result = cache.get(cache_key)
             return cached_result
 
         # Build optimized queryset with prefetch
@@ -79,6 +87,9 @@ class CategoryService:
             return result
 
         tree_data = build_tree_data(root_categories)
+        cache_key = CacheKeyManager.make_key(
+            "category", "tree", max_depth=max_depth, include_inactive=include_inactive
+        )
         cache.set(cache_key, tree_data, cls.CACHE_TIMEOUT)
 
         return tree_data
@@ -152,11 +163,14 @@ class CategoryService:
         Get all subcategory IDs recursively using a single query.
         More efficient than recursive function calls.
         """
-        cache_key = f"subcategory_ids_{category_id}"
-        cached_ids = cache.get(cache_key)
-
-        if cached_ids is not None:
-            return cached_ids
+        if CacheManager.cache_exists(
+            "category", "subcategory_ids", category_id=category_id
+        ):
+            cache_key = CacheKeyManager.make_key(
+                "category", "subcategory_ids", category_id=category_id
+            )
+            cached_result = cache.get(cache_key)
+            return cached_result
 
         # Use CTE (Common Table Expression) for PostgreSQL or recursive query
         # This is more efficient than multiple queries
@@ -178,17 +192,23 @@ class CategoryService:
 
             category_ids = [row[0] for row in cursor.fetchall()]
 
+        cache_key = CacheKeyManager.make_key(
+            "category", "subcategory_ids", category_id=category_id
+        )
         cache.set(cache_key, category_ids, cls.CACHE_TIMEOUT)
         return category_ids
 
     @classmethod
     def get_popular_categories(cls, limit: int = 10) -> List[Category]:
         """Get popular categories with product counts."""
-        cache_key = f"popular_categories_{limit}"
-        cached_result = cache.get(cache_key)
+        if CacheManager.cache_exists("category", "popular_categories", limit=limit):
+            cache_key = CacheKeyManager.make_key(
+                "category", "popular_categories", limit=limit
+            )
+            cached_result = cache.get(cache_key)
 
-        if cached_result:
-            return cached_result
+            if cached_result:
+                return cached_result
 
         categories = (
             Category.objects.select_related("parent")
@@ -196,20 +216,29 @@ class CategoryService:
             .filter(is_active=True, product_count__gt=0)
             .order_by("-product_count")[:limit]
         )
-
+        cache_key = CacheKeyManager.make_key(
+            "category", "popular_categories", limit=limit
+        )
         cache.set(cache_key, list(categories), cls.CACHE_TIMEOUT)
         return categories
 
     @classmethod
     def get_breadcrumb_path(cls, category_id: int) -> List[Dict]:
-        """Get breadcrumb path for a category."""
-        cache_key = f"breadcrumb_{category_id}"
-        cached_path = cache.get(cache_key)
-
-        if cached_path:
-            return cached_path
+        """Get breadcrumb path for a category with improved caching."""
+        if CacheManager.cache_exists(
+            "category", "breadcrumb_path", category_id=category_id
+        ):
+            cache_key = CacheKeyManager.make_key(
+                "category", "breadcrumb_path", category_id=category_id
+            )
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                return cached_result
 
         try:
+            # Fixed: Should query Category, not Product
+            from apps.categories.models import Category
+
             category = Category.objects.select_related("parent").get(id=category_id)
         except Category.DoesNotExist:
             return []
@@ -224,8 +253,20 @@ class CategoryService:
             )
             current = current.parent
 
+        # Cache the result
+        cache_key = CacheKeyManager.make_key(
+            "category", "breadcrumb_path", category_id=category_id
+        )
         cache.set(cache_key, breadcrumbs, cls.CACHE_TIMEOUT)
         return breadcrumbs
+
+    @classmethod
+    def invalidate_breadcrumb_cache(cls, category_id: int):
+        """Invalidate breadcrumb cache when category changes."""
+        cache_key = CacheKeyManager.make_key(
+            "category", "breadcrumb_path", category_id=category_id
+        )
+        cache.delete(cache_key)
 
     @classmethod
     def create_category(cls, data: Dict[str, Any], user=None) -> Category:
@@ -238,7 +279,7 @@ class CategoryService:
             category = Category.objects.create(**data)
 
             # Clear related caches
-            cls._clear_category_caches()
+            CacheManager.invalidate("category", category_id=category.id)
 
             return category
 
@@ -258,7 +299,7 @@ class CategoryService:
             category.save()
 
             # Clear related caches
-            cls._clear_category_caches()
+            CacheManager.invalidate("category", category_id=category_id)
 
             return category
 
@@ -296,24 +337,3 @@ class CategoryService:
             queryset = queryset.filter(stock_quantity__gt=0)
 
         return queryset
-
-    @classmethod
-    def _clear_category_caches(cls):
-        """Clear all category-related caches."""
-        # This is a simple implementation - in production, you might want
-        # to use cache versioning or more sophisticated cache invalidation
-        cache.delete_many(
-            [
-                key
-                for key in cache._cache.keys()
-                if any(
-                    prefix in key
-                    for prefix in [
-                        "category_tree",
-                        "popular_categories",
-                        "breadcrumb",
-                        "subcategory_ids",
-                    ]
-                )
-            ]
-        )

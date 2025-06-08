@@ -27,17 +27,13 @@ class ProductFilter(filters.FilterSet):
     updated_before = filters.DateTimeFilter(field_name="updated_at", lookup_expr="lte")
 
     # Text search
-    title_contains = filters.CharFilter(field_name="title", lookup_expr="icontains")
-    description_contains = filters.CharFilter(
-        field_name="description", lookup_expr="icontains"
-    )
+    title = filters.CharFilter(field_name="title", lookup_expr="icontains")
+    description = filters.CharFilter(field_name="description", lookup_expr="icontains")
 
     # Related model filters
     seller = filters.ModelChoiceFilter(queryset=User.objects.all())
     seller_email = filters.CharFilter(field_name="seller__email", lookup_expr="iexact")
-    category_name = filters.CharFilter(
-        field_name="category__name", lookup_expr="icontains"
-    )
+    category = filters.CharFilter(field_name="category__name", lookup_expr="icontains")
     condition = filters.ModelChoiceFilter(
         queryset=ProductCondition.objects.filter(is_active=True),
         field_name="condition",
