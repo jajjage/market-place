@@ -91,7 +91,6 @@ INSTALLED_APPS = [
     "apps.products.product_variant",
     "apps.products.product_inventory",
     "apps.products.product_image",
-    "apps.products.product_breadcrumb",
 ]
 
 MIDDLEWARE = [
@@ -169,7 +168,6 @@ REST_FRAMEWORK = {
         "product_search": "100/min",
         "brand_search": "30/min",
         "brand_create": "100/min",
-        "breadcrumb": "200/min",
     },
 }
 

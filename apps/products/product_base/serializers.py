@@ -11,7 +11,7 @@ from apps.core.serializers import (
     UserShortSerializer,
 )
 
-from apps.core.utils.breadcrumbs import BreadcrumbServiceV2
+from apps.core.utils.breadcrumbs import BreadcrumbService
 from apps.products.product_brand.services import BrandService
 from apps.products.product_brand.models import Brand
 from apps.products.product_condition.models import ProductCondition
@@ -338,7 +338,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         return ProductDetailItemSerializer(details, many=True).data
 
     def get_breadcrumbs(self, obj):
-        service = BreadcrumbServiceV2()
+        service = BreadcrumbService()
         breadcrumb_data = service.for_product(obj, include_brand=True)
         return BreadcrumbSerializer(breadcrumb_data, many=True).data
 

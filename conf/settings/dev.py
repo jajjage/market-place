@@ -361,10 +361,6 @@ CACHE_KEY_TEMPLATES = {
         "user_specific_pattern": "product_base:my_products:{user_id}",  # Specific user only
         "user_stats_pattern": "product_base:stats:{user_id}",  # Specific user stats
     },
-    "breadcrumb": {
-        "object": "breadcrumb:object:{object_id}",
-        "all": "breadcrumb:all:*",
-    },
     "brand": {
         # Exact keys (no wildcard) → use make_key("brand", key_name, **kwargs)
         "detail": "brand:detail:{id}",

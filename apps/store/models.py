@@ -1,8 +1,6 @@
 from django.db import models
 from apps.core.models import BaseModel
 from django.conf import settings
-from apps.products.product_breadcrumb.models import Breadcrumb
-from django.contrib.contenttypes.fields import GenericRelation
 
 
 # Store for sellers - optional, for users who sell regularly
@@ -20,7 +18,6 @@ class UserStore(BaseModel):
     logo = models.ImageField(upload_to="store_logos/", null=True, blank=True)
     banner = models.ImageField(upload_to="store_banners/", null=True, blank=True)
     description = models.TextField(blank=True)
-    breadcrumbs = GenericRelation(Breadcrumb)
     is_active = models.BooleanField(default=True)
 
     # Store policies

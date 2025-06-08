@@ -34,7 +34,6 @@ urlpatterns = [
     path("api/v1/", include("apps.products.product_variant.urls")),
     path("api/v1/", include("apps.products.product_inventory.urls")),
     path("api/v1/", include("apps.products.product_image.urls")),
-    path("api/v1/", include("apps.products.product_breadcrumb.urls")),
 ]
 
 if env("DEBUG") == "True":

@@ -6,6 +6,7 @@ from rest_framework import permissions, filters, generics
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 from apps.core.permissions import IsOwnerOrReadOnly
+from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.views import BaseAPIView, BaseViewSet
 from apps.products.product_condition.services import ProductConditionService
 from .models import (
@@ -49,13 +50,15 @@ from apps.products.product_base.services.product_list_service import (
 )
 
 
+logger = logging.getLogger("products_performance")
+
+
 class ProductViewSet(BaseViewSet):
     """
     ViewSet for managing products with different serializers for different operations.
     Supports CRUD operations, filtering, searching, and statistics.
     """
 
-    logger = logging.getLogger("products_performance")
     CACHE_TTL = 60 * 15  # 15 minutes cache
     STATS_CACHE_TTL = 60 * 30  # 30 minutes cache for stats
 
@@ -150,7 +153,6 @@ class ProductViewSet(BaseViewSet):
     def featured(self, request):
         return ProductFeaturedService.get_featured(self, request)
 
-    @method_decorator(cache_page(STATS_CACHE_TTL))
     @method_decorator(vary_on_cookie)
     @action(detail=False, methods=["get"], throttle_classes=[ProductStatsRateThrottle])
     def stats(self, request):
@@ -159,7 +161,17 @@ class ProductViewSet(BaseViewSet):
     def perform_update(self, serializer):
         serializer.save()
         instance = serializer.instance
+
+        # FIXED: Use the same CacheKeyManager to generate the key for deletion
+        cache_key = CacheKeyManager.make_key(
+            "product_base", "detail_by_shortcode", short_code=instance.short_code
+        )
+        # Use the centralized invalidation method
+        ProductDetailService.invalidate_product_cache(instance.short_code)
         ProductListService.invalidate_product_list_caches()
+
+        # Optional: Add logging to verify deletion
+        logger.info(f"Deleted cache key: {cache_key}")
 
     def perform_create(self, serializer):
         serializer.save()
@@ -217,7 +229,6 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
     lookup_field = "short_code"
     permission_classes = [permissions.AllowAny]
 
-    @method_decorator(cache_page(CACHE_TTL))  # Cache for 15 minutes
     def retrieve(self, request, *args, **kwargs):
         return ProductDetailService.retrieve_by_shortcode(
             self, request, *args, **kwargs

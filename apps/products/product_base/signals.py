@@ -1,7 +1,11 @@
 from django.db.models.signals import pre_save, post_save, post_delete
 from django.dispatch import receiver
 import logging
+
 from apps.products.product_base.models import Product
+from apps.products.product_base.services.product_detail_service import (
+    ProductDetailService,
+)
 from apps.products.product_base.services.product_list_service import ProductListService
 from apps.products.product_base.utils.social_sharing import (
     create_unique_short_code,
@@ -87,6 +91,9 @@ def invalidate_product_cache_on_save_debug(sender, instance, created, **kwargs):
     """Enhanced signal handler with debugging"""
     logger.info("=== CACHE INVALIDATION TRIGGERED ===")
     logger.info(f"Product: {instance.short_code}, Created: {created}")
+    if not created:
+        ProductDetailService.invalidate_product_cache(instance.short_code)
+        logger.info(f"Queued cache invalidation for product {instance.short_code}")
 
     # Use the fixed invalidation method
     ProductListService.invalidate_product_list_caches()

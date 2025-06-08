@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.core.serializers import BreadcrumbSerializer, TimestampedModelSerializer
-from apps.core.utils.breadcrumbs import BreadcrumbServiceV2
+from apps.core.utils.breadcrumbs import BreadcrumbService
 
 from .models import Category
 
@@ -84,7 +84,7 @@ class CategoryDetailSerializer(TimestampedModelSerializer):
         return obj.products.count()
 
     def get_breadcrumbs(self, obj):
-        service = BreadcrumbServiceV2()
+        service = BreadcrumbService()
         breadcrumb_data = service.for_category(obj)
         return BreadcrumbSerializer(breadcrumb_data, many=True).data
 

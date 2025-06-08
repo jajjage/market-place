@@ -53,6 +53,7 @@ class CacheKeyManager:
         raw_template = CacheKeyManager._get_template(resource_name, key_name)
         try:
             filled = raw_template.format(**kwargs)
+            logger.info(f"Generated cache key: {filled}")
         except KeyError as e:
             missing = e.args[0]
             logger.error(

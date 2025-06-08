@@ -2,9 +2,6 @@ from django.db import models
 from apps.core.models import BaseModel
 from django.conf import settings
 
-from apps.products.product_breadcrumb.models import Breadcrumb
-from django.contrib.contenttypes.fields import GenericRelation
-
 
 class UserProfile(BaseModel):
     user = models.OneToOneField(
@@ -15,7 +12,6 @@ class UserProfile(BaseModel):
     display_name = models.CharField(max_length=100, blank=True)
     avatar_url = models.URLField(blank=True, null=True)
     bio = models.TextField(blank=True)
-    breadcrumbs = GenericRelation(Breadcrumb)
 
     # Rating and feedback
     average_rating = models.DecimalField(

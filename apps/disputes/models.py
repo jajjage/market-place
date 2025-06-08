@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.db import models
-from apps.products.product_breadcrumb.models import Breadcrumb
-from django.contrib.contenttypes.fields import GenericRelation
+
 
 from apps.core.models import BaseModel
 
@@ -33,7 +32,7 @@ class Dispute(BaseModel):
         on_delete=models.CASCADE,
         related_name="opened_disputes",
     )
-    breadcrumbs = GenericRelation(Breadcrumb)
+
     reason = models.CharField(max_length=30, choices=REASON_CHOICES)
     description = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="opened")

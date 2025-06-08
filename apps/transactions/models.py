@@ -2,8 +2,6 @@ from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 from django.conf import settings
-from apps.products.product_breadcrumb.models import Breadcrumb
-from django.contrib.contenttypes.fields import GenericRelation
 from apps.core.models import BaseModel
 
 
@@ -27,7 +25,6 @@ class EscrowTransaction(BaseModel):
     )
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     currency = models.CharField(max_length=3, default="USD")
-    breadcrumbs = GenericRelation(Breadcrumb)
 
     # Status tracking
     STATUS_CHOICES = [

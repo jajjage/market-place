@@ -1,11 +1,9 @@
 from django.db import models
-from django.contrib.contenttypes.fields import GenericRelation
 from django.conf import settings
 
 
 from apps.core.models import BaseModel
 from apps.products.product_brand.models import Brand
-from apps.products.product_breadcrumb.models import Breadcrumb
 
 
 class Product(BaseModel):
@@ -25,7 +23,6 @@ class Product(BaseModel):
     short_code = models.CharField(
         max_length=200, unique=True, blank=True, null=True, db_index=True
     )
-    breadcrumbs = GenericRelation(Breadcrumb)
 
     # Pricing
     price = models.DecimalField(max_digits=10, decimal_places=2)

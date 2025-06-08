@@ -1,6 +1,11 @@
 from rest_framework import serializers
 
-from apps.core.serializers import TimestampedModelSerializer, UserShortSerializer
+from apps.core.serializers import (
+    BreadcrumbSerializer,
+    TimestampedModelSerializer,
+    UserShortSerializer,
+)
+from apps.core.utils.breadcrumbs import BreadcrumbService
 from .models import ProductWatchlistItem
 
 
@@ -42,6 +47,7 @@ class ProductWatchlistItemListSerializer(TimestampedModelSerializer):
 class ProductWatchlistItemDetailSerializer(TimestampedModelSerializer):
     """Detailed serializer for a single watchlist item."""
 
+    breadcrumbs = serializers.SerializerMethodField()
     user = UserShortSerializer(read_only=True)
     product_details = serializers.SerializerMethodField()
 
@@ -78,6 +84,10 @@ class ProductWatchlistItemDetailSerializer(TimestampedModelSerializer):
             details["image_url"] = request.build_absolute_uri(primary_image.image.url)
 
         return details
+
+    def get_breadcrumbs(self, obj):
+        breadcrumb_data = BreadcrumbService.generate_watchlist_breadcrumbs(obj)
+        return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
 
 class ProductWatchlistItemCreateSerializer(TimestampedModelSerializer):

@@ -39,13 +39,19 @@ class ProductDetailService:
         cache_key = CacheKeyManager.make_key(
             "product_base", "detail_by_shortcode", short_code=short_code
         )
-        cache_key = CacheKeyManager.make_key(
-            "product_base", "detail_by_shortcode", short_code=short_code
-        )
+        print(cache_key)
         logger.info(f"Cache MISS for product detail by shortcode: {cache_key}")
         cache.set(cache_key, serialized_data, view.CACHE_TTL)
         logger.info(f"Cached product detail by shortcode: {cache_key}")
         return view.success_response(
             data=serialized_data,
             message="product retrieved successfully",
+        )
+
+    @staticmethod
+    def invalidate_product_cache(short_code):
+        """Invalidate cached product data by short_code"""
+        print(f"Invalidating product cache by shortcode: {short_code}")
+        CacheManager.invalidate_key(
+            "product_base", "detail_by_shortcode", short_code=short_code
         )
