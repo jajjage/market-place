@@ -1,5 +1,4 @@
 from django.http import Http404, JsonResponse
-from django.views.decorators.cache import cache_page
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.throttling import AnonRateThrottle
@@ -146,9 +145,9 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
             )
 
     # ------------------------------------
-    # LIST (with optional caching)
+    # LIST
     # ------------------------------------
-    def _list_logic(self, request, *args, **kwargs):
+    def list(self, request, *args, **kwargs):
         """
         The core `list` logic—pulled out so we can wrap it in cache_page if needed.
         """
@@ -176,21 +175,10 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def list(self, request, *args, **kwargs):
-        """
-        Optionally wraps `_list_logic` in cache_page if `cache_list_seconds` is set.
-        """
-        if isinstance(self.cache_list_seconds, int):
-            # Wrap the core logic in a cache_page decorator
-            cached_view = cache_page(self.cache_list_seconds)(self._list_logic)
-            return cached_view(request, *args, **kwargs)
-        # No caching: just call core logic
-        return self._list_logic(request, *args, **kwargs)
-
     # ------------------------------------
-    # RETRIEVE (with optional caching)
+    # RETRIEVE
     # ------------------------------------
-    def _retrieve_logic(self, request, *args, **kwargs):
+    def retrieve(self, request, *args, **kwargs):
         """
         The core `retrieve` logic—pulled out so we can wrap it in cache_page if needed.
         """
@@ -211,15 +199,6 @@ class BaseViewSet(ModelViewSet, BaseResponseMixin):
                 message=str(e),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
-
-    def retrieve(self, request, *args, **kwargs):
-        """
-        Optionally wraps `_retrieve_logic` in cache_page if `cache_retrieve_seconds` is set.
-        """
-        if isinstance(self.cache_retrieve_seconds, int):
-            cached_view = cache_page(self.cache_retrieve_seconds)(self._retrieve_logic)
-            return cached_view(request, *args, **kwargs)
-        return self._retrieve_logic(request, *args, **kwargs)
 
     # ------------------------------------
     # HELPER

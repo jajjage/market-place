@@ -120,8 +120,12 @@ class CacheManager:
         """
         try:
             pattern = CacheKeyManager.make_pattern(resource_name, key_name, **kwargs)
+            print(f"Searching for keys with pattern: {pattern}")
+            logger.debug(f"Searching for keys with pattern: {pattern}")
             redis_conn = get_redis_connection("default")
             keys = redis_conn.keys(pattern)
+            print(f"Found keys: {keys}")
+            logger.debug(f"Found keys: {keys}")
             return [
                 key.decode("utf-8") if isinstance(key, bytes) else key for key in keys
             ]

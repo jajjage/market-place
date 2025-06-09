@@ -406,8 +406,10 @@ CACHE_KEY_TEMPLATES = {
     },
     "product_detail": {
         "list": "detail:list:{product_id}",
+        "grouped": "detail:grouped:{product_id}",
         "highlighted": "detail:highlighted:{product_id}",
         "template": "detail:template:{template_id}",
+        "category": "detail:category:{category_id}",
         "detail_type": "detail:type:{detail_type}",
     },
     "product_meta": {

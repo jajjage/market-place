@@ -33,9 +33,6 @@ from apps.products.product_detail.serializers import (
 )
 from apps.products.product_variant.services import ProductVariantService
 from apps.products.product_detail.services import ProductDetailService
-from apps.products.product_detail.serializers import (
-    ProductDetailSerializer as ProductDetailItemSerializer,
-)
 
 
 class ProductCreateSerializer(TimestampedModelSerializer):
@@ -232,7 +229,6 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     brand = BrandListSerializer(read_only=True)
     metadata = serializers.SerializerMethodField()
     watchlist_items = serializers.SerializerMethodField()
-    extra_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -276,7 +272,6 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "brand",
             "metadata",
             "watchlist_items",
-            "extra_details",
         ]
 
     def get_seller(self, obj):
@@ -335,7 +330,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     def get_details(self, obj):
         # Use ProductDetailService to get all details for this product
         details = ProductDetailService.get_product_details(obj.id)
-        return ProductDetailItemSerializer(details, many=True).data
+        return ProductExtraDetailSerializer(details, many=True).data
 
     def get_breadcrumbs(self, obj):
         service = BreadcrumbService()
@@ -362,10 +357,6 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         return ProductWatchlistItemListSerializer(
             items, many=True, context=self.context
         ).data
-
-    def get_extra_details(self, obj):
-        details = obj.product_details.all()
-        return ProductExtraDetailSerializer(details, many=True).data
 
     def get_brand_detail(self, obj):
         brand = BrandService.get_brand_detail(obj.brand_id)

@@ -1,6 +1,6 @@
 import logging
 from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
+
 from django.views.decorators.vary import vary_on_cookie
 from rest_framework import permissions, filters, generics
 from rest_framework.decorators import action
@@ -134,7 +134,6 @@ class ProductViewSet(BaseViewSet):
             return ProductStatsSerializer
         return ProductDetailSerializer
 
-    @method_decorator(cache_page(CACHE_TTL))
     @method_decorator(vary_on_cookie)
     @action(
         detail=False,
@@ -145,7 +144,6 @@ class ProductViewSet(BaseViewSet):
     def my_products(self, request):
         return ProductMyService.get_my_products(self, request)
 
-    @method_decorator(cache_page(CACHE_TTL))
     @method_decorator(vary_on_cookie)
     @action(
         detail=False, methods=["get"], throttle_classes=[ProductFeaturedRateThrottle]

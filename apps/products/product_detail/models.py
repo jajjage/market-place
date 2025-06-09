@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 from apps.core.models import BaseModel
 from apps.products.product_base.models import Product
 
@@ -34,21 +35,45 @@ class ProductDetailTemplate(BaseModel):
     validation_regex = models.CharField(max_length=200, blank=True)
     display_order = models.PositiveIntegerField(default=0)
 
+    # NEW: Add fields to support better template management
+    description = models.TextField(
+        blank=True, help_text="Template description for admins"
+    )
+    is_active = models.BooleanField(
+        default=True, help_text="Whether this template is available for use"
+    )
+    applies_to_subcategories = models.BooleanField(
+        default=True, help_text="Whether this template applies to subcategories as well"
+    )
+
     class Meta:
         db_table = "product_detail_templates"
         ordering = ["display_order", "label"]
-        unique_together = [["label", "category", "detail_type"]]
         indexes = [
             models.Index(fields=["detail_type"]),
             models.Index(fields=["category", "detail_type"]),
+            models.Index(fields=["is_active"]),  # NEW
+            models.Index(fields=["category", "is_active"]),  # NEW
         ]
 
     def __str__(self):
-        return f"{self.label} ({self.get_detail_type_display()})"
+        category_name = self.category.name if self.category else "Global"
+        return f"{self.label} ({self.get_detail_type_display()}) - {category_name}"
+
+    def clean(self):
+        """Validate template data"""
+        super().clean()
+        if self.validation_regex:
+            try:
+                import re
+
+                re.compile(self.validation_regex)
+            except re.error:
+                raise ValidationError({"validation_regex": "Invalid regex pattern"})
 
 
 class ProductDetail(BaseModel):
-    """Enhanced ProductDetail model with better indexing"""
+    """Enhanced ProductDetail model with better template integration"""
 
     class DetailType(models.TextChoices):
         SPECIFICATION = "specification", "Specification"
@@ -81,6 +106,14 @@ class ProductDetail(BaseModel):
     display_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
+    # NEW: Add fields for better template integration
+    created_from_template = models.BooleanField(
+        default=False, help_text="Whether this detail was created from a template"
+    )
+    template_version = models.PositiveIntegerField(
+        default=1, help_text="Version of template when this detail was created"
+    )
+
     class Meta:
         db_table = "product_product_details"
         ordering = ["display_order", "label"]
@@ -92,8 +125,8 @@ class ProductDetail(BaseModel):
             models.Index(fields=["detail_type", "is_highlighted"]),
             models.Index(fields=["product", "is_active"]),
             models.Index(fields=["template"]),
+            models.Index(fields=["created_from_template"]),  # NEW
         ]
-        unique_together = [["product", "label", "detail_type"]]
 
     def __str__(self):
         return f"{self.product.title} - {self.label}: {self.value}"
@@ -105,10 +138,31 @@ class ProductDetail(BaseModel):
             return f"{self.value} {self.unit}"
         return self.value
 
+    def clean(self):
+        """Validate detail against template if available"""
+        super().clean()
+        if self.template and self.template.validation_regex and self.value:
+            import re
+
+            pattern = self.template.validation_regex
+            if not re.match(pattern, str(self.value)):
+                raise ValidationError(
+                    {"value": f"Value does not match required pattern: {pattern}"}
+                )
+
     def save(self, *args, **kwargs):
         # Auto-populate from template if available
-        if self.template and not self.unit:
-            self.unit = self.template.unit
-        if self.template and not self.detail_type:
-            self.detail_type = self.template.detail_type
+        if self.template:
+            if not self.unit and self.template.unit:
+                self.unit = self.template.unit
+            if not self.detail_type:
+                self.detail_type = self.template.detail_type
+            if not self.label:
+                self.label = self.template.label
+            if not self.display_order:
+                self.display_order = self.template.display_order
+
+            # Mark as created from template
+            self.created_from_template = True
+
         super().save(*args, **kwargs)

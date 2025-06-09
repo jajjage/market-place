@@ -5,19 +5,16 @@ from .views import ProductDetailViewSet, ProductDetailTemplateViewSet
 # Main router
 router = DefaultRouter()
 router.register(
-    r"product-detail-templates",
+    r"detail-templates",
     ProductDetailTemplateViewSet,
-    basename="product-detail-template",
+    basename="detail-template",
 )
 
-router.register(r"details", ProductDetailViewSet, basename="product-details")
-
+router.register(
+    r"product-details/(?P<product_pk>[0-9a-f-]+)",
+    ProductDetailViewSet,
+    basename="product-detail",
+)
 urlpatterns = [
     path("", include(router.urls)),
-    # Additional standalone endpoints
-    path(
-        "api/product-details/",
-        ProductDetailViewSet.as_view({"get": "list", "post": "create"}),
-        name="product-detail-standalone-list",
-    ),
 ]
