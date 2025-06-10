@@ -74,18 +74,6 @@ def ensure_product_meta(sender, instance, created, **kwargs):
         )
 
 
-# @receiver(post_save, sender=Product)
-# def create_or_update_product_breadcrumbs(sender, instance, created, **kwargs):
-#     """
-#     Signal handler to generate/update breadcrumbs for a Transaction.
-#     """
-#     # This ensures that breadcrumbs are generated when a transaction is created
-#     # or when its main details are updated (if needed).
-#     # You might want to refine when this is called based on what triggers a "main" breadcrumb path change.
-#     BreadcrumbService.generate_breadcrumbs_for_product(instance)
-#     # You'd have similar signals for Product, Dispute, UserProfile, etc
-
-
 @receiver(post_save, sender=Product)
 def invalidate_product_cache_on_save_debug(sender, instance, created, **kwargs):
     """Enhanced signal handler with debugging"""

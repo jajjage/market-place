@@ -1,8 +1,10 @@
 # services/image_service.py
-from datetime import time
+import time
 import logging
 import os
 import uuid
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Optional
 from django.db import transaction
 from django.core.cache import cache
@@ -13,6 +15,7 @@ from PIL import Image
 import mimetypes
 from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.utils.cache_manager import CacheManager
+from apps.products.product_base.services.product_list_service import ProductListService
 from apps.products.product_image.models import ProductImageVariant, ProductImage
 
 logger = logging.getLogger("images_performance")
@@ -25,6 +28,49 @@ class ProductImageService:
 
     ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+    @staticmethod
+    def get_product_images(
+        product_id: uuid, include_inactive: bool = False
+    ) -> List["ProductImage"]:
+        """Get all images for a product with caching"""
+        if CacheManager.cache_exists("product_image", "list", product_id=product_id):
+            cache_key = CacheKeyManager.make_key(
+                "product_image", "list", product_id=product_id
+            )
+            try:
+                cached_images = cache.get(cache_key)
+                if cached_images is not None:
+                    logger.info(f"Cache hit for product {product_id} images")
+                    logger.debug(
+                        f"Returning {len(cached_images)} cached images for product {product_id}"
+                    )
+                    return cached_images
+            except Exception as e:
+                logger.warning(
+                    f"Cache retrieval failed for product {product_id}: {str(e)}"
+                )
+
+        start_time = time.time()
+
+        queryset = ProductImage.objects.filter(product_id=product_id)
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
+
+        images = list(queryset.select_related("product").order_by("display_order"))
+
+        cache_key = CacheKeyManager.make_key(
+            "product_image", "list", product_id=product_id
+        )
+        # Cache for 1 hour
+        cache.set(cache_key, images, 3600)
+
+        duration = (time.time() - start_time) * 1000
+        logger.info(
+            f"Fetched {len(images)} images for product {product_id} in {duration:.2f}ms"
+        )
+
+        return images
 
     @staticmethod
     def upload_image(uploaded_file, product_id: int, variant_name: str = None) -> Dict:
@@ -62,6 +108,10 @@ class ProductImageService:
             logger.info(
                 f"Uploaded image {unique_filename} for product {product_id} in {duration:.2f}ms"
             )
+            CacheManager.invalidate_key("product_image", "list", product_id=product_id)
+            CacheManager.invalidate_key(
+                "product_image", "primary", product_id=product_id
+            )
 
             return {
                 "success": True,
@@ -75,6 +125,19 @@ class ProductImageService:
         except Exception as e:
             logger.error(f"Image upload failed for product {product_id}: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def upload_image_async(uploaded_file, product_id: int, variant_name: str = None):
+        """Async version for handling multiple uploads"""
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            return loop.run_in_executor(
+                executor,
+                ProductImageService.upload_image,
+                uploaded_file,
+                product_id,
+                variant_name,
+            )
 
     @staticmethod
     def _validate_image_file(uploaded_file) -> Dict:
@@ -152,47 +215,27 @@ class ProductImageService:
             return False
 
     @staticmethod
-    def get_product_images(
-        product_id: int, include_inactive: bool = False
-    ) -> List["ProductImage"]:
-        """Get all images for a product with caching"""
-        cache_key = CacheKeyManager.make_key(
-            "product_image", "list", product_id=product_id
-        )
-
-        cached_images = cache.get(cache_key)
-        if cached_images is not None:
-            logger.info(f"Cache hit for product {product_id} images")
-            return cached_images
-
-        start_time = time.time()
-
-        queryset = ProductImage.objects.filter(product_id=product_id)
-        if not include_inactive:
-            queryset = queryset.filter(is_active=True)
-
-        images = list(queryset.select_related("product").order_by("display_order"))
-
-        # Cache for 1 hour
-        cache.set(cache_key, images, 3600)
-
-        duration = (time.time() - start_time) * 1000
-        logger.info(
-            f"Fetched {len(images)} images for product {product_id} in {duration:.2f}ms"
-        )
-
-        return images
-
-    @staticmethod
-    def get_primary_image(product_id: int) -> Optional["ProductImage"]:
+    def get_primary_image(product_id: uuid) -> Optional["ProductImage"]:
         """Get primary image with fallback to first image"""
+        if CacheManager.cache_exists("product_image", "primary", product_id=product_id):
+            # Check cache first
+            cache_key = CacheKeyManager.make_key(
+                "product_image", "primary", product_id=product_id
+            )
+            try:
+                cached_image = cache.get(cache_key)
+                if cached_image is not None:
+                    logger.info(f"Cache hit for primary image of product {product_id}")
+                    return cached_image
+            except Exception as e:
+                logger.warning(
+                    f"Cache retrieval failed for primary image of product {product_id}: {str(e)}"
+                )
         cache_key = CacheKeyManager.make_key(
             "product_image", "primary", product_id=product_id
         )
-
-        cached_image = cache.get(cache_key)
-        if cached_image is not None:
-            return cached_image
+        # If not cached, fetch from database
+        logger.info(f"Fetching primary image for product {product_id} from database")
 
         try:
             # Try to get primary image first
@@ -332,8 +375,18 @@ class ProductImageService:
             if image.is_primary:
                 ProductImageService._ensure_single_primary(product_id, image.id)
 
+            product = image.product
             # Invalidate cache
-            CacheManager.invalidate("product_image", product_id=product_id)
+            CacheManager.invalidate_key("product_image", "list", product_id=product_id)
+            CacheManager.invalidate_key(
+                "product_image", "primary", product_id=product_id
+            )
+            ProductListService.invalidate_product_list_caches()
+            from apps.products.product_base.services.product_detail_service import (
+                ProductDetailService,
+            )
+
+            ProductDetailService.invalidate_product_cache(product.short_code)
 
             duration = (time.time() - start_time) * 1000
             logger.info(f"Created image with upload in {duration:.2f}ms")
@@ -360,13 +413,26 @@ class ProductImageService:
     @staticmethod
     def get_images_by_variant(product_id: int) -> Dict[str, List["ProductImage"]]:
         """Get images grouped by variant"""
+        if CacheManager.cache_exists(
+            "product_image", "variants", product_id=product_id
+        ):
+            cache_key = CacheKeyManager.make_key(
+                "product_image", "variants", product_id=product_id
+            )
+            try:
+                cached_variants = cache.get(cache_key)
+                if cached_variants is not None:
+                    return cached_variants
+            except Exception as e:
+                logger.warning(
+                    f"Cache retrieval failed for product {product_id} variants: {str(e)}"
+                )
         cache_key = CacheKeyManager.make_key(
             "product_image", "variants", product_id=product_id
         )
-
-        cached_variants = cache.get(cache_key)
-        if cached_variants is not None:
-            return cached_variants
+        logger.info(
+            f"Fetching images by variant for product {product_id} from database"
+        )
 
         images = (
             ProductImage.objects.filter(product_id=product_id, is_active=True)

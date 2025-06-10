@@ -15,6 +15,7 @@ from apps.core.utils.breadcrumbs import BreadcrumbService
 from apps.products.product_brand.services import BrandService
 from apps.products.product_brand.models import Brand
 from apps.products.product_condition.models import ProductCondition
+from apps.products.product_image.services import ProductImageService
 from .models import Product
 
 from apps.products.product_condition.serializers import ProductConditionDetailSerializer
@@ -164,10 +165,11 @@ class ProductListSerializer(TimestampedModelSerializer):
 
     def get_image_url(self, obj):
         request = self.context.get("request")
-        primary_image = obj.images.filter(is_primary=True).first() or obj.images.first()
+        primary_image = ProductImageService.get_primary_image(obj.id)
+        print(primary_image)
 
-        if request and primary_image and primary_image.image:
-            return request.build_absolute_uri(primary_image.image.url)
+        if request and primary_image and primary_image.image_url:
+            return request.build_absolute_uri(primary_image.image_url)
         return None
 
     def get_discount_percent(self, obj):

@@ -5,17 +5,17 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from apps.core.views import BaseViewSet
 from apps.core.utils.cache_manager import CacheManager
-from apps.products.product_image.models import ProductImage
+from apps.products.product_image.models import ProductImage, ProductImageVariant
+from apps.products.product_image.permissions import IsAdminOrStaff
 from apps.products.product_image.serializers import (
     ProductImageBulkUploadSerializer,
     ProductImageSerializer,
     ProductImageUploadSerializer,
+    ProductImageVariantSerializer,
 )
 from apps.products.product_image.services import ProductImageService
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
-from django.views.decorators.vary import vary_on_headers
 
+from apps.products.product_image.tasks import upload_product_image_task
 from apps.products.product_image.utils.rate_limiting import (
     ImageBulkTUploadThrottle,
     ImageUploadThrottle,
@@ -42,130 +42,112 @@ class ProductImageViewSet(BaseViewSet):
             throttle_classes = []
         return [throttle() for throttle in throttle_classes]
 
-    @method_decorator(cache_page(60 * 15))  # 15 minutes
-    @method_decorator(vary_on_headers("Authorization"))
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
     @action(detail=False, methods=["post"])
     def upload_image(self, request):
-        """Upload single image with file"""
-        product_id = request.data.get("product_id")
-        if not product_id:
-            return Response({"error": "product_id required"}, status=400)
-
         serializer = ProductImageUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # Extract uploaded file and other data
-        uploaded_file = serializer.validated_data.pop("image")
-        image_data = serializer.validated_data
+        uploaded_file = request.FILES["image"]
+        product_id = serializer.validated_data["product_id"]
+        alt_text = serializer.validated_data.get("alt_text", "")
+        is_primary = serializer.validated_data.get("is_primary", False)
+        display_order = serializer.validated_data.get("display_order", 0)
+        variant_name = serializer.validated_data.get("variant_name")
 
-        # Create image with upload
-        result = ProductImageService.create_image_with_upload(
-            product_id=int(product_id),
-            uploaded_file=uploaded_file,
-            image_data=image_data,
+        # 1) Save the incoming file to a stable location your worker can access.
+        #    Here we let Django’s default storage save it:
+        from django.core.files.storage import default_storage
+
+        path = default_storage.save(f"temp/uploads/{uploaded_file.name}", uploaded_file)
+
+        # 2) Enqueue the task
+        task = upload_product_image_task.delay(
+            product_id=product_id,
+            file_path=path,
+            alt_text=alt_text,
+            is_primary=is_primary,
+            display_order=display_order,
+            variant_name=variant_name,
             created_by_user=not request.user.is_staff,
         )
 
-        if result["success"]:
-            response_serializer = ProductImageSerializer(result["image"])
-            return Response(
-                {
-                    "image": response_serializer.data,
-                    "upload_info": {
-                        "file_size_mb": round(
-                            result["uploaded_file_info"]["file_size"] / (1024 * 1024), 2
-                        ),
-                        "dimensions": result["uploaded_file_info"]["dimensions"],
-                        "filename": result["uploaded_file_info"]["filename"],
-                    },
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        else:
-            return Response({"error": result["error"]}, status=400)
+        # 3) Return immediately
+        return self.success_response(
+            data={"detail": "Upload queued", "task_id": task.id},
+            status_code=status.HTTP_202_ACCEPTED,
+        )
 
     @action(detail=False, methods=["post"])
     def bulk_upload(self, request):
-        """Bulk upload images with files"""
+        # validate product_id
         product_id = request.data.get("product_id")
         if not product_id:
-            return Response({"error": "product_id required"}, status=400)
+            return Response({"error": "product_id required"}, 400)
 
-        # Handle multiple file uploads
         uploaded_files = request.FILES.getlist("images")
-        alt_texts = request.data.getlist("alt_texts", [])
-        variant_names = request.data.getlist("variant_names", [])
-
         if not uploaded_files:
-            return Response({"error": "No images provided"}, status=400)
+            return Response({"error": "No images provided"}, 400)
 
-        if len(uploaded_files) > 5:
-            return Response({"error": "Maximum 5 images per bulk upload"}, status=400)
+        from django.core.files.storage import default_storage
 
-        created_images = []
-        errors = []
-
+        queued = []
         for i, uploaded_file in enumerate(uploaded_files):
-            image_data = {
-                "alt_text": alt_texts[i] if i < len(alt_texts) else "",
-                "variant_name": variant_names[i] if i < len(variant_names) else "",
-                "display_order": i,
-                "is_primary": i == 0
-                and len(created_images) == 0,  # First image as primary if none exists
-            }
-
-            result = ProductImageService.create_image_with_upload(
-                product_id=int(product_id),
-                uploaded_file=uploaded_file,
-                image_data=image_data,
-                created_by_user=not request.user.is_staff,
+            # persist file
+            path = default_storage.save(
+                f"temp/uploads/{uploaded_file.name}", uploaded_file
             )
 
-            if result["success"]:
-                created_images.append(result["image"])
-            else:
-                errors.append({"file": uploaded_file.name, "error": result["error"]})
+            # metadata
+            meta = {
+                "alt_text": (
+                    request.data.getlist("alt_texts", [])[i]
+                    if i < len(request.data.getlist("alt_texts", []))
+                    else ""
+                ),
+                "variant_name": (
+                    request.data.getlist("variant_names", [])[i]
+                    if i < len(request.data.getlist("variant_names", []))
+                    else None
+                ),
+                "display_order": i,
+                "is_primary": (i == 0),
+            }
 
-        response_serializer = ProductImageSerializer(created_images, many=True)
-        response_data = {
-            "created_images": response_serializer.data,
-            "created_count": len(created_images),
-            "total_attempted": len(uploaded_files),
-        }
+            # enqueue each
+            task = upload_product_image_task.delay(
+                product_id=product_id,
+                file_path=path,
+                **meta,
+                created_by_user=not request.user.is_staff,
+            )
+            queued.append(task.id)
 
-        if errors:
-            response_data["errors"] = errors
-
-        return Response(
-            response_data, status=status.HTTP_201_CREATED if created_images else 400
+        return self.success_response(
+            data={"detail": "Bulk upload queued", "task_ids": queued},
+            status_code=status.HTTP_202_ACCEPTED,
         )
 
     @action(detail=False, methods=["get"])
-    @method_decorator(cache_page(60 * 30))  # 30 minutes
     def primary(self, request):
         """Get primary image for a product"""
         product_id = request.query_params.get("product_id")
         if not product_id:
             return Response({"error": "product_id required"}, status=400)
 
-        image = ProductImageService.get_primary_image(int(product_id))
+        image = ProductImageService.get_primary_image(product_id)
         if image:
             serializer = self.get_serializer(image)
             return Response(serializer.data)
         return Response({"error": "No image found"}, status=404)
 
     @action(detail=False, methods=["get"])
-    @method_decorator(cache_page(60 * 15))
     def variants(self, request):
         """Get images grouped by variant"""
         product_id = request.query_params.get("product_id")
         if not product_id:
             return Response({"error": "product_id required"}, status=400)
 
-        variants = ProductImageService.get_image_variants(int(product_id))
+        variants = ProductImageService.get_images_by_variant(int(product_id))
         serialized_variants = {}
 
         for variant_name, images in variants.items():
@@ -209,3 +191,20 @@ class ProductImageViewSet(BaseViewSet):
         CacheManager.invalidate("product_image", product_id=instance.product_id)
 
         return super().destroy(request, *args, **kwargs)
+
+
+class ProductImageVariantViewSet(BaseViewSet):
+    queryset = ProductImageVariant.objects.all()
+    serializer_class = ProductImageVariantSerializer
+    permission_classes = [IsAdminOrStaff]
+
+    def get_queryset(self):
+        # Optionally filter by is_active
+        is_active = self.request.query_params.get("is_active")
+        queryset = super().get_queryset()
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == "true")
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by_admin=True)

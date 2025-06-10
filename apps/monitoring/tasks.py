@@ -1,7 +1,7 @@
 # monitoring/tasks.py
 
 from celery import shared_task
-from monitoring.utils import check_database_performance, check_cache_hit_ratio
+from apps.monitoring.utils import check_database_performance, check_cache_hit_ratio
 
 
 @shared_task

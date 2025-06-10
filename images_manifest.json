@@ -1,0 +1,18 @@
+[
+    {
+        "product_id": "c27f290f-803f-4504-8a4c-bc3a98f9802d",
+        "file_path": "/workspaces/conf/products/vitaly-gariev-1JnN9QhmTGU-unsplash.jpg",
+        "alt_text": "Clay Banks' photo of a laptop on a desk",
+        "is_primary": true,
+        "display_order": 1,
+        "variant_name": "large"
+    },
+    {
+        "product_id": "c27f290f-803f-4504-8a4c-bc3a98f9802d",
+        "file_path": "/workspaces/conf/products/sumup-C_i7ew0w488-unsplash.jpg",
+        "alt_text": "Roberto Cortese's photo of a laptop on a desk",
+        "is_primary": false,
+        "display_order": 2,
+        "variant_name": "large"
+    }
+]
