@@ -1,7 +1,8 @@
 # services/inventory.py
 from django.db import transaction
-from django.utils import timezone
-from datetime import timedelta
+
+# from django.utils import timezone
+# from datetime import timedelta
 
 from apps.transactions.models import EscrowTransaction, TransactionHistory
 from apps.transactions.utils.tracking_id import generate_tracking_id
@@ -195,7 +196,7 @@ class InventoryService:
         # Create transaction history record
         TransactionHistory.objects.create(
             transaction=escrow_transaction,
-            status="initiated",
+            new_status="initiated",
             notes=f"Escrow transaction initiated for {quantity} units of {product.title}",
             created_by=user,
         )
@@ -280,6 +281,8 @@ class InventoryService:
             TransactionHistory.objects.create(
                 transaction=escrow_transaction,
                 status=escrow_transaction.status,
+                # previous_status=previous_status,
+                # new_status=new_status,
                 notes=status_note,
                 created_by=user,
             )
@@ -330,50 +333,3 @@ class InventoryService:
         )
 
         return product
-
-    @staticmethod
-    @transaction.atomic
-    def update_escrow_transaction_status(
-        escrow_transaction,
-        status,
-        user=None,
-        notes="",
-        tracking_number=None,
-        shipping_carrier=None,
-    ):
-        """
-        Update the status of an escrow transaction
-
-        Args:
-            escrow_transaction: The escrow transaction to update
-            status: The new status
-            user: The user performing the action
-            notes: Additional notes about the status change
-            tracking_number: Optional tracking number for shipping
-            shipping_carrier: Optional shipping carrier name
-
-        Returns:
-            The updated escrow transaction
-        """
-        escrow_transaction.status = status
-
-        # Update tracking info if provided
-        if tracking_number:
-            escrow_transaction.tracking_number = tracking_number
-        if shipping_carrier:
-            escrow_transaction.shipping_carrier = shipping_carrier
-
-        # Set inspection end date when status is set to 'inspection'
-        if status == "inspection":
-            escrow_transaction.inspection_end_date = timezone.now() + timedelta(
-                days=escrow_transaction.inspection_period_days
-            )
-
-        escrow_transaction.save()
-
-        # Create transaction history record
-        TransactionHistory.objects.create(
-            transaction=escrow_transaction, status=status, notes=notes, created_by=user
-        )
-
-        return escrow_transaction

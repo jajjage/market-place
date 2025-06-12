@@ -166,10 +166,15 @@ class ProductListSerializer(TimestampedModelSerializer):
     def get_image_url(self, obj):
         request = self.context.get("request")
         primary_image = ProductImageService.get_primary_image(obj.id)
-        print(primary_image)
+        if primary_image and primary_image.image_url:
+            # Try to build absolute URL if request is available
+            if request:
+                return request.build_absolute_uri(primary_image.image_url)
+            else:
+                # Fallback to relative URL or build manually
+                return primary_image.image_url
+                # Or build manually: f"http://your-domain.com{primary_image.image_url}"
 
-        if request and primary_image and primary_image.image_url:
-            return request.build_absolute_uri(primary_image.image_url)
         return None
 
     def get_discount_percent(self, obj):

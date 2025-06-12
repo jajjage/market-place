@@ -12,7 +12,11 @@ class EscrowTransaction(BaseModel):
     """
 
     # Existing fields shown for context
-    product = models.ForeignKey("product_base.Product", on_delete=models.PROTECT)
+    product = models.ForeignKey(
+        "product_base.Product",
+        on_delete=models.PROTECT,
+        related_name="escrow_transactions",
+    )
     buyer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="buyer_transactions",
@@ -112,9 +116,14 @@ class TransactionHistory(BaseModel):
     transaction = models.ForeignKey(
         EscrowTransaction, on_delete=models.CASCADE, related_name="history"
     )
-    status = models.CharField(max_length=20, choices=EscrowTransaction.STATUS_CHOICES)
     timestamp = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(blank=True)
+    previous_status = models.CharField(
+        max_length=20, choices=EscrowTransaction.STATUS_CHOICES, null=True
+    )
+    new_status = models.CharField(
+        max_length=20, choices=EscrowTransaction.STATUS_CHOICES
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
     )

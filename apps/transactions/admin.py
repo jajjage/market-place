@@ -14,8 +14,14 @@ class TransactionHistoryInline(admin.TabularInline):
 
     model = TransactionHistory
     extra = 0
-    readonly_fields = ("status", "created_at", "created_by", "notes")
-    fields = ("status", "created_at", "created_by", "notes")
+    readonly_fields = (
+        "new_status",
+        "previous_status",
+        "created_at",
+        "created_by",
+        "notes",
+    )
+    fields = ("new_status", "previous_status", "created_at", "created_by", "notes")
     ordering = ("-created_at",)
     can_delete = False
     max_num = 0  # Don't allow adding new history entries via admin
@@ -282,14 +288,22 @@ class TransactionHistoryAdmin(admin.ModelAdmin):
 
     list_display = (
         "transaction_ref",
-        "status",
+        "new_status",
+        "previous_status",
         "created_at",
         "created_by_user",
         "notes_preview",
     )
-    list_filter = ("status", "created_at")
+    list_filter = ("new_status", "previous_status", "created_at")
     search_fields = ("transaction__tracking_id", "notes", "created_by__email")
-    readonly_fields = ("transaction", "status", "created_at", "created_by", "notes")
+    readonly_fields = (
+        "transaction",
+        "new_status",
+        "previous_status",
+        "created_at",
+        "created_by",
+        "notes",
+    )
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("transaction", "created_by")

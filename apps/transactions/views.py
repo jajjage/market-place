@@ -4,7 +4,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 
 from django.core.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated
+from django.core.exceptions import ValidationError
 from apps.core.permissions import (
     BuyerTransaction,
     IsTransactionParticipantOrStaff,
@@ -30,9 +31,17 @@ from .serializers import (
     EscrowTransactionListSerializer,
     EscrowTransactionTrackingSerializer,
 )
-from apps.products.product_inventory.services import InventoryService
+from apps.transactions.services.escrow_services import (
+    EscrowTransactionService,
+    EscrowTransactionUtility,
+)
 from .utils.transaction_filters import TransactionFilter
-from .utils.statuses import is_status_change_allowed
+from .utils.validate_actions import (
+    get_other_party_info,
+    get_required_fields_for_status,
+    get_action_warnings,
+    get_status_metadata,
+)
 
 
 class EscrowTransactionViewSet(BaseViewSet):
@@ -46,7 +55,7 @@ class EscrowTransactionViewSet(BaseViewSet):
     CACHE_TTL = 60 * 5  # 5 minutes cache
     TRACK_CACHE_TTL = 60 * 2  # 2 minutes cache for tracking info
 
-    permission_classes = [IsAuthenticatedOrReadOnly, IsTransactionParticipantOrStaff]
+    permission_classes = [IsAuthenticated, IsTransactionParticipantOrStaff]
     filterset_class = TransactionFilter
     throttle_classes = []
     filter_backends = [
@@ -195,39 +204,242 @@ class EscrowTransactionViewSet(BaseViewSet):
         return self.success_response(data=data)
 
     @action(
-        detail=True,
+        detail=True,  # Changed to True since you're updating a specific transaction
         url_path="update-status",
         methods=["post"],
         throttle_classes=[EscrowTransactionUpdateRateThrottle],
     )
     def update_status(self, request, pk=None):
         """
-        Update the status of an escrow transaction.
-        Different status updates have different permission requirements.
+        Enhanced status update endpoint with comprehensive validation
         """
-        transaction = self.get_object()
-        new_status = request.data.get("status")
-        notes = request.data.get("notes", "")
-        tracking_number = request.data.get("tracking_number")
-        shipping_carrier = request.data.get("shipping_carrier")
+        try:
+            transaction = self.get_object()
 
-        if not is_status_change_allowed(transaction, new_status, request.user):
-            return self.error_response(
-                message="You are not authorized to change the status to this value.",
-                status=status.HTTP_403_FORBIDDEN,
+            # Extract and validate request data
+            new_status = request.data.get("status")
+            if not new_status:
+                return self.error_response(
+                    message="Status is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            if not transaction.status != new_status:
+                return self.error_response(
+                    message=f"Status is in {new_status}",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            notes = request.data.get("notes", "")
+            tracking_number = request.data.get("tracking_number")  # Fixed field name
+            shipping_carrier = request.data.get("shipping_carrier")
+
+            # Update transaction using the service
+            updated_transaction = (
+                EscrowTransactionService.update_escrow_transaction_status(
+                    escrow_transaction=transaction,
+                    status=new_status,
+                    user=request.user,
+                    notes=notes,
+                    tracking_number=tracking_number,
+                    shipping_carrier=shipping_carrier,
+                )
             )
 
-        updated_transaction = InventoryService.update_escrow_transaction_status(
-            escrow_transaction=transaction,
-            status=new_status,
-            user=request.user,
-            notes=notes,
-            tracking_number=tracking_number,
-            shipping_carrier=shipping_carrier,
-        )
+            # Serialize the response
+            serializer = self.get_serializer(
+                updated_transaction, context={"request": request}
+            )
 
-        serializer = self.get_serializer(updated_transaction)
+            # Invalidate caches
+            TransactionListService.invalidate_transaction_caches(transaction)
 
-        TransactionListService.invalidate_transaction_caches(transaction)
+            return self.success_response(
+                data=serializer.data,
+                message=f"Transaction status updated to {new_status}",
+            )
 
-        return self.success_response(data=serializer.data)
+        except ValidationError as e:
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            self.logger.error(f"Unexpected error updating transaction status: {str(e)}")
+            return self.error_response(
+                message="An unexpected error occurred",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(
+        detail=True,
+        url_path="available-actions",
+        methods=["get"],
+        permission_classes=[IsAuthenticated],
+    )
+    def available_actions(self, request, pk=None):
+        """
+        Get available actions for the current user on a specific transaction
+
+        Returns:
+            - available_actions: List of actions user can perform
+            - user_role: User's role in this transaction (buyer/seller/staff)
+            - current_status: Current transaction status
+            - transaction_info: Basic transaction details
+        """
+        try:
+            transaction = self.get_object()
+
+            # Get available actions using the utility
+            actions_data = EscrowTransactionUtility.get_available_actions(
+                transaction, request.user
+            )
+
+            # Add additional transaction context
+            response_data = {
+                **actions_data,
+                "transaction_info": {
+                    "id": transaction.id,
+                    "current_status": transaction.status,
+                    "buyer_id": transaction.buyer.id if transaction.buyer else None,
+                    "seller_id": transaction.seller.id if transaction.seller else None,
+                    "amount": (
+                        str(transaction.amount)
+                        if hasattr(transaction, "amount")
+                        else None
+                    ),
+                    "created_at": (
+                        transaction.created_at.isoformat()
+                        if hasattr(transaction, "created_at")
+                        else None
+                    ),
+                },
+                "status_metadata": get_status_metadata(transaction),
+            }
+
+            return self.success_response(data=response_data)
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error fetching available actions: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(
+        detail=False,
+        url_path="my-transactions-actions",
+        methods=["get"],
+        permission_classes=[IsAuthenticated],
+    )
+    def my_transactions_actions(self, request):
+        """
+        Get available actions for all transactions where the user is a participant
+        Useful for dashboard views showing actionable items
+        """
+        try:
+            # Get transactions where user is buyer or seller
+            # Get transactions where user is buyer or seller
+            user_transactions = self.get_queryset().select_related("buyer", "seller")
+            # ----------------------------------------------------------
+            # We may use this a list of transaction with caching like this one
+            # user_transactions = TransactionListService.get_user_all_transactions(user=request.user, queryset=self.queryset)
+            # ------------------------------------------------------
+
+            transactions_with_actions = []
+
+            for transaction in user_transactions:
+                actions_data = EscrowTransactionUtility.get_available_actions(
+                    transaction, request.user
+                )
+
+                # Only include transactions that have available actions
+                if actions_data["available_actions"]:
+                    transaction_data = {
+                        "transaction_id": transaction.id,
+                        "current_status": transaction.status,
+                        "user_role": actions_data["user_role"],
+                        "available_actions": actions_data["available_actions"],
+                        "requires_attention": len(actions_data["available_actions"])
+                        > 0,
+                        "transaction_summary": {
+                            "amount": (
+                                str(transaction.amount)
+                                if hasattr(transaction, "amount")
+                                else None
+                            ),
+                            "other_party": get_other_party_info(
+                                transaction, request.user
+                            ),
+                            "created_at": (
+                                transaction.created_at.isoformat()
+                                if hasattr(transaction, "created_at")
+                                else None
+                            ),
+                        },
+                    }
+                    transactions_with_actions.append(transaction_data)
+
+            return self.success_response(
+                data={
+                    "actionable_transactions": transactions_with_actions,
+                    "total_count": len(transactions_with_actions),
+                    "user_id": request.user.id,
+                }
+            )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error fetching user transactions: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(
+        detail=True,
+        url_path="validate-action",
+        methods=["post"],
+        permission_classes=[IsAuthenticated],
+    )
+    def validate_action(self, request, pk=None):
+        """
+        Validate if a specific action can be performed without actually performing it
+        Useful for frontend validation before showing confirmation dialogs
+        """
+        try:
+            transaction = self.get_object()
+            proposed_status = request.data.get("status")
+
+            if not proposed_status:
+                return self.error_response(
+                    message="Status is required for validation",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Check if action is allowed
+            is_allowed, reason = EscrowTransactionService.is_status_change_allowed(
+                transaction, proposed_status, request.user
+            )
+
+            # Check requirements
+            is_valid, validation_reason = (
+                EscrowTransactionService.validate_status_requirements(
+                    transaction,
+                    proposed_status,
+                    tracking_number=request.data.get("tracking_number"),
+                    shipping_carrier=request.data.get("shipping_carrier"),
+                )
+            )
+
+            validation_result = {
+                "is_allowed": is_allowed and is_valid,
+                "permission_check": {"allowed": is_allowed, "reason": reason},
+                "requirement_check": {"valid": is_valid, "reason": validation_reason},
+                "required_fields": get_required_fields_for_status(proposed_status),
+                "warnings": get_action_warnings(transaction, proposed_status),
+            }
+
+            return self.success_response(data=validation_result)
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error validating action: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
