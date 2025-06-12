@@ -83,6 +83,7 @@
         "simplejwt",
         "smembers",
         "sorl",
+        "srem",
         "viewset",
         "viewsets",
         "VIRTUALENVS",

@@ -1,11 +1,10 @@
 # services/inventory.py
 from django.db import transaction
 from django.utils import timezone
-import uuid
-import hashlib
 from datetime import timedelta
 
 from apps.transactions.models import EscrowTransaction, TransactionHistory
+from apps.transactions.utils.tracking_id import generate_tracking_id
 from .models import (
     InventoryTransaction,
 )
@@ -189,7 +188,7 @@ class InventoryService:
             inspection_period_days=inspection_period_days,
             price_by_negotiation=price_by_negotiation,
             shipping_address=shipping_address,
-            tracking_id=InventoryService.generate_tracking_id(product, buyer, seller),
+            tracking_id=generate_tracking_id(product, buyer, seller),
             notes=notes,
         )
 
@@ -331,34 +330,6 @@ class InventoryService:
         )
 
         return product
-
-    @staticmethod
-    def generate_tracking_id(product, buyer, seller):
-        """
-        Generate a unique tracking ID for escrow transactions
-
-        Format: TRK-{first 8 chars of UUID}-{timestamp}-{hash}
-
-        Args:
-            product: The product being escrowed
-            buyer: The buyer user
-            seller: The seller user
-
-        Returns:
-            A unique tracking ID string
-        """
-        # Generate base components
-        unique_id = str(uuid.uuid4())[:8].upper()
-        timestamp = str(int(timezone.now().timestamp()))[-6:]
-
-        # Create a hash of the product, buyer, and seller IDs
-        hash_input = f"{product.id}-{buyer.id}-{seller.id}-{timestamp}"
-        hash_value = hashlib.md5(hash_input.encode()).hexdigest()[:6].upper()
-
-        # Combine into tracking ID format
-        tracking_id = f"TRK-{unique_id}-{timestamp}-{hash_value}"
-
-        return tracking_id
 
     @staticmethod
     @transaction.atomic

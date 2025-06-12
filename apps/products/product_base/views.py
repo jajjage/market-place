@@ -5,7 +5,7 @@ from django.views.decorators.vary import vary_on_cookie
 from rest_framework import permissions, filters, generics
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
-from apps.core.permissions import IsOwnerOrReadOnly
+
 from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.views import BaseAPIView, BaseViewSet
 from apps.products.product_condition.services import ProductConditionService
@@ -59,11 +59,13 @@ class ProductViewSet(BaseViewSet):
     Supports CRUD operations, filtering, searching, and statistics.
     """
 
+    logger = logging.getLogger("products_performance")
+
     CACHE_TTL = 60 * 15  # 15 minutes cache
     STATS_CACHE_TTL = 60 * 30  # 30 minutes cache for stats
 
     queryset = Product.objects.all()
-    permission_classes = [IsOwnerOrReadOnly]
+    permission_classes = []
     filter_backends = [
         DjangoFilterBackend,
         filters.SearchFilter,

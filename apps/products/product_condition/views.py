@@ -6,7 +6,7 @@ from django.views.decorators.cache import cache_page
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from apps.core.views import BaseViewSet
-from apps.core.permissions import IsOwnerOrReadOnly
+
 from .utils.rate_limiting import ProductConditionRateThrottle
 from .models import ProductCondition
 from .services import (
@@ -28,7 +28,7 @@ class ProductConditionViewSet(BaseViewSet):
     """
 
     queryset = ProductCondition.objects.filter(is_active=True)
-    permission_classes = [IsOwnerOrReadOnly]
+    permission_classes = []
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["name", "description"]
     ordering_fields = ["name", "quality_score", "display_order", "created_at"]

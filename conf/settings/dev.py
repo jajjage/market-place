@@ -182,7 +182,7 @@ MONITORING_LOG_PATH = LOG_DIR / "monitoring.log"
 ERROR_LOG_PATH = LOG_DIR / "error.log"
 INFO_LOG_PATH = LOG_DIR / "info.log"
 THROTTLE_LOG_PATH = LOG_DIR / "throttling.log"
-
+print(MONITORING_LOG_PATH)
 # If running locally (not in GitHub Actions), ensure folder exists as well:
 if not os.environ.get("GITHUB_ACTIONS"):
     os.makedirs(LOG_DIR, exist_ok=True)
@@ -429,6 +429,14 @@ CACHE_KEY_TEMPLATES = {
     "product_variant": {
         "detail": "variant:detail:{id}",
         "list_product_variants": "variant:list_product_variants:{product_id}",
+    },
+    "escrow_transaction": {
+        "detail": "escrow:transaction:detail:{id}",
+        "list_user": "escrow:transaction:list:{user_id}:{params}",
+        "my_purchases": "escrow:transaction:purchases:user:{user_id}",
+        "my_sales": "escrow:transaction:sales:{user_id}",
+        "tracking": "escrow:transaction:{user_id}:{tracking_id}",
+        "status_counts": "escrow:transaction:counts:{user_id}",
     },
     # …add new resources here as needed…
 }

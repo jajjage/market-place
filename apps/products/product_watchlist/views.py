@@ -6,7 +6,7 @@ from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_cookie
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
-from apps.core.permissions import IsOwnerOrReadOnly
+
 from apps.core.views import BaseViewSet
 from .serializers import (
     ProductWatchlistItemListSerializer,
@@ -30,7 +30,7 @@ class ProductWatchlistViewSet(BaseViewSet):
     """
 
     throttle_classes = [WatchlistRateThrottle]
-    permission_classes = [IsOwnerOrReadOnly]
+    permission_classes = []
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ["added_at"]
     ordering = ["-added_at"]

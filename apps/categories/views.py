@@ -7,7 +7,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from apps.categories.throttle import CategoryRateThrottle
 from apps.core.views import BaseViewSet
-from apps.core.permissions import IsOwnerOrReadOnly
+
 from apps.categories.models import Category
 from apps.categories.services import CACHE_TTL, CategoryService
 from apps.categories.serializers import (
@@ -26,7 +26,7 @@ class CategoryViewSet(BaseViewSet):
     """
 
     queryset = Category.objects.select_related("parent").filter(is_active=True)
-    permission_classes = [IsOwnerOrReadOnly]
+    # permission_classes = []
     throttle_classes = [CategoryRateThrottle]
 
     def get_serializer_class(self):

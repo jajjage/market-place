@@ -2,7 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.core.permissions import IsOwnerOrReadOnly
+
 from apps.core.views import BaseViewSet
 from .models import ProductRating
 from .serializers import (
@@ -20,7 +20,7 @@ from .utils.rate_limiting import (
 class ProductRatingViewSet(BaseViewSet):
     throttle_classes = [RatingRateThrottle]
     serializer_class = ProductRatingsSerializer
-    permission_classes = [IsOwnerOrReadOnly]
+    permission_classes = []
 
     def get_queryset(self):
         product_id = self.request.query_params.get("product_id")

@@ -69,6 +69,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
     buyer_name = serializers.SerializerMethodField()
     seller_name = serializers.SerializerMethodField()
     days_since_created = serializers.SerializerMethodField()
+    history = serializers.SerializerMethodField()
 
     class Meta:
         model = EscrowTransaction
@@ -83,6 +84,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
             "currency",
             "created_at",
             "days_since_created",
+            "history",
         ]
 
     def get_buyer_name(self, obj):
@@ -105,6 +107,13 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
         from django.utils import timezone
 
         return (timezone.now() - obj.created_at).days
+
+    def get_history(self, obj):
+        # obj.all_history is the full, prefetched, ordered history list
+        latest_five = getattr(obj, "all_history", [])[:5]
+        return TransactionHistorySerializer(
+            latest_five, many=True, context=self.context
+        ).data
 
 
 class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
@@ -161,7 +170,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
         }
 
     def get_breadcrumbs(self, obj):
-        breadcrumb_data = BreadcrumbService.generate_store_breadcrumbs(obj)
+        breadcrumb_data = BreadcrumbService.generate_transaction_breadcrumbs(obj)
         return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
     def get_buyer_details(self, obj):

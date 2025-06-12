@@ -3,7 +3,7 @@ from django.core.cache import cache
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_cookie
-from apps.core.permissions import IsOwnerOrReadOnly
+
 from apps.core.views import BaseViewSet
 from rest_framework import permissions
 
@@ -19,7 +19,9 @@ class UserStoreViewSet(BaseViewSet):
 
     queryset = UserStore.objects.all()
     serializer_class = UserStoreSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
 
     def get_cache_key(self, view_name, **kwargs):
         """Generate a cache key for the view"""

@@ -168,6 +168,12 @@ REST_FRAMEWORK = {
         "product_search": "100/min",
         "brand_search": "30/min",
         "brand_create": "100/min",
+        "escrow_transaction_list": "100/min",
+        "escrow_transaction_create": "10/min",
+        "escrow_transaction_update": "50/min",
+        "escrow_transaction_track": "200/min",
+        "my_purchases": "100/min",
+        "my_sales": "100/min",
     },
 }
 

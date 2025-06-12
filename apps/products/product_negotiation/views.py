@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from django.utils import timezone
 
-from apps.core.permissions import IsOwnerOrReadOnly
+
 from apps.core.views import BaseViewSet
 from apps.products.product_inventory.services import InventoryService
 from apps.products.product_negotiation.models import (
@@ -16,7 +16,7 @@ from apps.products.product_negotiation.models import (
 
 
 class ProductNegotiationViewSet(BaseViewSet):
-    permission_classes = [IsOwnerOrReadOnly]
+    permission_classes = []
     logger = logging.getLogger(__name__)
 
     @action(detail=True, url_path=r"initiate-negotiation", methods=["post"])

@@ -71,21 +71,16 @@ class EscrowTransaction(BaseModel):
         verbose_name = "Escrow Transaction"
         verbose_name_plural = "Escrow Transactions"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tracking_id"]),
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["buyer", "status"]),
+            models.Index(fields=["seller", "status"]),
+            models.Index(fields=["created_at", "status"]),
+        ]
 
     def __str__(self):
-        return f"Escrow #{self.id} - {self.get_status_display()}"
-
-    # -----------------------------------------------------------------------------
-    # I may remove this in the future
-    # -----------------------------------------------------------------------------
-    def save(self, *args, **kwargs):
-        # Track status change time
-        if self.pk is not None:
-            orig = EscrowTransaction.objects.get(pk=self.pk)
-            if orig.status != self.status:
-                self.status_changed_at = timezone.now()
-
-        super().save(*args, **kwargs)
+        return f"Escrow #{self.id} - {self.product.title} ({self.status})"
 
     @property
     def is_final_status(self):

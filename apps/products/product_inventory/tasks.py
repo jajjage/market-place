@@ -9,7 +9,7 @@ def send_low_inventory_alert(product_id, current_available):
     """
     Send alert when inventory is low
     """
-    from apps.products.models import Product
+    from apps.products.product_base.models import Product
 
     try:
         product = Product.objects.get(id=product_id)

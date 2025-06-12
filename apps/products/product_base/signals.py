@@ -32,16 +32,23 @@ def ensure_product_slug_and_shortcode(sender, instance, **kwargs):
     # 3. Slug is empty
     short_code = ""
     slug = ""
+    title_changed = False
+    # Check if the instance already exists and if the title has changed
+    if instance.pk:
+        try:
+            old = Product.objects.get(pk=instance.pk)
+            title_changed = old.title != instance.title
+        except Product.DoesNotExist:
+            title_changed = False
+    else:
+        title_changed = False
+
     should_generate_slug = (
-        not instance.pk  # New product
-        or (
-            instance.pk
-            and Product.objects.filter(pk=instance.pk)
-            .exclude(title=instance.title)
-            .exists()
-        )  # Title changed
-        or not instance.slug  # Empty slug
+        not instance.pk  # New object
+        or title_changed  # Title changed on update
+        or not instance.slug  # Slug is missing
     )
+
     # If short_code doesn't exist, create one
     if should_generate_slug and instance.title:
         logger.info(f"Generating slug for product '{instance.title}'")

@@ -6,28 +6,28 @@ from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 
-
-from apps.core.permissions import IsOwnerOrReadOnly
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from apps.core.views import BaseResponseMixin
 from apps.products.product_base.models import Product
 from .models import InventoryTransaction
 from .serializers import (
     AddInventorySerializer,
     ActivateInventorySerializer,
     EscrowInventorySerializer,
-    ReleaseEscrowSerializer,
-    DeductInventorySerializer,
     InventoryTransactionSerializer,
 )
 from .services import InventoryService  # Import your existing service
 
 
-class InventoryViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
+class InventoryViewSet(
+    GenericViewSet, ListModelMixin, RetrieveModelMixin, BaseResponseMixin
+):
     """
     ViewSet for inventory management operations
     """
 
+    permission_classes = [IsAuthenticatedOrReadOnly]
     serializer_class = InventoryTransactionSerializer
-    permission_classes = [IsOwnerOrReadOnly]
 
     def get_queryset(self):
         """Filter transactions by product if product_id is provided"""
@@ -60,7 +60,30 @@ class InventoryViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
 
         return product
 
-    @action(detail=False, methods=["post"], url_path="add")
+    def get_product_escrow(self, product_id):
+        """Helper method to get product and check permissions"""
+        product = get_object_or_404(Product, id=product_id)
+
+        # Check if user is the seller or has appropriate permissions
+        if product.seller == self.request.user:
+            from rest_framework.exceptions import PermissionDenied
+
+            raise PermissionDenied(
+                "You don't have permission to initiated transaction for this product"
+            )
+
+        if not product.is_active:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError("Cannot modify inventory for inactive product")
+
+        return product
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="add",
+    )
     def add_inventory(self, request):
         """Add inventory to total"""
         product_id = request.data.get("product_id")
@@ -82,23 +105,29 @@ class InventoryViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
                 )
 
             if result:
-                return Response(
-                    {
-                        "status": "success",
+                return self.success_response(
+                    data={
                         "total": result.total_inventory,
                         "available": result.available_inventory,
                         "in_escrow": result.in_escrow_inventory,
-                    }
+                    },
+                    status_code=status.HTTP_200_OK,
                 )
             else:
-                return Response(
-                    {"status": "error", "message": "Failed to add inventory"},
-                    status=status.HTTP_400_BAD_REQUEST,
+                return self.error_response(
+                    message="Failed to add inventory",
+                    status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return self.error_response(
+            message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
+        )
 
-    @action(detail=False, methods=["post"], url_path="activate")
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="activate",
+    )
     def activate_inventory(self, request):
         """Move inventory from total to available"""
         product_id = request.data.get("product_id")
@@ -120,32 +149,39 @@ class InventoryViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
                 )
 
             if result:
-                return Response(
-                    {
-                        "status": "success",
+                return self.success_response(
+                    data={
                         "total": result.total_inventory,
                         "available": result.available_inventory,
                         "in_escrow": result.in_escrow_inventory,
-                    }
+                    },
+                    status_code=status.HTTP_200_OK,
                 )
             else:
-                return Response(
-                    {"status": "error", "message": "No inventory to activate"},
-                    status=status.HTTP_400_BAD_REQUEST,
+                return self.error_response(
+                    message="Failed to add inventory",
+                    status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return self.error_response(
+            message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
+        )
 
-    @action(detail=False, methods=["post"], url_path="escrow")
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="place-in-escrow",
+    )
     def place_in_escrow(self, request):
         """Place inventory in escrow for transaction"""
         product_id = request.data.get("product_id")
         if not product_id:
-            return Response(
-                {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+            return self.error_response(
+                message="product_id is required",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        product = self.get_product(product_id)
+        product = self.get_product_escrow(product_id)
         serializer = EscrowInventorySerializer(data=request.data)
 
         if serializer.is_valid():
@@ -161,9 +197,8 @@ class InventoryViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
                 product_result = result[0]
                 transaction_tracking_id = result[1]
 
-                return Response(
-                    {
-                        "status": "success",
+                return self.success_response(
+                    data={
                         "total": product_result.total_inventory,
                         "available": product_result.available_inventory,
                         "in_escrow": product_result.in_escrow_inventory,
@@ -171,96 +206,100 @@ class InventoryViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
                     }
                 )
             else:
-                return Response(
-                    {"status": "error", "message": "Insufficient available inventory"},
-                    status=status.HTTP_400_BAD_REQUEST,
+                return self.error_response(
+                    message="Failed to add inventory",
+                    status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return self.error_response(
+            message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
+        )
 
-    @action(detail=False, methods=["post"], url_path="release")
-    def release_from_escrow(self, request):
-        """Release inventory from escrow back to available"""
-        product_id = request.data.get("product_id")
-        if not product_id:
-            return Response(
-                {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
-            )
+    # @action(detail=False, methods=["post"], url_path="release")
+    # def release_from_escrow(self, request):
+    #     """Release inventory from escrow back to available"""
+    #     product_id = request.data.get("product_id")
+    #     if not product_id:
+    #         return Response(
+    #             {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+    #         )
 
-        product = self.get_product(product_id)
-        serializer = ReleaseEscrowSerializer(data=request.data)
+    #     product = self.get_product(product_id)
+    #     serializer = ReleaseEscrowSerializer(data=request.data)
 
-        if serializer.is_valid():
-            quantity = serializer.validated_data["quantity"]
-            notes = serializer.validated_data.get("notes", "")
+    #     if serializer.is_valid():
+    #         quantity = serializer.validated_data["quantity"]
+    #         notes = serializer.validated_data.get("notes", "")
 
-            with transaction.atomic():
-                result = InventoryService.release_from_escrow(
-                    product=product, quantity=quantity, user=request.user, notes=notes
-                )
+    #         with transaction.atomic():
+    #             result = InventoryService.release_from_escrow(
+    #                 product=product, quantity=quantity, user=request.user, notes=notes
+    #             )
 
-            if result:
-                return Response(
-                    {
-                        "status": "success",
-                        "total": result.total_inventory,
-                        "available": result.available_inventory,
-                        "in_escrow": result.in_escrow_inventory,
-                    }
-                )
-            else:
-                return Response(
-                    {"status": "error", "message": "Insufficient inventory in escrow"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+    #         if result:
+    #             return self.success_response(
+    #                 data={
+    #                     "total": result.total_inventory,
+    #                     "available": result.available_inventory,
+    #                     "in_escrow": result.in_escrow_inventory,
+    #                 }
+    #             )
+    #         else:
+    #             return self.error_response(
+    #                 message="Failed to add inventory",
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #             )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #     return self.error_response(
+    #         message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
+    #     )
 
-    @action(detail=False, methods=["post"], url_path="deduct")
-    def deduct_inventory(self, request):
-        """Deduct inventory from escrow (completing a sale)"""
-        product_id = request.data.get("product_id")
-        if not product_id:
-            return Response(
-                {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
-            )
+    # @action(detail=False, methods=["post"], url_path="deduct")
+    # def deduct_inventory(self, request):
+    #     """Deduct inventory from escrow (completing a sale)"""
+    #     product_id = request.data.get("product_id")
+    #     if not product_id:
+    #         return Response(
+    #             {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+    #         )
 
-        product = self.get_product(product_id)
-        serializer = DeductInventorySerializer(data=request.data)
+    #     product = self.get_product(product_id)
+    #     serializer = DeductInventorySerializer(data=request.data)
 
-        if serializer.is_valid():
-            quantity = serializer.validated_data["quantity"]
-            notes = serializer.validated_data.get("notes", "")
+    #     if serializer.is_valid():
+    #         quantity = serializer.validated_data["quantity"]
+    #         notes = serializer.validated_data.get("notes", "")
 
-            with transaction.atomic():
-                result = InventoryService.deduct_inventory(
-                    product=product, quantity=quantity, user=request.user, notes=notes
-                )
+    #         with transaction.atomic():
+    #             result = InventoryService.deduct_inventory(
+    #                 product=product, quantity=quantity, user=request.user, notes=notes
+    #             )
 
-            if result:
-                return Response(
-                    {
-                        "status": "success",
-                        "total": result.total_inventory,
-                        "available": result.available_inventory,
-                        "in_escrow": result.in_escrow_inventory,
-                    }
-                )
-            else:
-                return Response(
-                    {"status": "error", "message": "Failed to deduct inventory"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+    #         if result:
+    #             return self.success_response(
+    #                 data={
+    #                     "total": result.total_inventory,
+    #                     "available": result.available_inventory,
+    #                     "in_escrow": result.in_escrow_inventory,
+    #                 }
+    #             )
+    #         else:
+    #             return self.error_response(
+    #                 message="Failed to deduct inventory",
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #             )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #     return self.error_response(
+    #         message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
+    #     )
 
     @action(detail=False, methods=["get"], url_path="status/(?P<product_id>[^/.]+)")
     def inventory_status(self, request, product_id=None):
         """Get current inventory status for a product"""
         product = get_object_or_404(Product, id=product_id)
 
-        return Response(
-            {
+        return self.success_response(
+            data={
                 "product_id": product.id,
                 "product_title": product.title,
                 "total": product.total_inventory,
@@ -290,8 +329,8 @@ class InventoryViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
         )
 
         serializer = self.get_serializer(transactions, many=True)
-        return Response(
-            {
+        return self.success_response(
+            data={
                 "product_id": product.id,
                 "product_title": product.title,
                 "transactions": serializer.data,

@@ -58,3 +58,50 @@ ESCROW_STATUSES = {
         "final": True,
     },
 }
+
+
+def is_status_change_allowed(transaction, new_status, user):
+    """
+    Helper method to determine if a status change is allowed.
+    Different roles can perform different status changes.
+    """
+    if user.is_staff:
+        return True
+
+    user_type = getattr(user, "user_type", None)
+
+    is_buyer = user == transaction.buyer
+    is_seller = user == transaction.seller
+
+    allowed_transitions = {
+        "BUYER": {
+            "initiated": ["cancelled"] if is_buyer else [],
+            "payment_received": [] if is_buyer else [],
+            "shipped": ["delivered"] if is_buyer else [],
+            "delivered": ["inspection"] if is_buyer else [],
+            "inspection": ["completed", "disputed"] if is_buyer else [],
+            "disputed": [] if is_buyer else [],
+            "completed": [] if is_buyer else [],
+            "refunded": [] if is_buyer else [],
+            "cancelled": [] if is_buyer else [],
+        },
+        "SELLER": {
+            "initiated": ["cancelled"] if is_seller else [],
+            "payment_received": ["shipped"] if is_seller else [],
+            "shipped": [] if is_seller else [],
+            "delivered": [] if is_seller else [],
+            "inspection": [] if is_seller else [],
+            "disputed": [] if is_seller else [],
+            "completed": ["funds_released"] if is_seller else [],
+            "refunded": [] if is_seller else [],
+            "cancelled": [] if is_seller else [],
+        },
+    }
+
+    if user_type not in allowed_transitions:
+        return False
+
+    if transaction.status not in allowed_transitions[user_type]:
+        return False
+
+    return new_status in allowed_transitions[user_type][transaction.status]

@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
 
-from apps.products.services import InventoryService
+from apps.products.product_inventory.services import InventoryService
 from apps.transactions.models import EscrowTransaction, TransactionHistory
 
 

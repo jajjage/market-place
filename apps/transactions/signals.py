@@ -11,10 +11,31 @@ from apps.transactions.tasks.transitions_tasks import (
 )
 
 from apps.notifications.tasks import send_status_change_notification
+from apps.transactions.utils.tracking_id import generate_tracking_id
 
 # Define default grace periods if not in settings
 DEFAULT_DELIVERY_GRACE_PERIOD = 3  # days
 DEFAULT_AUTO_REFUND_PERIOD = 14  # days
+
+
+@receiver(post_save, sender=EscrowTransaction)
+def invalidate_transaction_caches(sender, instance, created, **kwargs):
+    """
+    Invalidate caches related to the transaction
+    This should be called whenever a transaction is updated
+    """
+    # Invalidate any cached transaction lists or details
+    from apps.transactions.services.transaction_list_service import (
+        TransactionListService,
+    )
+
+    if not created:
+        # Invalidate all caches related to this transaction
+        TransactionListService.invalidate_transaction_caches(transaction=instance)
+    TransactionListService.invalidate_tracking_cache(
+        transaction=instance, tracking_id=instance.tracking_id
+    )
+    TransactionListService.invalidate_transaction_caches(transaction=instance)
 
 
 # Store original status before save for comparison
@@ -174,8 +195,7 @@ def ensure_tracking_id(sender, instance, **kwargs):
         and instance.buyer
         and instance.seller
     ):
-        from apps.products.product_inventory.services import InventoryService
 
-        instance.tracking_id = InventoryService.generate_tracking_id(
+        instance.tracking_id = generate_tracking_id(
             instance.product, instance.buyer, instance.seller
         )

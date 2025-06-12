@@ -3,7 +3,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_cookie
 
-from apps.core.permissions import UserTypePermission
+
 from apps.core.views import BaseViewSet
 from apps.disputes.models import Dispute
 from apps.disputes.serializers import DisputeSerializer
@@ -18,7 +18,7 @@ class DisputeViewSet(BaseViewSet):
 
     queryset = Dispute.objects.all()
     serializer_class = DisputeSerializer
-    permission_classes = [UserTypePermission]
+    permission_classes = []
     ordering = ["-created_at"]
 
     def get_queryset(self):

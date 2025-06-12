@@ -1,3 +1,15 @@
-from django.shortcuts import render
+# ------------------------------------------------------------------------------
+# Flutterwave Escrow transaction view
+# ------------------------------------------------------------------------------
 
-# Create your views here.
+
+def get_payment_config(request):
+    pass
+
+
+def verify_payment(request):
+    pass
+
+
+def flutterwave_webhook(request):
+    pass

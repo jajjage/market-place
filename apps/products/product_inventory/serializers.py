@@ -17,6 +17,7 @@ class InventoryActionSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Optional notes for this inventory transaction",
     )
+    product_id = serializers.UUIDField(required=True)
 
     def validate_quantity(self, value):
         if value <= 0:
