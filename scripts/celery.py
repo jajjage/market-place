@@ -13,7 +13,7 @@ def run_worker_default():
                 "conf",
                 "worker",
                 "--loglevel=info",
-                "--queues=default",
+                "--queues=high_priority,medium_priority,low_priority,default",
                 "--concurrency=4",
                 "--hostname=default_worker@%h",
             ]

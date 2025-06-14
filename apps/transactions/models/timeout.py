@@ -21,7 +21,7 @@ class EscrowTimeout(BaseModel):
     transaction = models.ForeignKey(
         "transactions.EscrowTransaction",
         on_delete=models.CASCADE,
-        related_name="timeouts",
+        related_name="escrowtimeout",
     )
     timeout_type = models.CharField(
         max_length=20,
