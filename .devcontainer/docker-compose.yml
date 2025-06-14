@@ -5,7 +5,6 @@ services:
     volumes:
       - redis-data:/data
 
-
   app:
     build:
       context: ..
@@ -14,6 +13,7 @@ services:
       - ..:/workspaces:cached
     environment:
       - DJANGO_SETTINGS_MODULE=conf.settings.dev
+      - DJANGO_ENV=development
       - DEBUG=True
       - REDIS_URL=redis://localhost:6379
       - CELERY_BROKER_URL=redis://localhost:6379
@@ -26,7 +26,7 @@ services:
     command: sleep infinity
     network_mode: service:db
 
-  celery_worker:
+  celery_worker_default:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
@@ -35,6 +35,7 @@ services:
     working_dir: /workspaces
     environment:
       - DJANGO_SETTINGS_MODULE=conf.settings.dev
+      - DJANGO_ENV=development
       - DEBUG=True
       - REDIS_URL=redis://localhost:6379
       - CELERY_BROKER_URL=redis://localhost:6379
@@ -48,7 +49,7 @@ services:
       - redis
       - db
     network_mode: service:db
-    command: poetry run worker
+    command: poetry run worker_default
 
   celery_beat:
     build:
@@ -59,6 +60,7 @@ services:
     working_dir: /workspaces
     environment:
       - DJANGO_SETTINGS_MODULE=conf.settings.dev
+      - DJANGO_ENV=development
       - DEBUG=True
       - REDIS_URL=redis://localhost:6379
       - CELERY_BROKER_URL=redis://localhost:6379
@@ -73,6 +75,31 @@ services:
       - db
     network_mode: service:db
     command: poetry run beat
+
+  celery_flower:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspaces:cached
+    working_dir: /workspaces
+    environment:
+      - DJANGO_SETTINGS_MODULE=conf.settings.dev
+      - DJANGO_ENV=development
+      - DEBUG=True
+      - REDIS_URL=redis://localhost:6379
+      - CELERY_BROKER_URL=redis://localhost:6379
+      - CELERY_RESULT_BACKEND=redis://localhost:6379
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+    depends_on:
+      - redis
+      - db
+    network_mode: service:db
+    command: poetry run flower
 
   db:
     image: postgres:latest

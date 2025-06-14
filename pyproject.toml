@@ -33,6 +33,7 @@ pillow = "^11.2.1"
 dotenv = "^0.9.9"
 dj-database-url = "^2.3.0"
 drf-nested-routers = "^0.94.2"
+flower = "^2.0.1"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -48,8 +49,12 @@ pytest-cov = "^6.0.0"
 server = "scripts.django:runserver"
 makemigrations = "scripts.django:makemigrations"
 migrate = "scripts.django:migrate"
-worker = "scripts.celery:run_worker"
+worker_default = "scripts.celery:run_worker_default"
+worker_low = "scripts.celery:run_worker_low"
+worker_medium = "scripts.celery:run_worker_medium"
+worker_high = "scripts.celery:run_worker_high"
 beat = "scripts.celery:run_beat"
+flower = "scripts.celery:run_flower"
 bump = "scripts.bump:bum_version"
 create_dev_env = "scripts.django:create_dev_env"
 

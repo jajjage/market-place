@@ -336,6 +336,97 @@ os.makedirs(os.path.join(MEDIA_ROOT, "products", "images"), exist_ok=True)
 CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "America/Santiago"
+
+# Timezone configuration
+CELERY_TIMEZONE = TIME_ZONE  # Use your Django timezone
+CELERY_ENABLE_UTC = True
 CELERY_RESULT_EXTENDED = True
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers.DatabaseScheduler"
+
+from .celery_beat_schedule import get_celery_beat_schedule
+
+CELERY_BEAT_SCHEDULE = get_celery_beat_schedule()
+
+# Task execution configuration
+CELERY_TASK_ALWAYS_EAGER = False  # Set to True for synchronous execution in tests
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TASK_IGNORE_RESULT = False
+
+# Logging configuration for Celery
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_WORKER_LOG_FORMAT = "[%(asctime)s: %(levelname)s/%(processName)s] %(message)s"
+CELERY_WORKER_TASK_LOG_FORMAT = "[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s"
+
+from .celery_workers import get_worker_config
+
+# Get worker configuration
+WORKER_CONFIG = get_worker_config()
+
+# Celery worker settings
+CELERY_WORKER_PREFETCH_MULTIPLIER = WORKER_CONFIG["prefetch_multiplier"]
+CELERY_WORKER_MAX_TASKS_PER_CHILD = WORKER_CONFIG["max_tasks_per_child"]
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = WORKER_CONFIG["max_memory_per_child"]
+CELERY_WORKER_CONCURRENCY = WORKER_CONFIG["concurrency"]
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
+
+# Task routing for different queues
+CELERY_TASK_ROUTES = {
+    # High priority tasks
+    "apps.transactions.tasks.transitions_tasks.check_expired_transactions": {
+        "queue": "high_priority",
+        "routing_key": "high_priority",
+    },
+    "apps.transactions.tasks.periodic_migration.ensure_timeout_scheduling": {
+        "queue": "high_priority",
+        "routing_key": "high_priority",
+    },
+    # Medium priority tasks
+    "apps.transactions.tasks.periodic_migration.validate_timeout_consistency": {
+        "queue": "medium_priority",
+        "routing_key": "medium_priority",
+    },
+    "apps.transactions.tasks.periodic_migration.auto_fix_timeout_issues": {
+        "queue": "medium_priority",
+        "routing_key": "medium_priority",
+    },
+    # Low priority tasks
+    "apps.transactions.tasks.periodic_migration.generate_timeout_health_report": {
+        "queue": "low_priority",
+        "routing_key": "low_priority",
+    },
+    "apps.transactions.tasks.transitions_tasks.cleanup_completed_timeouts": {
+        "queue": "low_priority",
+        "routing_key": "low_priority",
+    },
+    # Default queue for other tasks
+    "apps.transactions.tasks.*": {
+        "queue": "default",
+        "routing_key": "default",
+    },
+}
+
+# Queue configuration
+CELERY_TASK_DEFAULT_QUEUE = "default"
+CELERY_TASK_QUEUES = {
+    "high_priority": {
+        "exchange": "high_priority",
+        "exchange_type": "direct",
+        "routing_key": "high_priority",
+    },
+    "medium_priority": {
+        "exchange": "medium_priority",
+        "exchange_type": "direct",
+        "routing_key": "medium_priority",
+    },
+    "low_priority": {
+        "exchange": "low_priority",
+        "exchange_type": "direct",
+        "routing_key": "low_priority",
+    },
+    "default": {
+        "exchange": "default",
+        "exchange_type": "direct",
+        "routing_key": "default",
+    },
+}

@@ -104,7 +104,8 @@ CELERY_BROKER_URL = os.environ.get(
 CELERY_RESULT_BACKEND = os.environ.get(
     "CELERY_RESULT_BACKEND", default="redis://localhost:6379"
 )
-
+CELERY_TASK_ALWAYS_EAGER = False  # Keep async for development
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # -----------------------------------------------------------------------------
 # REST Framework - Development Settings
 # -----------------------------------------------------------------------------
