@@ -58,6 +58,13 @@ class InventoryViewSet(
 
             raise ValidationError("Cannot modify inventory for inactive product")
 
+        if not product.status not in ["draft", "inactive", "sold"]:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError(
+                f"Cannot modify inventory for {product.status} product"
+            )
+
         return product
 
     def get_product_escrow(self, product_id):
@@ -77,6 +84,13 @@ class InventoryViewSet(
 
             raise ValidationError("Cannot modify inventory for inactive product")
 
+        if not product.status not in ["draft", "inactive", "sold"]:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError(
+                f"Cannot modify inventory for {product.status} product"
+            )
+
         return product
 
     @action(
@@ -88,8 +102,9 @@ class InventoryViewSet(
         """Add inventory to total"""
         product_id = request.data.get("product_id")
         if not product_id:
-            return Response(
-                {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+            return self.error_response(
+                message="product_id is required",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         product = self.get_product(product_id)

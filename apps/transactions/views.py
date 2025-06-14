@@ -225,7 +225,7 @@ class EscrowTransactionViewSet(BaseViewSet):
                 )
             if not transaction.status != new_status:
                 return self.error_response(
-                    message=f"Status is in {new_status}",
+                    message=f"Status is already in: {new_status}",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -237,7 +237,7 @@ class EscrowTransactionViewSet(BaseViewSet):
             updated_transaction = (
                 EscrowTransactionService.update_escrow_transaction_status(
                     escrow_transaction=transaction,
-                    status=new_status,
+                    new_status=new_status,
                     user=request.user,
                     notes=notes,
                     tracking_number=tracking_number,

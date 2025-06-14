@@ -1,9 +1,11 @@
+import logging
+from typing import Optional, Dict, Any
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
 from django.core.exceptions import ValidationError
-from typing import Optional, Dict, Any
-import logging
+from rest_framework.response import Response
+from rest_framework import status
 
 logger = logging.getLogger("transactions_performance")
 
@@ -121,7 +123,7 @@ class EscrowTransactionService:
     @transaction.atomic
     def update_escrow_transaction_status(
         escrow_transaction,
-        status: str,
+        new_status: str,
         user=None,
         notes: str = "",
         tracking_number: Optional[str] = None,
@@ -150,7 +152,7 @@ class EscrowTransactionService:
             # 1. Validate permissions
             is_allowed, permission_reason = (
                 EscrowTransactionService.is_status_change_allowed(
-                    escrow_transaction, status, user
+                    escrow_transaction, new_status, user
                 )
             )
             if not is_allowed:
@@ -160,7 +162,7 @@ class EscrowTransactionService:
             is_valid, validation_reason = (
                 EscrowTransactionService.validate_status_requirements(
                     escrow_transaction,
-                    status,
+                    new_status,
                     tracking_number=tracking_number,
                     shipping_carrier=shipping_carrier,
                     **kwargs,
@@ -173,11 +175,11 @@ class EscrowTransactionService:
             previous_status = escrow_transaction.status
 
             # 4. Update the transaction
-            escrow_transaction.status = status
+            escrow_transaction.status = new_status
 
             # 5. Handle status-specific logic
             EscrowTransactionService._handle_status_specific_logic(
-                escrow_transaction, status, tracking_number, shipping_carrier
+                escrow_transaction, new_status, tracking_number, shipping_carrier
             )
 
             # 6. Save the transaction
@@ -185,24 +187,24 @@ class EscrowTransactionService:
 
             # 7. Create transaction history
             EscrowTransactionService._create_transaction_history(
-                escrow_transaction, previous_status, status, notes, user
+                escrow_transaction, previous_status, new_status, notes, user
             )
 
             # 8. Handle post-update actions (notifications, etc.)
             EscrowTransactionService._handle_post_update_actions(
-                escrow_transaction, previous_status, status, user
+                escrow_transaction, previous_status, new_status, user
             )
 
             logger.info(
                 f"Transaction {escrow_transaction.id} status updated from "
-                f"{previous_status} to {status} by user {user.id if user else 'system'}"
+                f"{previous_status} to {new_status} by user {user.id if user else 'system'}"
             )
 
             return escrow_transaction
 
         except Exception as e:
             logger.error(
-                f"Failed to update transaction {escrow_transaction.id} status to {status}: {str(e)}"
+                f"Failed to update transaction {escrow_transaction.id} status to {new_status}: {str(e)}"
             )
             raise
 
@@ -241,6 +243,13 @@ class EscrowTransactionService:
             TransactionHistory,
         )  # Avoid circular imports
 
+        if not previous_status != new_status:
+            return Response(
+                {
+                    "message": f"Status is already in: {new_status}",
+                    "status_code": status.HTTP_400_BAD_REQUEST,
+                }
+            )
         TransactionHistory.objects.create(
             transaction=escrow_transaction,
             new_status=new_status,

@@ -209,6 +209,7 @@ class InventoryService:
         product,
         quantity=1,
         escrow_transaction=None,
+        previous_status=None,
         release_type="return",
         user=None,
         notes="",
@@ -252,7 +253,7 @@ class InventoryService:
         product.save(update_fields=update_fields)
 
         # Create transaction record
-        inventory_transaction = InventoryTransaction.objects.create(
+        InventoryTransaction.objects.create(
             product=product,
             transaction_type=transaction_type,
             quantity=quantity,
@@ -280,9 +281,8 @@ class InventoryService:
             # Create transaction history record
             TransactionHistory.objects.create(
                 transaction=escrow_transaction,
-                status=escrow_transaction.status,
-                # previous_status=previous_status,
-                # new_status=new_status,
+                previous_status=previous_status,
+                new_status=escrow_transaction.status,
                 notes=status_note,
                 created_by=user,
             )

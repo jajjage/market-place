@@ -52,6 +52,7 @@
         "djangorestframework",
         "DJOSER",
         "dotenv",
+        "escrowtimeout",
         "filterset",
         "Flutterwave",
         "Gruntfuggly",

@@ -1,6 +1,6 @@
 import logging
 from django.utils.decorators import method_decorator
-
+from rest_framework import status
 from django.views.decorators.vary import vary_on_cookie
 from rest_framework import permissions, filters, generics
 from rest_framework.decorators import action
@@ -8,7 +8,18 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.views import BaseAPIView, BaseViewSet
-from apps.products.product_condition.services import ProductConditionService
+from apps.products.product_base.services import (
+    ProductMyService,
+    ProductFeaturedService,
+    ProductStatsService,
+    ProductDetailService,
+    ProductListService,
+    ProductToggleService,
+    ProductShareService,
+    ProductWatchersService,
+    ProductConditionService,
+    ProductStatusService,
+)
 from .models import (
     Product,
 )
@@ -25,30 +36,6 @@ from apps.products.product_base.utils.rate_limiting import (
     ProductStatsRateThrottle,
     ProductFeaturedRateThrottle,
 )
-from apps.products.product_base.services.product_stats_service import (
-    ProductStatsService,
-)
-from apps.products.product_base.services.product_featured_service import (
-    ProductFeaturedService,
-)
-from apps.products.product_base.services.product_my_service import ProductMyService
-from apps.products.product_base.services.product_share_service import (
-    ProductShareService,
-)
-from apps.products.product_base.services.product_watchers_service import (
-    ProductWatchersService,
-)
-
-from apps.products.product_base.services.product_toggle_service import (
-    ProductToggleService,
-)
-from apps.products.product_base.services.product_detail_service import (
-    ProductDetailService,
-)
-from apps.products.product_base.services.product_list_service import (
-    ProductListService,
-)
-
 
 logger = logging.getLogger("products_performance")
 
@@ -65,7 +52,6 @@ class ProductViewSet(BaseViewSet):
     STATS_CACHE_TTL = 60 * 30  # 30 minutes cache for stats
 
     queryset = Product.objects.all()
-    permission_classes = []
     filter_backends = [
         DjangoFilterBackend,
         filters.SearchFilter,
@@ -195,6 +181,15 @@ class ProductViewSet(BaseViewSet):
     @action(detail=True, url_path="toggle-featured", methods=["post"])
     def toggle_featured(self, request, pk=None):
         return ProductToggleService.toggle_featured(self, request, pk)
+
+    @action(detail=True, url_path="update-product-status", methods=["post"])
+    def update_status(self, request, pk=None):
+        new_status = request.data.get("status")
+        if not new_status:
+            return self.error_response(
+                message="status is required", status_code=status.HTTP_400_BAD_REQUEST
+            )
+        return ProductStatusService.update_status(self, new_status, request, pk)
 
     @action(detail=True, methods=["get"])
     def watchers(self, request, pk=None):
