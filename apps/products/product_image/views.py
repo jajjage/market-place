@@ -17,7 +17,7 @@ from apps.products.product_image.services import ProductImageService
 
 from apps.products.product_image.tasks import upload_product_image_task
 from apps.products.product_image.utils.rate_limiting import (
-    ImageBulkTUploadThrottle,
+    ImageBulkUploadThrottle,
     ImageUploadThrottle,
 )
 
@@ -35,7 +35,7 @@ class ProductImageViewSet(BaseViewSet):
     def get_throttles(self):
         # Use different throttles for bulk_upload and upload_image actions
         if self.action == "bulk_upload":
-            throttle_classes = [ImageBulkTUploadThrottle]
+            throttle_classes = [ImageBulkUploadThrottle]
         elif self.action == "upload_image":
             throttle_classes = [ImageUploadThrottle]
         else:

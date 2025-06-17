@@ -57,7 +57,6 @@ class Product(BaseModel):
     total_inventory = models.IntegerField(default=0)
     available_inventory = models.IntegerField(default=0)
     in_escrow_inventory = models.IntegerField(default=0)
-    negotiable = models.BooleanField(default=False)
     is_featured = models.BooleanField(default=False)
     status = models.CharField(
         max_length=12, choices=ProductsStatus.choices, default=ProductsStatus.DRAFT
@@ -67,16 +66,19 @@ class Product(BaseModel):
     brand = models.ForeignKey(
         Brand, on_delete=models.PROTECT, related_name="products", null=True, blank=True
     )
-    model = models.CharField(max_length=100, blank=True)
-    material = models.CharField(max_length=100, blank=True)
-    color = models.CharField(max_length=50, blank=True)
-    dimensions = models.CharField(max_length=100, blank=True)
-    style = models.CharField(max_length=100, blank=True)
-    authenticity_guaranteed = models.BooleanField(default=False)
-
-    # Dynamic specifications field using JSONField
-    specifications = models.JSONField(default=dict, blank=True)
-    features = models.JSONField(default=list, blank=True)  # List of features
+    authenticity_guaranteed = models.BooleanField(
+        default=False
+    )  # Indicates if the product's authenticity is guaranteed
+    warranty_period = models.CharField(
+        max_length=100, blank=True, help_text="Warranty period in months or years"
+    )
+    # Negotiation and offers
+    is_negotiable = models.BooleanField(default=False)
+    minimum_acceptable_price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True
+    )
+    negotiation_deadline = models.DateTimeField(null=True, blank=True)
+    max_negotiation_rounds = models.PositiveIntegerField(default=5)
 
     class Meta:
         db_table = "product"

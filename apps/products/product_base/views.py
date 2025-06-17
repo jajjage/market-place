@@ -1,12 +1,12 @@
 import logging
 from django.utils.decorators import method_decorator
+from django.utils import timezone
 from rest_framework import status
 from django.views.decorators.vary import vary_on_cookie
 from rest_framework import permissions, filters, generics
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 
-from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.views import BaseAPIView, BaseViewSet
 from apps.products.product_base.services import (
     ProductMyService,
@@ -18,7 +18,17 @@ from apps.products.product_base.services import (
     ProductShareService,
     ProductWatchersService,
     ProductConditionService,
-    ProductStatusService,
+)
+from apps.products.product_negotiation.serializers import (
+    InitiateNegotiationSerializer,
+    PriceNegotiationSerializer,
+)
+from apps.products.product_negotiation.services import (
+    NegotiationNotificationService,
+    NegotiationService,
+)
+from apps.products.product_negotiation.utils.rate_limiting import (
+    NegotiationInitiateRateThrottle,
 )
 from .models import (
     Product,
@@ -144,31 +154,6 @@ class ProductViewSet(BaseViewSet):
     def stats(self, request):
         return ProductStatsService.get_stats_view(self, request)
 
-    def perform_update(self, serializer):
-        serializer.save()
-        instance = serializer.instance
-
-        # FIXED: Use the same CacheKeyManager to generate the key for deletion
-        cache_key = CacheKeyManager.make_key(
-            "product_base", "detail_by_shortcode", short_code=instance.short_code
-        )
-        # Use the centralized invalidation method
-        ProductDetailService.invalidate_product_cache(instance.short_code)
-        ProductListService.invalidate_product_list_caches()
-
-        # Optional: Add logging to verify deletion
-        logger.info(f"Deleted cache key: {cache_key}")
-
-    def perform_create(self, serializer):
-        serializer.save()
-
-        # Now the instance exists and has an ID
-        instance = serializer.instance
-        print(f"Created product with ID: {instance.id}")
-
-        # Invalidate cache after the instance is created
-        ProductListService.invalidate_product_list_caches()
-
     def perform_destroy(self, serializer):
         serializer.delete()
         instance = serializer.instance
@@ -182,14 +167,9 @@ class ProductViewSet(BaseViewSet):
     def toggle_featured(self, request, pk=None):
         return ProductToggleService.toggle_featured(self, request, pk)
 
-    @action(detail=True, url_path="update-product-status", methods=["post"])
-    def update_status(self, request, pk=None):
-        new_status = request.data.get("status")
-        if not new_status:
-            return self.error_response(
-                message="status is required", status_code=status.HTTP_400_BAD_REQUEST
-            )
-        return ProductStatusService.update_status(self, new_status, request, pk)
+    @action(detail=True, url_path="toggle-negotiation", methods=["post"])
+    def toggle_negotiation(self, request, pk=None):
+        return ProductToggleService.toggle_negotiation(self, request, pk)
 
     @action(detail=True, methods=["get"])
     def watchers(self, request, pk=None):
@@ -206,6 +186,70 @@ class ProductViewSet(BaseViewSet):
     )
     def by_condition(self, request, condition_id=None):
         return ProductConditionService.by_condition(self, request, condition_id)
+
+    @action(
+        detail=True,
+        url_path=r"initiate-negotiation",
+        methods=["post"],
+        throttle_classes=[NegotiationInitiateRateThrottle],
+    )
+    def initiate_negotiation(self, request, pk=None):
+        """
+        Initiate a price negotiation for a product.
+        Enhanced with caching, validation, and rate limiting.
+        """
+        start_time = timezone.now()
+
+        product = self.get_object()
+        if not product.is_active:
+            return self.error_response(
+                message="Product is not active", status_code=status.HTTP_404_NOT_FOUND
+            )
+        # Validate request data
+        serializer = InitiateNegotiationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return self.error_response(
+                message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        offered_price = serializer.validated_data["offered_price"]
+        notes = serializer.validated_data.get("notes", "")
+
+        # Use service to initiate negotiation
+        success, result = NegotiationService.initiate_negotiation(
+            product=product,
+            buyer=request.user,
+            offered_price=offered_price,
+            notes=notes,
+        )
+
+        if not success:
+            return self.error_response(
+                message=result["errors"], status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        negotiation = result["negotiation"]
+        created = result["created"]
+
+        # Send notification
+        NegotiationNotificationService.notify_seller_new_offer(negotiation)
+
+        # Serialize response
+        response_serializer = PriceNegotiationSerializer(
+            negotiation, context={"request": request}
+        )
+
+        duration = (timezone.now() - start_time).total_seconds() * 1000
+        self.logger.info(f"Negotiation initiated in {duration:.2f}ms")
+
+        return self.success_response(
+            data={
+                "message": result["message"],
+                "negotiation": response_serializer.data,
+                "created": created,
+            },
+            status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 # Product retrieval by short code for social media sharing

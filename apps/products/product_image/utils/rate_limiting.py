@@ -27,7 +27,7 @@ class ImageUploadThrottle(BaseCacheThrottle):
         return False
 
 
-class ImageBulkTUploadThrottle(BaseCacheThrottle):
+class ImageBulkUploadThrottle(BaseCacheThrottle):
     """
     Strict throttle for bulk operations (add/remove multiple products).
     Applied to: bulk_operation endpoint

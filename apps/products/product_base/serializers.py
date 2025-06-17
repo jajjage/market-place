@@ -96,7 +96,20 @@ class ProductUpdateSerializer(TimestampedModelSerializer):
 
     class Meta:
         model = Product
-        fields = ["title", "description", "price", "condition_id", "is_active"]
+        fields = [
+            "title",
+            "description",
+            "price",
+            "status",
+            "condition_id",
+            "minimum_acceptable_price",
+            "authenticity_guaranteed",
+            "warranty_period",
+            "original_price",
+            "currency",
+            "escrow_fee",
+            "location",
+        ]
 
     def update(self, instance, validated_data):
         # Update slug if title changes
@@ -269,13 +282,15 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "base_variant_price",
             "ratings",
             "details",
-            "features",
-            "specifications",
             "breadcrumbs",
             "discount_percent",
             "watching_count",
-            "created_at",
-            "updated_at",
+            "authenticity_guaranteed",
+            "warranty_period",
+            "is_negotiable",
+            "minimum_acceptable_price",
+            "negotiation_deadline",
+            "max_negotiation_rounds",
             "brand",
             "metadata",
             "watchlist_items",

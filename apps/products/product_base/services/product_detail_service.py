@@ -19,6 +19,7 @@ class ProductDetailService:
             cache_key = CacheKeyManager.make_key(
                 "product_base", "detail_by_shortcode", short_code=short_code
             )
+
             cached_data = cache.get(cache_key)
             logger.info(f"Cache HIT for product detail by shortcode: {cache_key}")
             return view.success_response(

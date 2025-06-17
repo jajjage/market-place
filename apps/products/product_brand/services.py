@@ -122,23 +122,21 @@ class BrandService:
         return brand
 
     @staticmethod
+    @transaction.atomic
     def update_brand(brand_id: int, **update_data):
         """Update brand and invalidate related caches"""
         from apps.products.product_brand.models import Brand
 
+        # Ensure brand exists first
+        if not Brand.objects.filter(id=brand_id).exists():
+            raise Brand.DoesNotExist(f"Brand {brand_id} not found")
+
         # Update the brand
-        Brand.objects.filter(id=brand_id).update(**update_data)
+        updated_count = Brand.objects.filter(id=brand_id).update(**update_data)
 
-        # Targeted cache invalidation
-        CacheManager.invalidate_key("brand", "detail", id=brand_id)
-        CacheManager.invalidate_key("brand", "stats", id=brand_id)
-        CacheManager.invalidate_pattern("brand", "variants_all", id=brand_id)
-
-        # Invalidate broader caches that might be affected
-        CacheManager.invalidate_pattern("brand", "featured")
-        CacheManager.invalidate_pattern("brand", "list")
-
-        logger.info(f"Updated brand {brand_id} and invalidated related caches")
+        if updated_count > 0:
+            BrandService.invalidate_brand_cache(brand_id)
+        return updated_count
 
     @staticmethod
     def get_brand_stats(brand_id: int) -> Dict:
@@ -158,12 +156,17 @@ class BrandService:
         """Invalidate brand-related cache"""
         if brand_id:
             # Invalidate specific brand caches
-            CacheManager.invalidate_key("brand", "detail", id=brand_id)
-            CacheManager.invalidate_key("brand", "stats", id=brand_id)
-            CacheManager.invalidate_pattern("brand", "variants_all", id=brand_id)
-            CacheManager.invalidate_pattern(
-                "brand", "all_analytics"
-            )  # All analytics since they might be affected
+            def invalidate_caches():
+                CacheManager.invalidate_key("brand", "detail", id=brand_id)
+                CacheManager.invalidate_key("brand", "stats", id=brand_id)
+                CacheManager.invalidate_pattern("brand", "variants_all", id=brand_id)
+                CacheManager.invalidate_pattern("brand", "featured")
+                CacheManager.invalidate_pattern("brand", "list")
+                CacheManager.invalidate_pattern(
+                    "brand", "all_analytics"
+                )  # All analytics since they might be affected
+
+            transaction.on_commit(invalidate_caches)
         else:
             # Invalidate all brand caches
             CacheManager.invalidate("brand")

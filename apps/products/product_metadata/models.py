@@ -11,12 +11,12 @@ class ProductMeta(BaseModel):
         "product_base.Product", on_delete=models.CASCADE, related_name="meta"
     )
     views_count = models.PositiveIntegerField(default=0)
-    featured = models.BooleanField(default=False)
     total_shares = models.PositiveIntegerField(default=0)
     seo_keywords = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        db_table = "product_meta"
+        db_table = "product_metadata"
+        verbose_name = "Product Meta"
         verbose_name_plural = "Product Meta"
         ordering = ["-views_count"]
 

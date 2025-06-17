@@ -174,6 +174,9 @@ REST_FRAMEWORK = {
         "escrow_transaction_track": "200/min",
         "my_purchases": "100/min",
         "my_sales": "100/min",
+        "negotiation": "20/min",  # 20 negotiation actions per min
+        "negotiation_initiate": "5/min",  # 5 new negotiations per min
+        "negotiation_respond": "30/min",
     },
 }
 
@@ -401,6 +404,10 @@ CELERY_TASK_ROUTES = {
     },
     # Default queue for other tasks
     "apps.transactions.tasks.*": {
+        "queue": "default",
+        "routing_key": "default",
+    },
+    "apps.products.product_negotiation.tasks.*": {
         "queue": "default",
         "routing_key": "default",
     },

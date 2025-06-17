@@ -108,11 +108,6 @@ class ProductImageService:
             logger.info(
                 f"Uploaded image {unique_filename} for product {product_id} in {duration:.2f}ms"
             )
-            CacheManager.invalidate_key("product_image", "list", product_id=product_id)
-            CacheManager.invalidate_key(
-                "product_image", "primary", product_id=product_id
-            )
-
             return {
                 "success": True,
                 "image_url": image_url,
@@ -381,11 +376,11 @@ class ProductImageService:
             CacheManager.invalidate_key(
                 "product_image", "primary", product_id=product_id
             )
-            ProductListService.invalidate_product_list_caches()
             from apps.products.product_base.services.product_detail_service import (
                 ProductDetailService,
             )
 
+            ProductListService.invalidate_product_list_caches()
             ProductDetailService.invalidate_product_cache(product.short_code)
 
             duration = (time.time() - start_time) * 1000

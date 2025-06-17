@@ -24,8 +24,6 @@ from apps.products.product_base.services.product_list_service import (
 from apps.products.product_base.services.product_condition_service import (
     ProductConditionService,
 )
-from apps.products.product_base.services.product_status import ProductStatusService
-
 
 __all__ = [
     "ProductStatsService",
@@ -37,5 +35,4 @@ __all__ = [
     "ProductDetailService",
     "ProductListService",
     "ProductConditionService",
-    "ProductStatusService",
 ]

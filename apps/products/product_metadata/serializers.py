@@ -13,10 +13,7 @@ class ProductMetaSerializer(TimestampedModelSerializer):
             "id",
             "product",
             "views_count",
-            "featured",
             "seo_keywords",
-            "created_at",
-            "updated_at",
         ]
         read_only_fields = ["views_count"]
 
@@ -26,7 +23,7 @@ class ProductMetaWriteSerializer(TimestampedModelSerializer):
 
     class Meta:
         model = ProductMeta
-        fields = ["product", "featured", "seo_keywords"]
+        fields = ["product", "seo_keywords"]
 
     def validate_seo_keywords(self, value):
         """
@@ -69,9 +66,7 @@ class ProductMetaStatsSerializer(TimestampedModelSerializer):
             "product",
             "product_title",
             "views_count",
-            "featured",
-            "created_at",
-            "updated_at",
+            "seo_keywords",
         ]
 
 
@@ -108,8 +103,7 @@ class FeaturedProductMetaSerializer(TimestampedModelSerializer):
             "product_price",
             "product_image",
             "views_count",
-            "featured",
-            "created_at",
+            "seo_keywords",
         ]
 
     def get_product_image(self, obj):

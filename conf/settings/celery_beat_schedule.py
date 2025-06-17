@@ -106,6 +106,28 @@ CELERY_BEAT_SCHEDULE = {
             },
         },
     },
+    # ============================================
+    # PRODUCT NEGOTIATION TASKS
+    # ============================================
+    # Expire old negotiations daily at 2 AM
+    "expire-old-negotiations": {
+        "task": "apps.products.product_negotiation.tasks.expire_old_negotiations",
+        "schedule": crontab(minute=0, hour=2),  # Run daily at 2 AM
+    },
+    # =============================================
+    # Send negotiation reminders every 6 hours
+    # =============================================
+    "send-negotiation-reminders": {
+        "task": "apps.products.product_negotiation.tasks.send_negotiation_reminders",
+        "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
+    },
+    # ============================================
+    # Cleanup negotiation cache daily at 3:30 AM
+    # ============================================
+    "cleanup-negotiation-cache": {
+        "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
+        "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
+    },
 }
 
 # Additional configuration for development/testing environments
@@ -196,6 +218,19 @@ CELERY_BEAT_SCHEDULE_DEV = {
             },
         },
     },
+    # Development negotiation tasks (more frequent)
+    "expire-old-negotiations-dev": {
+        "task": "apps.products.product_negotiation.tasks.expire_old_negotiations",
+        "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours in dev
+    },
+    "send-negotiation-reminders-dev": {
+        "task": "apps.products.product_negotiation.tasks.send_negotiation_reminders",
+        "schedule": crontab(minute=0, hour="*/3"),  # Every 3 hours in dev
+    },
+    "cleanup-negotiation-cache-dev": {
+        "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
+        "schedule": crontab(minute=0, hour="*/12"),  # Every 12 hours in dev
+    },
 }
 
 # Testing configuration (even more frequent for testing)
@@ -227,6 +262,51 @@ CELERY_BEAT_SCHEDULE_TEST = {
             "expires": 180,  # Task expires after 3 minutes
             "retry": False,
         },
+    },
+    "auto-fix-timeout-issues-test": {
+        "task": "apps.transactions.tasks.periodic_migration.auto_fix_timeout_issues",
+        "schedule": crontab(minute="*/5"),  # Every 5 minutes in test
+        "options": {
+            "expires": 300,  # Task expires after 5 minutes
+            "retry": False,
+        },
+    },
+    "generate-timeout-health-report-test": {
+        "task": "apps.transactions.tasks.periodic_migration.generate_timeout_health_report",
+        "schedule": crontab(minute="*/10"),  # Every 10 minutes
+        "options": {
+            "expires": 600,  # Task expires after 10 minutes
+            "retry": False,
+        },
+    },
+    "cleanup-completed-timeouts-test": {
+        "task": "apps.transactions.tasks.transitions_tasks.cleanup_completed_timeouts",
+        "schedule": crontab(minute=0, hour="*/3"),  # Every 3 hours in test
+        "kwargs": {"days_old": 1},  # Clean up records older than 1 day in test
+        "options": {
+            "expires": 1800,  # Task expires after 30 minutes
+            "retry": False,
+        },
+    },
+    "comprehensive-timeout-migration-test": {
+        "task": "apps.transactions.tasks.periodic_migration.comprehensive_migration",
+        "schedule": crontab(minute=0, hour="*/2"),  # Every 2 hours in test
+        "options": {
+            "expires": 3600,  # Task expires after 1 hour
+            "retry": False,
+        },
+    },
+    "expire-old-negotiations-test": {
+        "task": "apps.products.product_negotiation.tasks.expire_old_negotiations",
+        "schedule": crontab(minute=0, hour="*/3"),  # Every 3 hours in test
+    },
+    "send-negotiation-reminders-test": {
+        "task": "apps.products.product_negotiation.tasks.send_negotiation_reminders",
+        "schedule": crontab(minute=0, hour="*/2"),  # Every 2 hours in test
+    },
+    "cleanup-negotiation-cache-test": {
+        "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
+        "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours in test
     },
 }
 
