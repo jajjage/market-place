@@ -11,8 +11,8 @@ class ProductMeta(BaseModel):
         "product_base.Product", on_delete=models.CASCADE, related_name="meta"
     )
     views_count = models.PositiveIntegerField(default=0)
-    total_shares = models.PositiveIntegerField(default=0)
-    seo_keywords = models.CharField(max_length=255, blank=True)
+    seo_keywords = models.CharField(max_length=500, blank=True)
+    seo_generation_queued = models.BooleanField(default=False)
 
     class Meta:
         db_table = "product_metadata"

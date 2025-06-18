@@ -17,6 +17,7 @@ load_dotenv(dotenv_path=env_path)
 # Development Settings
 # -----------------------------------------------------------------------------
 DEBUG = True
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY", default="django-insecure-development-key-change-me"
 )
@@ -417,7 +418,7 @@ CACHE_KEY_TEMPLATES = {
         "detail": "meta:detail:{id}",
         "list": "meta:list",
         "featured": "meta:featured",
-        "views_buf": "meta:views_buf:{id}",
+        "views_buffer": "meta:views_buffer:{id}",
     },
     "category": {
         "detail": "category:detail:{id}",

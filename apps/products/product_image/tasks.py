@@ -4,10 +4,12 @@ import os
 from celery import shared_task
 from django.core.files import File as DjangoFile
 from django.core.files.storage import default_storage
+
+from apps.core.tasks import BaseTaskWithRetry
 from .services import ProductImageService
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def upload_product_image_task(
     product_id,
     file_path,

@@ -19,6 +19,12 @@ from apps.products.product_base.services import (
     ProductWatchersService,
     ProductConditionService,
 )
+from apps.products.product_metadata.services import ProductMetaService as meta_services
+from apps.products.product_metadata.serializers import (
+    ProductMetaDetailSerializer,
+    ProductMetaWriteSerializer,
+)
+from apps.products.product_metadata.services import ProductMetaService
 from apps.products.product_negotiation.serializers import (
     InitiateNegotiationSerializer,
     PriceNegotiationSerializer,
@@ -47,6 +53,8 @@ from apps.products.product_base.utils.rate_limiting import (
     ProductFeaturedRateThrottle,
 )
 
+from drf_spectacular.utils import extend_schema
+
 logger = logging.getLogger("products_performance")
 
 
@@ -72,6 +80,14 @@ class ProductViewSet(BaseViewSet):
     ordering_fields = ["price", "created_at", "title", "inventory_count"]
     ordering = ["-created_at"]
     throttle_classes = [ProductListRateThrottle]
+
+    def get_permissions(self):
+        """Custom permissions for different actions."""
+        if self.action in ["list"]:
+            permission_classes = [permissions.AllowAny]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
 
     def get_serializer_context(self):
         """
@@ -153,11 +169,6 @@ class ProductViewSet(BaseViewSet):
     @action(detail=False, methods=["get"], throttle_classes=[ProductStatsRateThrottle])
     def stats(self, request):
         return ProductStatsService.get_stats_view(self, request)
-
-    def perform_destroy(self, serializer):
-        serializer.delete()
-        instance = serializer.instance
-        ProductListService.invalidate_product_list_caches()
 
     @action(detail=True, url_path="toggle-active", methods=["post"])
     def toggle_active(self, request, pk=None):
@@ -251,6 +262,63 @@ class ProductViewSet(BaseViewSet):
             status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        summary="Manage Product Metadata",
+        description="Get or update metadata for a product owned by the authenticated user.",
+        responses={
+            200: ProductMetaDetailSerializer,
+            403: "Not the owner of this product",
+            404: "Product not found",
+        },
+    )
+    @action(detail=True, methods=["get", "patch", "put"])
+    def manage_metadata(self, request, pk=None):
+        """
+        Allow product owners to manage their product's metadata.
+        GET: Retrieve current metadata (creates if doesn't exist)
+        PATCH/PUT: Update metadata
+        """
+        instance = self.get_object()
+
+        # Check ownership (assuming your Product model has an 'owner' field)
+        if hasattr(instance, "owner") and instance.owner != request.user:
+            return self.error_response(
+                message="You can only manage metadata for your own products",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if request.method == "GET":
+            # Get or create metadata
+            try:
+                meta, created = meta_services.get_or_create_product_meta(
+                    product_id=instance.id, user=request.user, data=self.request.data
+                )
+                serializer = ProductMetaDetailSerializer(
+                    meta, context={"request": request}
+                )
+                return self.success_response(data=serializer.data)
+            except Exception as e:
+                return self.error_response(
+                    message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+                )
+
+        else:  # PATCH or PUT
+            # Update metadata
+            try:
+                # You might want to create a separate serializer for metadata updates
+                # For now, assuming you have the data in request.data
+                meta, create = meta_services.get_or_create_product_meta(
+                    product_id=instance.id, user=request.user, data=request.data
+                )
+                serializer = ProductMetaWriteSerializer(
+                    meta, context={"request": request}
+                )
+                return self.success_response(data=serializer.data)
+            except Exception as e:
+                return self.error_response(
+                    message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+                )
+
 
 # Product retrieval by short code for social media sharing
 class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
@@ -269,6 +337,21 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
     permission_classes = [permissions.AllowAny]
 
     def retrieve(self, request, *args, **kwargs):
-        return ProductDetailService.retrieve_by_shortcode(
+        product = ProductDetailService.retrieve_by_shortcode(
             self, request, *args, **kwargs
         )
+
+        if product:
+            instance = self.get_object()
+
+            try:
+                ProductMetaService.increment_product_view_count(
+                    product_id=instance.id, use_cache_buffer=True
+                )
+            except Exception as e:
+                # Log the error but don't fail the request
+                # In production, you'd want proper logging here
+                print(instance.id)
+                print(e)
+                pass
+        return product

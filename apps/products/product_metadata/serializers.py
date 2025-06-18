@@ -1,25 +1,22 @@
+# apps/products/product_meta/serializers.py
+
 from rest_framework import serializers
 
 from apps.core.serializers import TimestampedModelSerializer
+from apps.products.product_base.models import Product
+from apps.products.product_image.services import ProductImageService
 from .models import ProductMeta
-
-
-class ProductMetaSerializer(TimestampedModelSerializer):
-    """Serializer for product metadata."""
-
-    class Meta:
-        model = ProductMeta
-        fields = [
-            "id",
-            "product",
-            "views_count",
-            "seo_keywords",
-        ]
-        read_only_fields = ["views_count"]
+from .services import ProductMetaService  # Import from service layer
 
 
 class ProductMetaWriteSerializer(TimestampedModelSerializer):
-    """Serializer for creating/updating product metadata."""
+    """
+    Serializer for creating/updating product metadata.
+    Used by admins.
+    """
+
+    # Make the product field write-only and accept just the ID
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
 
     class Meta:
         model = ProductMeta
@@ -27,93 +24,69 @@ class ProductMetaWriteSerializer(TimestampedModelSerializer):
 
     def validate_seo_keywords(self, value):
         """
-        Validate SEO keywords format and length.
+        Validate SEO keywords by calling the centralized service function.
         """
-        if value:
-            # Remove extra spaces
-            value = " ".join(value.split())
-
-            # Check if keywords are comma-separated
-            keywords = [k.strip() for k in value.split(",")]
-
-            # Check if any individual keyword is too long
-            max_keyword_length = 50
-            for keyword in keywords:
-                if len(keyword) > max_keyword_length:
-                    raise serializers.ValidationError(
-                        f"Individual keywords should not exceed {max_keyword_length} characters."
-                    )
-
-            # Check if too many keywords
-            max_keywords = 10
-            if len(keywords) > max_keywords:
-                raise serializers.ValidationError(
-                    f"Too many keywords. Maximum is {max_keywords}."
-                )
-
-        return value
+        try:
+            # Re-use the business logic from the service layer
+            return ProductMetaService.validate_seo_keywords_format(value)
+        except ValueError as e:
+            # Convert the service's ValueError to DRF's validation error
+            raise serializers.ValidationError(str(e))
 
 
-class ProductMetaStatsSerializer(TimestampedModelSerializer):
-    """Serializer for product metadata statistics."""
+class ProductMetaDetailSerializer(TimestampedModelSerializer):
+    """
+    Detailed serializer for product metadata, including related product info.
+    Used for public-facing endpoints like stats, featured, popular, etc.
+    """
 
+    # Pull in useful fields from the related Product model
     product_title = serializers.CharField(source="product.title", read_only=True)
-
-    class Meta:
-        model = ProductMeta
-        fields = [
-            "id",
-            "product",
-            "product_title",
-            "views_count",
-            "seo_keywords",
-        ]
-
-
-class ProductMetaUpdateViewsSerializer(TimestampedModelSerializer):
-    """Serializer for incrementing product view count."""
-
-    class Meta:
-        model = ProductMeta
-        fields = ["views_count"]
-        read_only_fields = ["views_count"]
-
-    def update(self, instance, validated_data):
-        """Increment the views count."""
-        instance.views_count += 1
-        instance.save(update_fields=["views_count", "updated_at"])
-        return instance
-
-
-class FeaturedProductMetaSerializer(TimestampedModelSerializer):
-    """Serializer for featured products metadata."""
-
-    product_title = serializers.CharField(source="product.title", read_only=True)
+    product_slug = serializers.SlugField(source="product.slug", read_only=True)
+    product_shortcode = serializers.SlugField(
+        source="product.shortcode", read_only=True
+    )
     product_price = serializers.DecimalField(
         source="product.price", max_digits=10, decimal_places=2, read_only=True
     )
-    product_image = serializers.SerializerMethodField()
+    product_is_featured = serializers.BooleanField(
+        source="product.is_featured", read_only=True
+    )
+    product_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductMeta
         fields = [
             "id",
-            "product",
+            "product",  # The product ID
             "product_title",
+            "product_slug",
+            "product_shortcode",
             "product_price",
-            "product_image",
+            "product_is_featured",
+            "product_image_url",
             "views_count",
             "seo_keywords",
         ]
+        read_only_fields = fields  # This serializer is for reading only
 
-    def get_product_image(self, obj):
-        """Get the primary image URL for the product."""
+    def get_product_image_url(self, obj):
+        """
+        Get the primary image URL for the product.
+        This is efficient because the view will prefetch the images.
+        """
         request = self.context.get("request")
-        primary_image = (
-            obj.product.images.filter(is_primary=True).first()
-            or obj.product.images.first()
-        )
+        # Access pre-fetched images if they exist
+        if hasattr(obj.product, "images") and obj.product.images:
+            primary_image = ProductImageService.get_primary_image(obj.product.id)
 
-        if request and primary_image and primary_image.image:
-            return request.build_absolute_uri(primary_image.image.url)
+            if primary_image and primary_image.image_url:
+                # Try to build absolute URL if request is available
+                if request:
+                    return request.build_absolute_uri(primary_image.image_url)
+                else:
+                    # Fallback to relative URL or build manually
+                    return primary_image.image_url
+                    # Or build manually: f"http://your-domain.com{primary_image.image_url}"
+
         return None

@@ -5,6 +5,8 @@ from apps.products.product_base.serializers import ProductDetailSerializer
 from rest_framework import status
 import logging
 
+# from apps.products.product_metadata.services import ProductMetaService
+
 logger = logging.getLogger("products_performance")
 
 
@@ -19,7 +21,6 @@ class ProductDetailService:
             cache_key = CacheKeyManager.make_key(
                 "product_base", "detail_by_shortcode", short_code=short_code
             )
-
             cached_data = cache.get(cache_key)
             logger.info(f"Cache HIT for product detail by shortcode: {cache_key}")
             return view.success_response(
@@ -40,7 +41,7 @@ class ProductDetailService:
         cache_key = CacheKeyManager.make_key(
             "product_base", "detail_by_shortcode", short_code=short_code
         )
-        print(cache_key)
+
         logger.info(f"Cache MISS for product detail by shortcode: {cache_key}")
         cache.set(cache_key, serialized_data, view.CACHE_TTL)
         logger.info(f"Cached product detail by shortcode: {cache_key}")

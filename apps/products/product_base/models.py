@@ -1,8 +1,12 @@
-from django.db import models
 from django.conf import settings
+from django.db import models, IntegrityError, transaction
 
 
 from apps.core.models import BaseModel
+from apps.products.product_base.utils.social_sharing import (
+    create_unique_short_code,
+    generate_seo_friendly_slug,
+)
 from apps.products.product_brand.models import Brand
 
 
@@ -19,7 +23,7 @@ class Product(BaseModel):
     )
     title = models.CharField(max_length=255)
     description = models.TextField()
-    slug = models.SlugField(max_length=255, blank=True, db_index=True)
+    slug = models.SlugField(max_length=255, unique=True, blank=True, db_index=True)
     short_code = models.CharField(
         max_length=200, unique=True, blank=True, null=True, db_index=True
     )
@@ -93,6 +97,33 @@ class Product(BaseModel):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        # 1) Slug: only for new objects or if slug is blank
+        if not self.slug:
+            self.slug = generate_seo_friendly_slug(self.title)
+
+        # 2) Short code: only when missing
+        if not self.short_code:
+            # try a few times in case of race
+            for attempt in range(3):
+                candidate = create_unique_short_code(self.__class__, length=6)
+                # If we have a slug, append it to the short code
+                self.short_code = f"{self.slug}-{candidate}"
+                try:
+                    # Use atomic block to isolate the insert/update
+                    with transaction.atomic():
+                        super().save(*args, **kwargs)
+                    break  # success!
+                except IntegrityError:
+                    if attempt == 2:
+                        raise  # out of retries
+                    # else – collision, retry
+            # We’ve already called super().save() inside the loop
+            return
+
+        # default save for objects that already have both fields
+        super().save(*args, **kwargs)
 
     @property
     def brand_name(self):

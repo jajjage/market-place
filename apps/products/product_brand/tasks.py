@@ -36,7 +36,7 @@ def update_brand_stats(self, brand_id: int):
         self.retry(countdown=60, exc=exc)
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def bulk_update_brand_stats():
     """Update all brand stats - run daily"""
     brand_ids = Brand.objects.active().values_list("id", flat=True)

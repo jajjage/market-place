@@ -10,7 +10,7 @@ conf/logs/
 
 # KDE directory preferences
 .directory
-
+/.devcontainer/.env
 # Linux trash folder which might appear on any partition or disk
 .Trash-*
 /conf/products

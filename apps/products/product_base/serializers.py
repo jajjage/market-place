@@ -28,7 +28,7 @@ from apps.products.product_brand.serializers import BrandListSerializer
 from apps.products.product_watchlist.serializers import (
     ProductWatchlistItemListSerializer,
 )
-from apps.products.product_metadata.serializers import ProductMetaSerializer
+from apps.products.product_metadata.serializers import ProductMetaDetailSerializer
 from apps.products.product_detail.serializers import (
     ProductDetailSerializer as ProductExtraDetailSerializer,
 )
@@ -366,7 +366,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
 
             meta = ProductMeta.objects.filter(product=obj).first()
         if meta:
-            return ProductMetaSerializer(meta).data
+            return ProductMetaDetailSerializer(meta).data
         return None
 
     def get_watchlist_items(self, obj):

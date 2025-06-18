@@ -16,6 +16,7 @@ logger = logging.getLogger("products_performance")
 
 class ProductListService:
     CACHE_TTL = 60 * 15  # 15 minutes cache TTL
+    LIST_KEYS_SET = "safetrade:product_base:list:keys"
 
     @staticmethod
     def get_cached_product_list(viewset, queryset):
@@ -146,6 +147,9 @@ class ProductListService:
         params_hash = hashlib.md5(params_str.encode()).hexdigest()[:12]
 
         key = CacheKeyManager.make_key("product_base", "list", params=params_hash)
+        redis_conn = get_redis_connection("default")
+        redis_conn.sadd(ProductListService.LIST_KEYS_SET, key)
+        logger.info(f"Generated cache key: {key} with params: {params}")
         return key
 
     @staticmethod
@@ -153,17 +157,14 @@ class ProductListService:
         redis_conn = get_redis_connection("default")
         # django-redis strips KEY_PREFIX for you
         # cache.delete("safetrade:product_base:list:main")
-
         logger.info("Deleting list caches with pattern")
-        keys = redis_conn.smembers("safetrade:product_base:list:keys")
-        decoded_keys = [k.decode("utf-8") for k in keys]
+        raw_keys = redis_conn.smembers(ProductListService.LIST_KEYS_SET)
+        decoded_keys = [k.decode("utf-8") for k in raw_keys]
+        print(decoded_keys)
         for key in decoded_keys:
             logger.info(f"Deleted single key: {key}")
             cache.delete(key)
             logger.info(f"✅ Deleted {key} list cache keys")
-
-        else:
-            logger.warning("⚠️ No product list cache keys found to delete")
 
     @staticmethod
     def _apply_viewset_filters(viewset, queryset):
