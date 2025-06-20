@@ -1,4 +1,7 @@
-from django.db.models import Avg, Count, Q
+from django.db import models
+from django.db.models import Avg, Count, Q, Prefetch
+
+# from django.contrib.auth import get_user_model
 from django.core.cache import cache
 import logging
 import hashlib
@@ -10,6 +13,8 @@ from apps.core.utils.cache_manager import CacheManager
 
 # from apps.products.product_breadcrumb.models import Breadcrumb
 from django_redis import get_redis_connection
+
+from apps.products.product_rating.models import ProductRating
 
 logger = logging.getLogger("products_performance")
 
@@ -84,7 +89,7 @@ class ProductListService:
         return filtered_queryset
 
     @staticmethod
-    def get_product_queryset(base_queryset):
+    def get_product_queryset(queryset):
         """
         Get optimized product queryset with related fields and annotations.
         This method is used to ensure efficient data retrieval for product details.
@@ -95,21 +100,39 @@ class ProductListService:
         Returns:
             Optimized queryset with select_related and prefetch_related
         """
-        return (
-            base_queryset.select_related("brand", "category", "condition", "seller")
-            .prefetch_related(
-                "images",
-                "variants",
-                "watchers",
-                # Prefetch ratings for efficiency
+        base_queryset = queryset.select_related(
+            "brand",
+            "category",
+            "condition",
+            "seller",
+            "seller__profile",
+        )
+        approved_ratings_prefetch = Prefetch(
+            "ratings",
+            queryset=ProductRating.objects.filter(is_approved=True).select_related(
+                "user"
+            ),
+            to_attr="approved_ratings",
+        )
+        return base_queryset.prefetch_related(
+            "images",
+            "variants",
+            "watchers",
+            "meta",
+            approved_ratings_prefetch,
+            # Prefetch rating aggregate for efficiency
+            "rating_aggregate",
+        ).annotate(
+            # Add aggregated rating fields for list view
+            avg_rating_db=Avg("ratings__rating", filter=Q(ratings__is_approved=True)),
+            ratings_count_db=Count("ratings", filter=Q(ratings__is_approved=True)),
+            verified_ratings_count=Count(
                 "ratings",
-                # Prefetch breadcrumbs with their content_type
-            )
-            .annotate(
-                # Add aggregated rating fields for efficiency
-                avg_rating_db=Avg("ratings__rating"),
-                ratings_count_db=Count("ratings"),
-            )
+                filter=Q(ratings__is_approved=True, ratings__is_verified_purchase=True),
+            ),
+            # Add useful counts for sorting/filtering
+            total_views=models.F("meta__views_count"),  # If you track views
+            watchers_count=Count("watchers", distinct=True),
         )
 
     @staticmethod

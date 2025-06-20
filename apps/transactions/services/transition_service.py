@@ -1,63 +1,16 @@
-# apps/transactions/services/transition_service.py
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
-from django.conf import settings
+
 from typing import Optional, Dict, Any
 import logging
 
 from apps.transactions.models import EscrowTransaction, EscrowTimeout
 from apps.transactions.services.escrow_services import EscrowTransactionService
-from apps.transactions.tasks.transitions_tasks import (
-    schedule_shipping_timeout,
-    schedule_auto_inspection,
-    schedule_auto_completion,
-    auto_refund_disputed_transaction,
-)
+
+from apps.transactions.config.escrow_transition import EscrowTransitionConfig
 
 logger = logging.getLogger(__name__)
-
-
-class EscrowTransitionConfig:
-    """Configuration for escrow transition timeouts"""
-
-    DELIVERY_GRACE_PERIOD = getattr(settings, "DELIVERY_GRACE_PERIOD_DAYS", 3)
-    INSPECTION_PERIOD = getattr(settings, "INSPECTION_PERIOD_DAYS", 7)
-    DISPUTE_AUTO_REFUND = getattr(settings, "DISPUTE_AUTO_REFUND_DAYS", 14)
-    SHIPPING_TIMEOUT = getattr(settings, "SHIPPING_TIMEOUT_DAYS", 5)
-
-    # Timeout configurations for different transitions
-    TIMEOUT_CONFIGS = {
-        "delivered": {
-            "timeout_type": "inspection_start",
-            "to_status": "inspection",
-            "days": DELIVERY_GRACE_PERIOD,
-            "task": schedule_auto_inspection,
-        },
-        "inspection": {
-            "timeout_type": "inspection_end",
-            "to_status": "completed",
-            "days": INSPECTION_PERIOD,
-            "task": schedule_auto_completion,
-        },
-        "disputed": {
-            "timeout_type": "dispute_refund",
-            "to_status": "refunded",
-            "days": DISPUTE_AUTO_REFUND,
-            "task": auto_refund_disputed_transaction,
-        },
-        "payment_received": {
-            "timeout_type": "shipping",
-            "to_status": "shipped",
-            "days": SHIPPING_TIMEOUT,
-            "task": schedule_shipping_timeout,
-        },
-    }
-
-    @classmethod
-    def get_timeout_config(cls, status: str) -> Optional[Dict[str, Any]]:
-        """Get timeout configuration for a specific status"""
-        return cls.TIMEOUT_CONFIGS.get(status)
 
 
 class EscrowTransitionService:

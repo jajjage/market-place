@@ -26,7 +26,7 @@ class EscrowTransaction(BaseModel):
         related_name="seller_transactions",
         on_delete=models.PROTECT,
     )
-    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    quantity = models.IntegerField(default=1)
     currency = models.CharField(max_length=3, default="USD")
 
     # Status tracking
@@ -57,9 +57,7 @@ class EscrowTransaction(BaseModel):
     # Inspection period
     inspection_period_days = models.PositiveSmallIntegerField(default=3)
     inspection_end_date = models.DateTimeField(blank=True, null=True)
-    price_by_negotiation = models.DecimalField(
-        max_digits=10, decimal_places=2, blank=True, null=True
-    )
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     # New fields for better automatic transition tracking
     status_changed_at = models.DateTimeField(default=timezone.now)

@@ -20,7 +20,7 @@ class ProductRating(BaseModel):
         validators=[MinValueValidator(1), MaxValueValidator(5)], db_index=True
     )
     review = models.TextField(blank=True, null=True)
-    title = models.CharField(max_length=200, blank=True)
+    title = models.CharField(max_length=200, blank=True, null=True)
 
     # Verification fields
     is_verified_purchase = models.BooleanField(default=False, db_index=True)

@@ -64,7 +64,7 @@ class EscrowTransactionViewSet(BaseViewSet):
         filters.OrderingFilter,
     ]
     search_fields = ["tracking_id", "product__title", "buyer__email", "seller__email"]
-    ordering_fields = ["created_at", "updated_at", "status", "amount"]
+    ordering_fields = ["created_at", "updated_at", "status", "price"]
     ordering = ["-created_at"]
 
     def get_throttles(self):
@@ -303,8 +303,8 @@ class EscrowTransactionViewSet(BaseViewSet):
                     "buyer_id": transaction.buyer.id if transaction.buyer else None,
                     "seller_id": transaction.seller.id if transaction.seller else None,
                     "amount": (
-                        str(transaction.amount)
-                        if hasattr(transaction, "amount")
+                        str(transaction.price)
+                        if hasattr(transaction, "price")
                         else None
                     ),
                     "created_at": (
@@ -317,12 +317,12 @@ class EscrowTransactionViewSet(BaseViewSet):
             }
 
             return self.success_response(data=response_data)
-
         except Exception as e:
-            return self.error_response(
-                message=f"Error fetching available actions: {str(e)}",
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            raise e
+            # return self.error_response(
+            #     message=f"Error fetching available actions: {str(e)}",
+            #     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            # )
 
     @action(
         detail=False,
@@ -362,8 +362,8 @@ class EscrowTransactionViewSet(BaseViewSet):
                         > 0,
                         "transaction_summary": {
                             "amount": (
-                                str(transaction.amount)
-                                if hasattr(transaction, "amount")
+                                str(transaction.price)
+                                if hasattr(transaction, "price")
                                 else None
                             ),
                             "other_party": get_other_party_info(

@@ -1,4 +1,4 @@
-# apps/transactions/management/commands/migrate_to_timeout_system.py
+from importlib import import_module
 from django.core.management.base import BaseCommand
 from django.db import transaction, models
 from django.utils import timezone
@@ -9,7 +9,7 @@ from apps.transactions.models import (
     EscrowTimeout,
     TransactionHistory,
 )
-from apps.transactions.services.transition_service import EscrowTransitionConfig
+from apps.transactions.config.escrow_transition import EscrowTransitionConfig
 
 
 class Command(BaseCommand):
@@ -217,7 +217,8 @@ class Command(BaseCommand):
                 countdown_seconds = int((expires_at - timezone.now()).total_seconds())
 
                 # Schedule the task
-                task_result = timeout_config["task"].apply_async(
+                task = self._resolve_task(timeout_config["task"])
+                task_result = task.apply_async(
                     args=[txn.id],
                     countdown=countdown_seconds,
                 )
@@ -373,3 +374,8 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS("Validation completed"))
+
+    def _resolve_task(task_path: str):
+        module_path, func_name = task_path.rsplit(".", 1)
+        module = import_module(module_path)
+        return getattr(module, func_name)

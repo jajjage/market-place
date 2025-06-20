@@ -143,14 +143,17 @@ class NegotiationService:
         )
         if not price_validation["is_valid"]:
             return False, {"errors": price_validation["errors"]}
-
+        existing_negotiation = PriceNegotiation.objects.filter(
+            product=product, buyer=buyer, status__in=["pending", "countered"]
+        ).first()
+        if existing_negotiation:
+            return False, {
+                "errors": [
+                    "You already have an active negotiation for this product. Please wait for counter offer."
+                ]
+            }
         try:
             with transaction.atomic():
-                # Check for existing active negotiations
-                existing_negotiation = PriceNegotiation.objects.filter(
-                    product=product, buyer=buyer, status__in=["pending", "countered"]
-                ).first()
-
                 if existing_negotiation:
                     # Update existing negotiation
                     existing_negotiation.offered_price = offered_price
@@ -498,7 +501,9 @@ class NegotiationNotificationService:
     """Service for handling negotiation notifications"""
 
     @staticmethod
-    def notify_seller_response(negotiation: PriceNegotiation, response_type: str):
+    def notify_seller_response(
+        negotiation: PriceNegotiation, response_type: str = None
+    ):
         """Notify seller about new offer"""
         # Implementation depends on your notification system
         # This could send email, push notification, or in-app notification

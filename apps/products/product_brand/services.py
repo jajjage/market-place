@@ -18,7 +18,7 @@ from apps.products.product_brand.tasks import (
 from apps.core.utils.cache_manager import CacheManager
 from apps.core.utils.cache_key_manager import CacheKeyManager
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("brands_performance")
 
 
 class BrandService:

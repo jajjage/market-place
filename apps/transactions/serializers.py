@@ -46,6 +46,7 @@ class EscrowTransactionShortSerializer(TimestampedModelSerializer):
 
     product_title = serializers.CharField(source="product.title")
     product_image = serializers.SerializerMethodField()
+    amount = serializers.SerializerMethodField()
 
     class Meta:
         model = EscrowTransaction
@@ -54,7 +55,7 @@ class EscrowTransactionShortSerializer(TimestampedModelSerializer):
             "product_title",
             "product_image",
             "amount",
-            "currency",
+            "quantity" "currency",
             "status",
             "created_at",
         ]
@@ -66,6 +67,9 @@ class EscrowTransactionShortSerializer(TimestampedModelSerializer):
             else None
         )
 
+    def get_amount(self, obj):
+        return obj.price if obj.price else 0
+
 
 class EscrowTransactionListSerializer(TimestampedModelSerializer):
     """Serializer for listing escrow transactions"""
@@ -75,6 +79,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
     seller_name = serializers.SerializerMethodField()
     days_since_created = serializers.SerializerMethodField()
     history = serializers.SerializerMethodField()
+    amount = serializers.SerializerMethodField()
 
     class Meta:
         model = EscrowTransaction
@@ -85,6 +90,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
             "buyer_name",
             "seller_name",
             "status",
+            "quantity",
             "amount",
             "currency",
             "created_at",
@@ -113,6 +119,10 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
 
         return (timezone.now() - obj.created_at).days
 
+    def get_amount(self, obj):
+        print(obj.price)
+        return obj.price if obj.price else 0
+
     def get_history(self, obj):
         # obj.all_history is the full, prefetched, ordered history list
         latest_five = getattr(obj, "all_history", [])[:5]
@@ -126,9 +136,11 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
 
     breadcrumbs = serializers.SerializerMethodField()
     product_details = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
     buyer_details = serializers.SerializerMethodField()
     seller_details = serializers.SerializerMethodField()
     history = serializers.SerializerMethodField()
+    amount = serializers.SerializerMethodField()
     # next_actions = serializers.SerializerMethodField()
 
     class Meta:
@@ -136,11 +148,13 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
         fields = [
             "id",
             "tracking_id",
+            "image",
             "product_details",
             "buyer_details",
             "seller_details",
             "amount",
             "currency",
+            "quantity",
             "status",
             "inspection_period_days",
             "inspection_end_date",
@@ -160,6 +174,15 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
         ]
 
     def get_product_details(self, obj):
+        product = obj.product
+        return {
+            "id": product.id,
+            "title": product.title,
+            "short_code": product.short_code,
+            "price": product.price,
+        }
+
+    def get_image(self, obj):
         request = self.context.get("request")
         if hasattr(obj.product, "images") and obj.product.images:
             primary_image = ProductImageService.get_primary_image(obj.product.id)
@@ -212,6 +235,9 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "timestamp"
         )
         return TransactionHistorySerializer(history, many=True).data
+
+    def get_amount(self, obj):
+        return obj.price if obj.price else 0
 
     # def get_next_actions(self, obj):
     #     """Return possible next actions based on current status and user role"""

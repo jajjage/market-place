@@ -205,12 +205,15 @@ class InventoryViewSet(
 
             with transaction.atomic():
                 result = InventoryService.place_in_escrow(
-                    product=product, quantity=quantity, buyer=request.user, notes=notes
+                    product=product,
+                    quantity=quantity,
+                    buyer=request.user,
+                    currency=product.currency,
+                    notes=notes,
                 )
 
             if result:
-                product_result = result[0]
-                transaction_tracking_id = result[1]
+                product_result, transaction_tracking_id, to_paid = result
 
                 return self.success_response(
                     data={
@@ -218,6 +221,8 @@ class InventoryViewSet(
                         "available": product_result.available_inventory,
                         "in_escrow": product_result.in_escrow_inventory,
                         "transaction_id": transaction_tracking_id.tracking_id,
+                        "to_paid": f"${float(to_paid)}",
+                        "items": quantity,
                     }
                 )
             else:

@@ -12,54 +12,13 @@ from .models import (
 User = get_user_model()
 
 
-class ProductRatingsSummarySerializer(serializers.Serializer):
-    """
-    Serializer for product ratings summary.
-    This works with Product instances, not ProductRating instances.
-    """
-
-    average_rating = serializers.SerializerMethodField()
-    total_ratings = serializers.SerializerMethodField()
-    # rating_breakdown = serializers.SerializerMethodField()
-
-    def get_average_rating(self, obj):
-        """Get average rating - uses annotated field if available, otherwise calculates"""
-        # Use annotated field if available (more efficient)
-        if hasattr(obj, "average_rating") and obj.average_rating is not None:
-            return round(float(obj.average_rating), 2)
-
-        # Fallback to calculation using prefetched ratings
-        ratings = obj.ratings.all()
-        if ratings:
-            return round(sum(r.rating for r in ratings) / len(ratings), 2)
-        return 0.0
-
-    def get_total_ratings(self, obj):
-        """Get total number of ratings - uses annotated field if available"""
-        # Use annotated field if available (more efficient)
-        if hasattr(obj, "total_ratings"):
-            return obj.total_ratings
-
-        # Fallback to count using prefetched ratings
-        return obj.ratings.count()
-
-    # def get_rating_breakdown(self, obj):
-    #     """Get breakdown of ratings by star count (1-5)"""
-    #     from collections import Counter
-
-    #     # Use prefetched ratings to avoid additional queries
-    #     ratings = [r.rating for r in obj.ratings.all()]
-    #     breakdown = Counter(ratings)
-
-    #     # Return breakdown for stars 1-5
-    #     return {f"{i}_star": breakdown.get(i, 0) for i in range(1, 6)}
-
-
 class ProductRatingsSerializer(TimestampedModelSerializer):
     user = UserShortSerializer(read_only=True)
     helpfulness_ratio = serializers.ReadOnlyField()
     can_vote = serializers.SerializerMethodField()
     user_vote = serializers.SerializerMethodField()
+    product_title = serializers.CharField(source="product.title", read_only=True)
+    is_owner = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductRating
@@ -69,6 +28,7 @@ class ProductRatingsSerializer(TimestampedModelSerializer):
             "review",
             "title",
             "created_at",
+            "updated_at",
             "is_verified_purchase",
             "helpful_count",
             "total_votes",
@@ -76,6 +36,8 @@ class ProductRatingsSerializer(TimestampedModelSerializer):
             "user",
             "can_vote",
             "user_vote",
+            "product_title",
+            "is_owner",
         ]
 
     def get_can_vote(self, obj):
@@ -94,6 +56,12 @@ class ProductRatingsSerializer(TimestampedModelSerializer):
             return vote.is_helpful
         except RatingHelpfulness.DoesNotExist:
             return None
+
+    def get_is_owner(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        return request.user == obj.user
 
 
 class RatingBreakdownSerializer(serializers.Serializer):
@@ -118,7 +86,14 @@ class ProductRatingAggregateSerializer(TimestampedModelSerializer):
 
     class Meta:
         model = ProductRatingAggregate
-        fields = ["average", "count", "verified_count", "breakdown", "has_reviews"]
+        fields = [
+            "average",
+            "count",
+            "verified_count",
+            "breakdown",
+            "has_reviews",
+            "last_rating_date",
+        ]
 
     def get_breakdown(self, obj):
         breakdown_data = obj.rating_breakdown
@@ -137,3 +112,47 @@ class CreateRatingSerializer(serializers.ModelSerializer):
         if value < 1 or value > 5:
             raise serializers.ValidationError("Rating must be between 1 and 5")
         return value
+
+    def validate_review(self, value):
+        """Make review mandatory and ensure minimum length"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Review text is required for all ratings")
+
+        if len(value.strip()) < 10:
+            raise serializers.ValidationError(
+                "Review must be at least 10 characters long"
+            )
+
+        if len(value.strip()) > 2000:
+            raise serializers.ValidationError("Review cannot exceed 2000 characters")
+
+        return value.strip()
+
+    def validate_title(self, value):
+        """Optional title with length validation"""
+        if value and len(value.strip()) > 200:
+            raise serializers.ValidationError("Title cannot exceed 200 characters")
+        return value.strip() if value else ""
+
+
+class RatingFilterSerializer(serializers.Serializer):
+    """Serializer for rating filter parameters"""
+
+    product_id = serializers.IntegerField(required=True)
+    page = serializers.IntegerField(default=1, min_value=1)
+    per_page = serializers.IntegerField(default=10, min_value=1, max_value=50)
+    rating = serializers.IntegerField(required=False, min_value=1, max_value=5)
+    sort = serializers.ChoiceField(
+        choices=["newest", "oldest", "helpful", "rating_high", "rating_low"],
+        default="newest",
+    )
+    verified_only = serializers.BooleanField(default=False)
+
+
+class UserRatingStatsSerializer(serializers.Serializer):
+    """Serializer for user rating statistics"""
+
+    total_ratings = serializers.IntegerField()
+    average_rating_given = serializers.FloatField()
+    verified_purchases_rated = serializers.IntegerField()
+    helpful_votes_received = serializers.IntegerField()

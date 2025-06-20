@@ -21,8 +21,8 @@ class TransactionFilter(filters.FilterSet):
     updated_before = filters.DateTimeFilter(field_name="updated_at", lookup_expr="lte")
 
     # Amount range filters
-    min_amount = filters.NumberFilter(field_name="amount", lookup_expr="gte")
-    max_amount = filters.NumberFilter(field_name="amount", lookup_expr="lte")
+    min_amount = filters.NumberFilter(field_name="price", lookup_expr="gte")
+    max_amount = filters.NumberFilter(field_name="price", lookup_expr="lte")
 
     # Related model filters
     buyer = filters.ModelChoiceFilter(queryset=User.objects.all())
@@ -36,7 +36,8 @@ class TransactionFilter(filters.FilterSet):
             "id",
             "tracking_id",
             "status",
-            "amount",
+            "quantity",
+            "price",
             "currency",
             "buyer",
             "seller",

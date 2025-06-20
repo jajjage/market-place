@@ -19,6 +19,7 @@ from apps.products.product_base.services import (
     ProductWatchersService,
     ProductConditionService,
 )
+from apps.products.product_base.utils.seller import is_product_owner
 from apps.products.product_metadata.services import ProductMetaService as meta_services
 from apps.products.product_metadata.serializers import (
     ProductMetaDetailSerializer,
@@ -172,14 +173,29 @@ class ProductViewSet(BaseViewSet):
 
     @action(detail=True, url_path="toggle-active", methods=["post"])
     def toggle_active(self, request, pk=None):
+        if not is_product_owner(self, request):
+            return self.error_response(
+                message="You can't update items that doesn't belong to you",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
         return ProductToggleService.toggle_active(self, request, pk)
 
     @action(detail=True, url_path="toggle-featured", methods=["post"])
     def toggle_featured(self, request, pk=None):
+        if not is_product_owner(self, request):
+            return self.error_response(
+                message="You can't update items that doesn't belong to you",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
         return ProductToggleService.toggle_featured(self, request, pk)
 
     @action(detail=True, url_path="toggle-negotiation", methods=["post"])
     def toggle_negotiation(self, request, pk=None):
+        if not is_product_owner(self, request):
+            return self.error_response(
+                message="You can't update items that doesn't belong to you",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
         return ProductToggleService.toggle_negotiation(self, request, pk)
 
     @action(detail=True, methods=["get"])
@@ -243,7 +259,7 @@ class ProductViewSet(BaseViewSet):
         created = result["created"]
 
         # Send notification
-        NegotiationNotificationService.notify_seller_new_offer(negotiation)
+        NegotiationNotificationService.notify_seller_response(negotiation)
 
         # Serialize response
         response_serializer = PriceNegotiationSerializer(
@@ -343,14 +359,11 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
 
         if product:
             instance = self.get_object()
-
             try:
                 ProductMetaService.increment_product_view_count(
                     product_id=instance.id, use_cache_buffer=True
                 )
             except Exception as e:
-                # Log the error but don't fail the request
-                # In production, you'd want proper logging here
                 print(instance.id)
                 print(e)
                 pass

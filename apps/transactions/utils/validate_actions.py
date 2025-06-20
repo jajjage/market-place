@@ -48,7 +48,11 @@ def get_status_metadata(transaction):
     if transaction.status == "inspection" and hasattr(
         transaction, "inspection_end_date"
     ):
-        metadata["inspection_end_date"] = transaction.inspection_end_date.isoformat()
+        metadata["inspection_end_date"] = (
+            transaction.inspection_end_date.isoformat()
+            if transaction.inspection_end_date
+            else None
+        )
         metadata["inspection_time_remaining"] = get_time_remaining(
             transaction.inspection_end_date
         )
@@ -69,7 +73,7 @@ def get_other_party_info(transaction, current_user):
 
     return {
         "id": other_party.id if other_party else None,
-        "username": other_party.username if other_party else None,
+        "username": other_party.full_name() if other_party else None,
         "role": role,
     }
 

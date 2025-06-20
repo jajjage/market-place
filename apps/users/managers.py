@@ -18,7 +18,7 @@ class CustomUserManager(BaseUserManager):
                 "buyer_transactions", filter=Q(buyer_transactions__status="completed")
             ),
             total_sales_amount=Sum(
-                "seller_transactions__amount",
+                "seller_transactions__price",
                 filter=Q(seller_transactions__status="completed"),
             ),
         )

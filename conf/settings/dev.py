@@ -150,6 +150,13 @@ PERFORMANCE_API_PREFIXES = {
     "/api/v1/detail": "detail",
     "/api/v1/watchlist": "watchlist",
     "/api/v1/images": "images",
+    "/api/v1/escrow": "escrow",
+    "/api/v1/negotiation": "negotiation",
+    "/api/v1/ratings": "ratings",
+    "/api/v1/conditions": "conditions",
+    "/api/v1/categories": "categories",
+    "/api/v1/products": "products",
+    "/api/v1/product_catalog": "product_catalog",
     # …add more as needed…
 }
 
@@ -449,7 +456,20 @@ CACHE_KEY_TEMPLATES = {
         # Wildcard patterns for invalidation
         "user_all": "negotiation:user:{user_id}:*",
         "product_all": "negotiation:*:product:{product_id}:*",
-    },  # …add new resources here as needed…
+    },
+    "product_rating": {
+        "detail": "ratings:detail:{id}",
+        "list": "ratings:list:{product_id}:params:{params}",
+        "user_list": "ratings:user:{user_id}:params:{params}",
+        "user_stats": "ratings:user_stats:{user_id}",
+        "aggregate": "ratings:aggregate:{product_id}",
+        "can_rate": "ratings:can_rate:{product_id}",
+        "recent": "ratings:recent:limit:{limit}",
+        "flagged": "ratings:flagged",
+        # Wildcard patterns for bulk deletion
+        "all_ratings": "ratings:*",  # For all ratings
+    },
+    # …add new resources here as needed…
 }
 
 # Negotiation Feature Settings

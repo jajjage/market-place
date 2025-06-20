@@ -68,7 +68,7 @@ class EscrowTransactionAdmin(admin.ModelAdmin):
                     "product",
                     "buyer",
                     "seller",
-                    "amount",
+                    "price",
                     "currency",
                     "status",
                     "notes",
@@ -165,7 +165,7 @@ class EscrowTransactionAdmin(admin.ModelAdmin):
 
     def amount_display(self, obj):
         """Format amount with currency"""
-        return f"{obj.amount} {obj.currency}"
+        return f"{obj.price} {obj.currency}"
 
     amount_display.short_description = "Amount"
 

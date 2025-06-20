@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from apps.core.tasks import BaseTaskWithRetry
 from apps.transactions.models import EscrowTransaction, EscrowTimeout
-from apps.transactions.services.transition_service import EscrowTransitionConfig
+from apps.transactions.config.escrow_transition import EscrowTransitionConfig
 
 logger = logging.getLogger("periodic_migration")
 
@@ -20,6 +20,7 @@ def ensure_timeout_scheduling(self, max_age_hours=2):
     This runs every few minutes to catch any transactions that may have missed
     their timeout scheduling due to race conditions or service interruptions.
     """
+
     try:
         logger.info(
             f"Running periodic timeout scheduling check (max_age_hours={max_age_hours})"

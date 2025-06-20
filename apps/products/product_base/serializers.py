@@ -10,7 +10,6 @@ from apps.core.serializers import (
     TimestampedModelSerializer,
     UserShortSerializer,
 )
-
 from apps.core.utils.breadcrumbs import BreadcrumbService
 from apps.products.product_brand.services import BrandService
 from apps.products.product_brand.models import Brand
@@ -20,9 +19,7 @@ from .models import Product
 
 from apps.products.product_condition.serializers import ProductConditionDetailSerializer
 from apps.products.product_image.serializers import ProductImageSerializer
-from apps.products.product_rating.serializers import (
-    ProductRatingsSummarySerializer,
-)
+
 from apps.products.product_variant.serializers import ProductVariantSerializer
 from apps.products.product_brand.serializers import BrandListSerializer
 from apps.products.product_watchlist.serializers import (
@@ -134,7 +131,8 @@ class ProductListSerializer(TimestampedModelSerializer):
     )
 
     seller = serializers.SerializerMethodField()
-    ratings = ProductRatingsSummarySerializer(source="*", read_only=True)
+    # Use direct annotation fields instead of nested serializer for better performance
+    ratings = serializers.SerializerMethodField()
 
     category_name = serializers.CharField(source="category.name", read_only=True)
     condition_name = serializers.CharField(source="condition.name", read_only=True)
@@ -196,6 +194,21 @@ class ProductListSerializer(TimestampedModelSerializer):
             return round(discount, 1)
         return 0
 
+    def get_ratings(self, obj):
+        """Get ratings from annotated fields"""
+        return {
+            "average": getattr(obj, "avg_rating_db", 0),
+            "total": getattr(obj, "ratings_count_db", 0),
+            "verified_count": getattr(obj, "verified_ratings_count", 0),
+            "distribution": {
+                "5": getattr(obj, "five_star_count", 0),
+                "4": getattr(obj, "four_star_count", 0),
+                "3": getattr(obj, "three_star_count", 0),
+                "2": getattr(obj, "two_star_count", 0),
+                "1": getattr(obj, "one_star_count", 0),
+            },
+        }
+
 
 class ProductDetailSerializer(TimestampedModelSerializer):
     """
@@ -238,11 +251,15 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     )
     images = ProductImageSerializer(many=True, read_only=True)
     seller = serializers.SerializerMethodField()
-    ratings = ProductRatingsSummarySerializer(source="*", read_only=True)
+    # Use direct annotation fields for ratings
+    ratings = serializers.SerializerMethodField()
     variants = serializers.SerializerMethodField()
     details = serializers.SerializerMethodField()
     breadcrumbs = serializers.SerializerMethodField()
     category = CategorySummarySerializer(read_only=True)
+    total_views = serializers.IntegerField(source="meta.views_count", read_only=True)
+    user_has_purchased = serializers.SerializerMethodField()
+
     condition = ProductConditionDetailSerializer(read_only=True)
     discount_percent = serializers.SerializerMethodField()
     watching_count = serializers.SerializerMethodField()
@@ -294,6 +311,8 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "brand",
             "metadata",
             "watchlist_items",
+            "total_views",
+            "user_has_purchased",
         ]
 
     def get_seller(self, obj):
@@ -390,6 +409,29 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         # Convert condition object to string
         data["condition"] = instance.condition.name
         return data
+
+    def get_ratings(self, obj):
+        """Get ratings from annotated fields"""
+        return {
+            "average": getattr(obj, "avg_rating_db", 0),
+            "total": getattr(obj, "ratings_count_db", 0),
+            "verified_count": getattr(obj, "verified_ratings_count", 0),
+            "user_rating": getattr(obj, "user_rating", []),
+            "distribution": {
+                "5": getattr(obj, "five_star_count", 0),
+                "4": getattr(obj, "four_star_count", 0),
+                "3": getattr(obj, "three_star_count", 0),
+                "2": getattr(obj, "two_star_count", 0),
+                "1": getattr(obj, "one_star_count", 0),
+            },
+        }
+
+    def get_user_has_purchased(self, obj):
+        """Return purchase status for authenticated users"""
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return getattr(obj, "user_has_purchased", 0) > 0
+        return None
 
 
 class ProductStatsSerializer(TimestampedModelSerializer):

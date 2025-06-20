@@ -123,7 +123,7 @@ class InventoryService:
         quantity=1,
         buyer=None,
         seller=None,
-        price_by_negotiation=0,
+        price=0,
         currency="USD",
         inspection_period_days=3,
         shipping_address=None,
@@ -161,6 +161,9 @@ class InventoryService:
         product.available_inventory -= quantity
         product.in_escrow_inventory += quantity
         product.save(update_fields=["available_inventory", "in_escrow_inventory"])
+        amount_paid = price
+        if quantity > 1:
+            amount_paid = price * quantity
 
         seller = product.seller
         # Create inventory transaction record
@@ -183,11 +186,11 @@ class InventoryService:
             product=product,
             buyer=buyer,
             seller=seller,
-            amount=quantity,
+            quantity=quantity,
             currency=currency,
             status="initiated",
             inspection_period_days=inspection_period_days,
-            price_by_negotiation=price_by_negotiation,
+            price=price,
             shipping_address=shipping_address,
             tracking_id=generate_tracking_id(product, buyer, seller),
             notes=notes,
@@ -201,7 +204,7 @@ class InventoryService:
             created_by=user,
         )
 
-        return product, escrow_transaction
+        return product, escrow_transaction, amount_paid
 
     @staticmethod
     @transaction.atomic
