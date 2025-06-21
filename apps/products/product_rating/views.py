@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from apps.core.views import BaseViewSet
+from apps.products.product_rating.utils.pagination import RatingPagination
 from .models import ProductRating
 from .serializers import (
     CreateRatingSerializer,
@@ -19,6 +20,7 @@ from .utils.rate_limiting import (
 class ProductRatingViewSet(BaseViewSet):
     throttle_classes = [RatingRateThrottle]
     serializer_class = ProductRatingsSerializer
+    pagination_class = RatingPagination
     permission_classes = []
 
     def get_queryset(self):
@@ -110,10 +112,6 @@ class ProductRatingViewSet(BaseViewSet):
             )
 
         # Get filter parameters
-        page = int(request.query_params.get("page", 1))
-        per_page = min(
-            int(request.query_params.get("per_page", 10)), 50
-        )  # Max 50 per page
         filter_rating = request.query_params.get("rating")
         sort_by = request.query_params.get("sort", "newest")
         show_verified_only = (
@@ -123,30 +121,13 @@ class ProductRatingViewSet(BaseViewSet):
         try:
             result = ProductRatingService.get_product_ratings(
                 product_id=product_id,
-                page=page,
-                per_page=per_page,
                 filter_rating=int(filter_rating) if filter_rating else None,
                 sort_by=sort_by,
                 show_verified_only=show_verified_only,
             )
 
-            # Serialize the ratings
-            serializer = ProductRatingsSerializer(
-                result["ratings"], many=True, context={"request": request}
-            )
-
             return self.success_response(
-                data={
-                    "ratings": serializer.data,
-                    "pagination": {
-                        "current_page": result["current_page"],
-                        "total_pages": result["total_pages"],
-                        "total_count": result["total_count"],
-                        "has_next": result["has_next"],
-                        "has_previous": result["has_previous"],
-                        "per_page": per_page,
-                    },
-                }
+                data=result,
             )
         except Exception as e:
             return self.error_response(
@@ -267,7 +248,7 @@ class ProductRatingViewSet(BaseViewSet):
                 message=str(e), status_code=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=True, methods=["put"], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["put", "patch"], permission_classes=[IsAuthenticated])
     def update_rating(self, request, pk=None):
         """Update user's own rating."""
         try:

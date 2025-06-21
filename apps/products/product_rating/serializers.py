@@ -12,6 +12,18 @@ from .models import (
 User = get_user_model()
 
 
+class ProductRatingsListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductRating
+        fields = [
+            "id",
+            "rating",
+            "review",
+            "title",
+        ]
+        read_only_fields = ["id", "rating", "review", "title"]
+
+
 class ProductRatingsSerializer(TimestampedModelSerializer):
     user = UserShortSerializer(read_only=True)
     helpfulness_ratio = serializers.ReadOnlyField()
@@ -27,8 +39,6 @@ class ProductRatingsSerializer(TimestampedModelSerializer):
             "rating",
             "review",
             "title",
-            "created_at",
-            "updated_at",
             "is_verified_purchase",
             "helpful_count",
             "total_votes",

@@ -6,12 +6,14 @@ import time
 from celery import shared_task
 from django.core.cache import cache
 
+from apps.core.tasks import BaseTaskWithRetry
+
 from .services import ProductRatingService
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def update_product_rating_aggregates_task(self, product_id: int):
     """
     Asynchronously update cached rating aggregates for a single product.
@@ -27,7 +29,7 @@ def update_product_rating_aggregates_task(self, product_id: int):
         raise self.retry(exc=exc, countdown=60 * (2**self.request.retries))
 
 
-@shared_task
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def bulk_update_rating_aggregates_task(product_ids: list):
     """
     Given a list of product IDs, queue an individual `update_product_rating_aggregates_task`
@@ -43,7 +45,7 @@ def bulk_update_rating_aggregates_task(product_ids: list):
     return results
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, base=BaseTaskWithRetry)
 def debounced_rating_aggregate_update(
     self, product_id: int, debounce_seconds: int = 30
 ):
@@ -60,22 +62,33 @@ def debounced_rating_aggregate_update(
     """
     cache_key = f"rating_update_debounce_{product_id}"
     now = int(time.time())
-    cache.set(cache_key, now, timeout=debounce_seconds + 10)
 
-    # If `_already_debounced` is not set, this is the “first pass”: schedule the second pass.
-    if not getattr(self.request, "_already_debounced", False):
+    # Check if this is the initial call or the delayed execution
+    is_delayed_execution = getattr(self.request, "_already_debounced", False)
+
+    if not is_delayed_execution:
+        # FIRST INVOCATION: Set timestamp and schedule delayed execution
+        cache.set(cache_key, now, timeout=debounce_seconds + 10)
+
+        # Schedule the actual execution after debounce period
         return self.apply_async(
             (product_id, debounce_seconds),
             countdown=debounce_seconds,
-            # Celery ignores unexpected kwargs, so we can tag this run as “second pass”:
-            kwargs={"_already_debounced": True},
+            kwargs={"_already_debounced": True, "_scheduled_at": now},
         )
 
-    # If we reach here, `_already_debounced=True` means the countdown expired.
-    latest = cache.get(cache_key)
-    if latest != now:
-        # A newer invocation (with a different timestamp) happened in the meantime → skip
+    # DELAYED EXECUTION: Check if we're still the latest request
+    scheduled_at = getattr(self.request, "_scheduled_at", now)
+    latest_timestamp = cache.get(cache_key)
+
+    if latest_timestamp is None:
+        # Cache expired, probably safe to skip
+        return f"Skipped update for product {product_id} — cache expired"
+
+    if latest_timestamp > scheduled_at:
+        # A newer request came in after we were scheduled
         return f"Skipped update for product {product_id} — newer request exists"
 
-    # We’re still the most recent request → do the actual update
+    # We're still the latest request, proceed with update
+    logger.info(f"Executing debounced rating update for product {product_id}")
     return update_product_rating_aggregates_task.delay(product_id)

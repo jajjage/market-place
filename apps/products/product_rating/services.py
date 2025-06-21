@@ -10,6 +10,8 @@ from django.utils import timezone
 
 from typing import Dict, Optional, Tuple
 
+from apps.products.product_rating.serializers import ProductRatingsListSerializer
+
 
 from .models import (
     ProductRating,
@@ -243,8 +245,6 @@ class ProductRatingService:
     @staticmethod
     def get_product_ratings(
         product_id: int,
-        page: int = 1,
-        per_page: int = 10,
         filter_rating: int = None,
         sort_by: str = "newest",
         show_verified_only: bool = False,
@@ -254,9 +254,7 @@ class ProductRatingService:
         Caches the result for CACHE_TIMEOUT seconds.
         """
         cache_key = ProductRatingService.get_cache_key(
-            page=page,
             product_id=product_id,
-            per_page=per_page,
             filter_rating=filter_rating or "all",
             sort_by=sort_by,
             verified_only=show_verified_only,
@@ -276,32 +274,19 @@ class ProductRatingService:
             queryset = queryset.filter(is_verified_purchase=True)
 
         # Sorting options
-        if sort_by == "helpful":
-            queryset = queryset.order_by("-helpful_count", "-created_at")
-        elif sort_by == "rating_high":
-            queryset = queryset.order_by("-rating", "-created_at")
-        elif sort_by == "rating_low":
-            queryset = queryset.order_by("rating", "-created_at")
-        elif sort_by == "oldest":
-            queryset = queryset.order_by("created_at")
-        else:  # "newest" by default
-            queryset = queryset.order_by("-created_at")
-
-        from django.core.paginator import Paginator
-
-        paginator = Paginator(queryset, per_page)
-        page_obj = paginator.get_page(page)
-        result = {
-            "ratings": list(page_obj),
-            "total_count": paginator.count,
-            "current_page": page,
-            "total_pages": paginator.num_pages,
-            "has_next": page_obj.has_next(),
-            "has_previous": page_obj.has_previous(),
+        order_map = {
+            "helpful": ["-helpful_count", "-created_at"],
+            "rating_high": ["-rating", "-created_at"],
+            "rating_low": ["rating", "-created_at"],
+            "oldest": ["created_at"],
+            "newest": ["-created_at"],
         }
+        qs = queryset.order_by(*order_map.get(sort_by, order_map["newest"]))
+        result = qs[:5]
+        data = ProductRatingsListSerializer(result, many=True).data
 
-        cache.set(cache_key, result, ProductRatingService.CACHE_TIMEOUT)
-        return result
+        cache.set(cache_key, data, ProductRatingService.CACHE_TIMEOUT)
+        return data
 
     @staticmethod
     def get_user_ratings(
