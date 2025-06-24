@@ -8,6 +8,7 @@ from apps.products.product_base.services.product_detail_service import (
     ProductDetailService,
 )
 from apps.products.product_base.services.product_list_service import ProductListService
+from apps.products.product_variant.services import ProductVariantService
 
 
 logger = logging.getLogger(__name__)
@@ -44,14 +45,19 @@ def invalidate_product_cache_on_delete(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender="product_variant.ProductVariant")
-def invalidate_product_cache_on_variant_change(sender, instance, **kwargs):
+def invalidate_product_cache_on_variant_change(sender, instance, created, **kwargs):
     """Invalidate cache when product variants change."""
 
     def invalidate_caches():
         if hasattr(instance, "product"):
-            # Invalidate both detail and list caches
-            ProductDetailService.invalidate_product_cache(instance.product.short_code)
-            ProductListService.invalidate_product_list_caches(instance.product)
+            ProductListService.invalidate_product_list_caches()
+            if not created:
+                # Invalidate both detail and list caches
+                ProductDetailService.invalidate_product_cache(
+                    instance.product.short_code
+                )
+
+            ProductVariantService.invalidate_variant_detail_caches()
             logger.info(
                 f"Cache invalidated for product {instance.product.short_code} due to variant change"
             )

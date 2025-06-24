@@ -5,16 +5,25 @@ from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+from django.utils import timezone
 
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from apps.core.views import BaseResponseMixin
-from apps.products.product_base.models import Product
+from apps.products.product_inventory.utils.escrow_item import (
+    get_transaction_context,
+    invalidate_caches,
+    link_negotiation_to_transaction,
+    prepare_response_data,
+    validate_transaction_context,
+)
+
+from apps.products.product_variant.models import ProductVariant
 from .models import InventoryTransaction
 from .serializers import (
     AddInventorySerializer,
     ActivateInventorySerializer,
-    EscrowInventorySerializer,
     InventoryTransactionSerializer,
+    UnifiedEscrowTransactionSerializer,
 )
 from .services import InventoryService  # Import your existing service
 
@@ -41,57 +50,60 @@ class InventoryViewSet(
 
         return queryset
 
-    def get_product(self, product_id):
+    def get_product(self, variant_id):
         """Helper method to get product and check permissions"""
-        product = get_object_or_404(Product, id=product_id)
+        variant = get_object_or_404(ProductVariant, id=variant_id)
 
         # Check if user is the seller or has appropriate permissions
-        if product.seller != self.request.user and not self.request.user.is_staff:
+        if (
+            variant.product.seller != self.request.user
+            and not self.request.user.is_staff
+        ):
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied(
                 "You don't have permission to manage this product's inventory"
             )
 
-        if not product.is_active:
+        if not variant.product.is_active or not variant.is_active:
             from rest_framework.exceptions import ValidationError
 
             raise ValidationError("Cannot modify inventory for inactive product")
 
-        if not product.status not in ["draft", "inactive", "sold"]:
+        if not variant.product.status not in ["draft", "inactive", "sold"]:
             from rest_framework.exceptions import ValidationError
 
             raise ValidationError(
-                f"Cannot modify inventory for {product.status} product"
+                f"Cannot modify inventory for {variant.product.status} product"
             )
 
-        return product
+        return variant
 
-    def get_product_escrow(self, product_id):
+    def get_product_escrow(self, variant_id):
         """Helper method to get product and check permissions"""
-        product = get_object_or_404(Product, id=product_id)
+        variant = get_object_or_404(ProductVariant, id=variant_id)
 
         # Check if user is the seller or has appropriate permissions
-        if product.seller == self.request.user:
+        if variant.product.seller == self.request.user:
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied(
                 "You don't have permission to initiated transaction for this product"
             )
 
-        if not product.is_active:
+        if not variant.product.is_active or not variant.is_active:
             from rest_framework.exceptions import ValidationError
 
             raise ValidationError("Cannot modify inventory for inactive product")
 
-        if not product.status not in ["draft", "inactive", "sold"]:
+        if not variant.product.status not in ["draft", "inactive", "sold"]:
             from rest_framework.exceptions import ValidationError
 
             raise ValidationError(
-                f"Cannot modify inventory for {product.status} product"
+                f"Cannot modify inventory for {variant.product.status} product"
             )
 
-        return product
+        return variant.product
 
     @action(
         detail=False,
@@ -100,14 +112,14 @@ class InventoryViewSet(
     )
     def add_inventory(self, request):
         """Add inventory to total"""
-        product_id = request.data.get("product_id")
-        if not product_id:
+        variant_id = request.data.get("variant_id")
+        if not variant_id:
             return self.error_response(
-                message="product_id is required",
+                message="variant_id is required",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        product = self.get_product(product_id)
+        variant = self.get_product(variant_id)
         serializer = AddInventorySerializer(data=request.data)
 
         if serializer.is_valid():
@@ -116,10 +128,11 @@ class InventoryViewSet(
 
             with transaction.atomic():
                 result = InventoryService.add_inventory(
-                    product=product, quantity=quantity, user=request.user, notes=notes
+                    variant=variant, quantity=quantity, user=request.user, notes=notes
                 )
 
             if result:
+
                 return self.success_response(
                     data={
                         "total": result.total_inventory,
@@ -145,13 +158,13 @@ class InventoryViewSet(
     )
     def activate_inventory(self, request):
         """Move inventory from total to available"""
-        product_id = request.data.get("product_id")
-        if not product_id:
+        variant_id = request.data.get("variant_id")
+        if not variant_id:
             return Response(
-                {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+                {"error": "variant_id is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        product = self.get_product(product_id)
+        variant = self.get_product(variant_id)
         serializer = ActivateInventorySerializer(data=request.data)
 
         if serializer.is_valid():
@@ -160,10 +173,11 @@ class InventoryViewSet(
 
             with transaction.atomic():
                 result = InventoryService.activate_inventory(
-                    product=product, quantity=quantity, user=request.user, notes=notes
+                    variant=variant, quantity=quantity, user=request.user, notes=notes
                 )
 
             if result:
+
                 return self.success_response(
                     data={
                         "total": result.total_inventory,
@@ -185,157 +199,127 @@ class InventoryViewSet(
     @action(
         detail=False,
         methods=["post"],
-        url_path="place-in-escrow",
+        url_path="create-transaction",
     )
-    def place_in_escrow(self, request):
-        """Place inventory in escrow for transaction"""
-        product_id = request.data.get("product_id")
-        if not product_id:
+    def create_escrow_transaction(self, request):
+        """
+        Unified endpoint for creating escrow transactions.
+        Handles both direct purchases and negotiation-based purchases.
+        """
+        start_time = timezone.now()
+
+        # Validate request data first
+        serializer = UnifiedEscrowTransactionSerializer(data=request.data)
+        if not serializer.is_valid():
             return self.error_response(
-                message="product_id is required",
-                status_code=status.HTTP_400_BAD_REQUEST,
+                message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
             )
 
-        product = self.get_product_escrow(product_id)
-        serializer = EscrowInventorySerializer(data=request.data)
+        validated_data = serializer.validated_data
+        variant_id = validated_data["variant_id"]
+        quantity = validated_data["quantity"]
+        notes = validated_data.get("notes", "")
+        negotiation_id = validated_data.get("negotiation_id")  # Optional
 
-        if serializer.is_valid():
-            quantity = serializer.validated_data["quantity"]
-            notes = serializer.validated_data.get("notes", "")
+        # Get the variant
+        variant = get_object_or_404(
+            ProductVariant.objects.select_related("product"), id=variant_id
+        )
 
+        try:
+            # Determine transaction context (negotiation vs direct purchase)
+            transaction_context = get_transaction_context(
+                request.user, negotiation_id, variant
+            )
+
+            # Validate the transaction context
+            validation_result = validate_transaction_context(
+                request.user, transaction_context, quantity
+            )
+            if validation_result["error"]:
+                return self.error_response(
+                    message=validation_result["message"],
+                    status_code=validation_result["status_code"],
+                )
+
+            # Create the escrow transaction
             with transaction.atomic():
                 result = InventoryService.place_in_escrow(
-                    product=product,
+                    variant=variant,
                     quantity=quantity,
                     buyer=request.user,
-                    currency=product.currency,
+                    currency=variant.product.currency,
+                    price=transaction_context["price"],  # Could be negotiated or None
                     notes=notes,
                 )
 
-            if result:
-                product_result, transaction_tracking_id, to_paid = result
+                if not result:
+                    return self.error_response(
+                        message="Insufficient available inventory",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                variant_result, escrow_transaction, amount_paid = result
+
+                # Update negotiation if applicable
+                if transaction_context["negotiation"]:
+                    link_negotiation_to_transaction(
+                        transaction_context["negotiation"], escrow_transaction
+                    )
+
+                # Invalidate caches
+                invalidate_caches(variant.product, transaction_context["negotiation"])
+
+                # Prepare response data
+                response_data = prepare_response_data(
+                    variant_result,
+                    escrow_transaction,
+                    amount_paid,
+                    quantity,
+                    transaction_context,
+                )
+
+                duration = (timezone.now() - start_time).total_seconds() * 1000
+                self.logger.info(
+                    f"Escrow transaction created in {duration:.2f}ms "
+                    f"(negotiation: {bool(negotiation_id)})"
+                )
 
                 return self.success_response(
-                    data={
-                        "total": product_result.total_inventory,
-                        "available": product_result.available_inventory,
-                        "in_escrow": product_result.in_escrow_inventory,
-                        "transaction_id": transaction_tracking_id.tracking_id,
-                        "to_paid": f"${float(to_paid)}",
-                        "items": quantity,
-                    }
-                )
-            else:
-                return self.error_response(
-                    message="Failed to add inventory",
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    data=response_data,
+                    status_code=status.HTTP_201_CREATED,
                 )
 
-        return self.error_response(
-            message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
-        )
+        except Exception as e:
+            self.logger.error(f"Error creating escrow transaction: {str(e)}")
+            return self.error_response(
+                message=f"Failed to create transaction: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-    # @action(detail=False, methods=["post"], url_path="release")
-    # def release_from_escrow(self, request):
-    #     """Release inventory from escrow back to available"""
-    #     product_id = request.data.get("product_id")
-    #     if not product_id:
-    #         return Response(
-    #             {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
-    #         )
-
-    #     product = self.get_product(product_id)
-    #     serializer = ReleaseEscrowSerializer(data=request.data)
-
-    #     if serializer.is_valid():
-    #         quantity = serializer.validated_data["quantity"]
-    #         notes = serializer.validated_data.get("notes", "")
-
-    #         with transaction.atomic():
-    #             result = InventoryService.release_from_escrow(
-    #                 product=product, quantity=quantity, user=request.user, notes=notes
-    #             )
-
-    #         if result:
-    #             return self.success_response(
-    #                 data={
-    #                     "total": result.total_inventory,
-    #                     "available": result.available_inventory,
-    #                     "in_escrow": result.in_escrow_inventory,
-    #                 }
-    #             )
-    #         else:
-    #             return self.error_response(
-    #                 message="Failed to add inventory",
-    #                 status_code=status.HTTP_400_BAD_REQUEST,
-    #             )
-
-    #     return self.error_response(
-    #         message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
-    #     )
-
-    # @action(detail=False, methods=["post"], url_path="deduct")
-    # def deduct_inventory(self, request):
-    #     """Deduct inventory from escrow (completing a sale)"""
-    #     product_id = request.data.get("product_id")
-    #     if not product_id:
-    #         return Response(
-    #             {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
-    #         )
-
-    #     product = self.get_product(product_id)
-    #     serializer = DeductInventorySerializer(data=request.data)
-
-    #     if serializer.is_valid():
-    #         quantity = serializer.validated_data["quantity"]
-    #         notes = serializer.validated_data.get("notes", "")
-
-    #         with transaction.atomic():
-    #             result = InventoryService.deduct_inventory(
-    #                 product=product, quantity=quantity, user=request.user, notes=notes
-    #             )
-
-    #         if result:
-    #             return self.success_response(
-    #                 data={
-    #                     "total": result.total_inventory,
-    #                     "available": result.available_inventory,
-    #                     "in_escrow": result.in_escrow_inventory,
-    #                 }
-    #             )
-    #         else:
-    #             return self.error_response(
-    #                 message="Failed to deduct inventory",
-    #                 status_code=status.HTTP_400_BAD_REQUEST,
-    #             )
-
-    #     return self.error_response(
-    #         message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
-    #     )
-
-    @action(detail=False, methods=["get"], url_path="status/(?P<product_id>[^/.]+)")
-    def inventory_status(self, request, product_id=None):
+    @action(detail=False, methods=["get"], url_path="status/(?P<variant_id>[^/.]+)")
+    def inventory_status(self, request, variant_id=None):
         """Get current inventory status for a product"""
-        product = get_object_or_404(Product, id=product_id)
+        variant = get_object_or_404(ProductVariant, id=variant_id)
 
         return self.success_response(
             data={
-                "product_id": product.id,
-                "product_title": product.title,
-                "total": product.total_inventory,
-                "available": product.available_inventory,
-                "in_escrow": product.in_escrow_inventory,
-                "status": "active" if product.is_active else "inactive",
+                "product_id": variant.product.id,
+                "product_title": variant.product.title,
+                "total": variant.product.total_inventory,
+                "available": variant.product.available_inventory,
+                "in_escrow": variant.product.in_escrow_inventory,
+                "status": "active" if variant.is_active else "inactive",
             }
         )
 
-    @action(detail=False, methods=["get"], url_path="history/(?P<product_id>[^/.]+)")
-    def inventory_history(self, request, product_id=None):
+    @action(detail=False, methods=["get"], url_path="history/(?P<variant_id>[^/.]+)")
+    def inventory_history(self, request, variant_id=None):
         """Get inventory transaction history for a product"""
-        product = get_object_or_404(Product, id=product_id)
+        variant = get_object_or_404(ProductVariant, id=variant_id)
 
         # Check permissions
-        if product.seller != request.user and not request.user.is_staff:
+        if variant.product.seller != request.user and not request.user.is_staff:
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied(
@@ -343,7 +327,7 @@ class InventoryViewSet(
             )
 
         transactions = (
-            InventoryTransaction.objects.filter(product=product)
+            InventoryTransaction.objects.filter(variant=variant)
             .select_related("created_by")
             .order_by("-created_at")
         )
@@ -351,8 +335,8 @@ class InventoryViewSet(
         serializer = self.get_serializer(transactions, many=True)
         return self.success_response(
             data={
-                "product_id": product.id,
-                "product_title": product.title,
+                "product_id": variant.product.id,
+                "product_title": variant.product.title,
                 "transactions": serializer.data,
             }
         )

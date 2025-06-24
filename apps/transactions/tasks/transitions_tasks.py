@@ -138,6 +138,27 @@ def schedule_auto_inspection(self, transaction_id):
             if not is_valid:
                 return f"Task {task_id} is no longer valid for transaction {transaction_id}"
 
+            # Release from escrow and mark as completed
+            if not escrow_txn.product.requires_inspection:
+                previous_status = escrow_txn.status
+                product = InventoryService.release_from_escrow(
+                    product=escrow_txn.product,
+                    escrow_transaction=escrow_txn,
+                    previous_status=previous_status,
+                    release_type="deduct",  # Item is sold, remove from total inventory
+                    notes="Transaction automatically completed after inspection period expired.",
+                )
+
+                # Mark timeout as executed
+                timeout_record.execute(
+                    "Automatically completed after delivered no inspection period expired"
+                )
+
+                logger.info(
+                    f"Transaction {transaction_id} automatically completed after delivered no inspection"
+                )
+                return f"Transaction {transaction_id} automatically completed after delivered no inspection"
+
             # Execute the transition
             success = TransitionTaskMixin._execute_transition(
                 timeout_record,

@@ -51,6 +51,7 @@ class ProductMetaService:
             raise
 
         with transaction.atomic():
+            print("inside the meta")
             pm_locked = ProductMeta.objects.select_for_update().get(
                 product_id=product_id
             )
@@ -61,8 +62,6 @@ class ProductMetaService:
             )
             if not pm_locked.seo_keywords and not pm_locked.seo_generation_queued:
                 logger.info(f"Queueing SEO generation for product {product_id}")
-                pm_locked.seo_generation_queued = True
-                pm_locked.save(update_fields=["seo_generation_queued"])
                 transaction.on_commit(
                     lambda: generate_seo_keywords_for_product.delay(product_id)
                 )

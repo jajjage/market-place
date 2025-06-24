@@ -79,7 +79,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
     seller_name = serializers.SerializerMethodField()
     days_since_created = serializers.SerializerMethodField()
     history = serializers.SerializerMethodField()
-    amount = serializers.SerializerMethodField()
+    # amount = serializers.SerializerMethodField()
 
     class Meta:
         model = EscrowTransaction
@@ -91,7 +91,8 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
             "seller_name",
             "status",
             "quantity",
-            "amount",
+            "price",
+            "total_amount",
             "currency",
             "created_at",
             "days_since_created",
@@ -119,9 +120,9 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
 
         return (timezone.now() - obj.created_at).days
 
-    def get_amount(self, obj):
-        print(obj.price)
-        return obj.price if obj.price else 0
+    # def get_amount(self, obj):
+    #     print(obj.price)
+    #     return obj.price if obj.price else 0
 
     def get_history(self, obj):
         # obj.all_history is the full, prefetched, ordered history list
@@ -140,7 +141,8 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
     buyer_details = serializers.SerializerMethodField()
     seller_details = serializers.SerializerMethodField()
     history = serializers.SerializerMethodField()
-    amount = serializers.SerializerMethodField()
+    # price = serializers.SerializerMethodField()
+    # total_amount = serializers.SerializerMethodField()
     # next_actions = serializers.SerializerMethodField()
 
     class Meta:
@@ -152,7 +154,8 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "product_details",
             "buyer_details",
             "seller_details",
-            "amount",
+            "price",
+            "total_amount",
             "currency",
             "quantity",
             "status",
@@ -235,9 +238,6 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "timestamp"
         )
         return TransactionHistorySerializer(history, many=True).data
-
-    def get_amount(self, obj):
-        return obj.price if obj.price else 0
 
     # def get_next_actions(self, obj):
     #     """Return possible next actions based on current status and user role"""

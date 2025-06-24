@@ -17,7 +17,7 @@ class InventoryActionSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Optional notes for this inventory transaction",
     )
-    product_id = serializers.UUIDField(required=True)
+    variant_id = serializers.UUIDField(required=True)
 
     def validate_quantity(self, value):
         if value <= 0:
@@ -41,10 +41,20 @@ class ActivateInventorySerializer(InventoryActionSerializer):
     )
 
 
-class EscrowInventorySerializer(InventoryActionSerializer):
-    """Serializer for placing inventory in escrow"""
+class UnifiedEscrowTransactionSerializer(serializers.Serializer):
+    """
+    Unified serializer for both direct and negotiation-based escrow transactions.
+    """
 
-    pass
+    variant_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1)
+    notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    negotiation_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Quantity must be greater than 0")
+        return value
 
 
 class ReleaseEscrowSerializer(InventoryActionSerializer):

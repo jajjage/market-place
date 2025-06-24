@@ -156,7 +156,7 @@ PERFORMANCE_API_PREFIXES = {
     "/api/v1/conditions": "conditions",
     "/api/v1/categories": "categories",
     "/api/v1/products": "products",
-    "/api/v1/product_catalog": "product_catalog",
+    "/api/v1/product_variant": "variant",
     # …add more as needed…
 }
 
@@ -386,7 +386,9 @@ CACHE_KEY_TEMPLATES = {
         "all_details": "brand:detail:*",  # wildcard for all details
     },
     "brand_variant": {
-        "all": "brand:variants:{brand_id}:*",  # for invalidating all variants of a brand
+        "all": "brand:variants:{brand_id}:*",
+        "types": "brand",
+        # for invalidating all variants of a brand
     },
     "product_condition": {
         "detail": "condition:detail:{id}",
@@ -394,6 +396,13 @@ CACHE_KEY_TEMPLATES = {
         "active_conditions": "condition:active_conditions:{include_stats}",
         "popular_conditions": "condition:popular_conditions:{limit}",
         "analytics": "condition:analytics:{condition_id}",
+    },
+    "product_variant": {
+        "types": "variant:types:active_only:{active_only}:with_options:{with_options}",
+        "detail": "variant:detail:{params}",
+        "options": "variant:options:product_id:{product_id}:option_ids:{option_ids}",
+        "popular_conditions": "variant:popular_conditions:{limit}",
+        "analytics": "variant:analytics:{variant_id}",
     },
     "product_inventory": {
         "detail": "inventory:detail:{id}",
@@ -434,10 +443,6 @@ CACHE_KEY_TEMPLATES = {
         "subcategory_ids": "category:subcategory_ids:{category_id}",
         "popular_categories": "category:popular_categories:{limit}",
         "breadcrumb_path": "category:breadcrumb_path:{category_id}",
-    },
-    "product_variant": {
-        "detail": "variant:detail:{id}",
-        "list_product_variants": "variant:list_product_variants:{product_id}",
     },
     "escrow_transaction": {
         "detail": "escrow:transaction:detail:{id}",

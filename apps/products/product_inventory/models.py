@@ -17,6 +17,13 @@ class InventoryTransaction(BaseModel):
         on_delete=models.CASCADE,
         related_name="inventory_transactions",
     )
+    variant = models.ForeignKey(
+        "product_variant.ProductVariant",
+        on_delete=models.CASCADE,
+        related_name="inventory_transactions",
+        null=True,
+        blank=True,
+    )
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     quantity = models.IntegerField()
     previous_total = models.IntegerField()

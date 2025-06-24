@@ -12,8 +12,6 @@ from rest_framework.permissions import IsAuthenticated
 from apps.core.views import BaseViewSet
 from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
 from apps.products.product_base.models import Product
-from apps.products.product_base.services.product_list_service import ProductListService
-from apps.products.product_inventory.services import InventoryService
 from apps.products.product_negotiation.models import (
     PriceNegotiation,
     NegotiationHistory,
@@ -25,7 +23,6 @@ from apps.products.product_negotiation.services import (
 from apps.products.product_negotiation.serializers import (
     NegotiationResponseSerializer,
     PriceNegotiationSerializer,
-    CreateTransactionFromNegotiationSerializer,
     NegotiationStatsSerializer,
     UserNegotiationHistorySerializer,
 )
@@ -139,116 +136,6 @@ class ProductNegotiationViewSet(BaseViewSet):
     def buyer_respond(self, request, pk=None):
         """Buyer-specific endpoint (delegates to unified method)"""
         return self.respond_to_negotiation(request, pk)
-
-    @action(
-        detail=False,
-        url_path=r"create-transaction/(?P<negotiation_id>[^/.]+)",
-        methods=["post"],
-    )
-    def create_transaction_from_negotiation(self, request, negotiation_id=None):
-        """
-        Create an escrow transaction from an accepted negotiation.
-        Enhanced with validation and error handling.
-        """
-        start_time = timezone.now()
-
-        # We may check if user already use the negotiation so it was expired he may not user it again
-        negotiation = get_object_or_404(
-            PriceNegotiation.objects.select_related("product", "buyer", "seller"),
-            id=negotiation_id,
-        )
-
-        # Validate request data
-        serializer = CreateTransactionFromNegotiationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        quantity = serializer.validated_data["quantity"]
-        notes = serializer.validated_data.get("notes", "")
-
-        # Check permissions and status
-        if request.user != negotiation.buyer:
-            return self.error_response(
-                message="Only the buyer can create a transaction from this negotiation.",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-
-        if negotiation.status != "accepted":
-            return self.error_response(
-                message=f"Cannot create transaction for negotiation with status '{negotiation.status}'.",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if negotiation.transaction:
-            return self.error_response(
-                message="A transaction already exists for this negotiation.",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            product = negotiation.product
-            final_price = negotiation.final_price
-
-            result = InventoryService.place_in_escrow(
-                product=product,
-                quantity=quantity,
-                buyer=request.user,
-                currency=product.currency,
-                price=final_price,
-                notes=notes,
-            )
-
-            if result:
-                product_result, transaction, to_paid = result
-
-                # Link the transaction to the negotiation
-                negotiation.transaction = transaction
-                negotiation.save()
-
-                # Invalidate related caches
-                CacheManager.invalidate("negotiation", "detail", id=negotiation.id)
-                CacheManager.invalidate(
-                    "product_base", "detail_by_shortcode", shortcode=product.shortcode
-                )
-                ProductListService.invalidate_product_list_caches()
-
-                duration = (timezone.now() - start_time).total_seconds() * 1000
-                self.logger.info(
-                    f"Transaction created from negotiation in {duration:.2f}ms"
-                )
-                buyer_save = product_result.price - final_price
-                if quantity > 1:
-                    final = buyer_save * quantity
-                    buyer_save = final
-                return self.success_response(
-                    data={
-                        "message": "Transaction created successfully from negotiation",
-                        "transaction_id": transaction.id,
-                        "tracking_id": transaction.tracking_id,
-                        "product": {
-                            "id": product_result.id,
-                            "name": product_result.title,
-                        },
-                        "original_price": f"${float(product_result.price)}",
-                        "negotiated_price": f"${float(final_price)}",
-                        "to_paid": f"${float(to_paid)}",
-                        "savings": f"${float(buyer_save)}",
-                        "status": transaction.status,
-                    },
-                    status_code=status.HTTP_201_CREATED,
-                )
-            else:
-                return self.error_response(
-                    message="Insufficient available inventory",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error creating transaction from negotiation: {str(e)}")
-            return self.error_response(
-                message=f"Failed to create transaction: {str(e)}",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     @action(detail=False, methods=["get"])
     def my_negotiations(self, request):

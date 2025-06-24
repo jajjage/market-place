@@ -149,6 +149,9 @@ class ProductListSerializer(TimestampedModelSerializer):
             "currency",
             "category_name",
             "condition_name",
+            # "requires_shipping",
+            # "escrow_hold_period",
+            "requires_inspection",
             "is_active",
             "is_featured",
             "status",
@@ -280,9 +283,9 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "category",
             "condition",
             "is_active",
-            "in_escrow_inventory",
-            "available_inventory",
-            "total_inventory",
+            "requires_shipping",
+            "escrow_hold_period",
+            "requires_inspection",
             "is_featured",
             "status",
             "brand",
@@ -361,11 +364,18 @@ class ProductDetailSerializer(TimestampedModelSerializer):
                     "id": variant.id,
                     "sku": variant.sku,
                     "price": str(variant.price) if variant.price is not None else None,
-                    "stock_quantity": variant.stock_quantity,
+                    "stock_quantity": variant.total_inventory,
+                    "available_quantity": variant.available_inventory,
+                    "in_escrow_quantity": variant.in_escrow_inventory,
                     "is_active": variant.is_active,
                     "options": options,
                 }
             )
+        result.append(
+            {
+                "total_variants": len(variants),
+            }
+        )
         return result
 
     def get_details(self, obj):
@@ -416,7 +426,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "average": getattr(obj, "avg_rating_db", 0),
             "total": getattr(obj, "ratings_count_db", 0),
             "verified_count": getattr(obj, "verified_ratings_count", 0),
-            "user_rating": getattr(obj, "user_rating", []),
+            # "reviews": getattr(obj, "user_rating", []),
             "distribution": {
                 "5": getattr(obj, "five_star_count", 0),
                 "4": getattr(obj, "four_star_count", 0),

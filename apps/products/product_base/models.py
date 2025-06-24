@@ -29,7 +29,7 @@ class Product(BaseModel):
     )
 
     # Pricing
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     original_price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True
     )
@@ -58,9 +58,6 @@ class Product(BaseModel):
 
     # Status and inventory
     is_active = models.BooleanField(default=True)
-    total_inventory = models.IntegerField(default=0)
-    available_inventory = models.IntegerField(default=0)
-    in_escrow_inventory = models.IntegerField(default=0)
     is_featured = models.BooleanField(default=False)
     status = models.CharField(
         max_length=12, choices=ProductsStatus.choices, default=ProductsStatus.DRAFT
@@ -76,8 +73,15 @@ class Product(BaseModel):
     warranty_period = models.CharField(
         max_length=100, blank=True, help_text="Warranty period in months or years"
     )
+    requires_shipping = models.BooleanField(default=True)
+    # Escrow-specific fields
+    escrow_hold_period = models.PositiveIntegerField(
+        default=7,
+        help_text="Days to hold payment in escrow after delivery confirmation",
+    )
     # Negotiation and offers
     is_negotiable = models.BooleanField(default=False)
+    requires_inspection = models.BooleanField(default=False)
     minimum_acceptable_price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True
     )

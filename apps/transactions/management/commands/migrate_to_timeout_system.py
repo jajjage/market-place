@@ -1,4 +1,4 @@
-from importlib import import_module
+# from importlib import import_module
 from django.core.management.base import BaseCommand
 from django.db import transaction, models
 from django.utils import timezone
@@ -217,7 +217,7 @@ class Command(BaseCommand):
                 countdown_seconds = int((expires_at - timezone.now()).total_seconds())
 
                 # Schedule the task
-                task = self._resolve_task(timeout_config["task"])
+                task = EscrowTransitionConfig._resolve_task(timeout_config["task"])
                 task_result = task.apply_async(
                     args=[txn.id],
                     countdown=countdown_seconds,
@@ -375,7 +375,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Validation completed"))
 
-    def _resolve_task(task_path: str):
-        module_path, func_name = task_path.rsplit(".", 1)
-        module = import_module(module_path)
-        return getattr(module, func_name)
+    # def _resolve_task(task_path: str):
+    #     module_path, func_name = task_path.rsplit(".", 1)
+    #     module = import_module(module_path)
+    #     return getattr(module, func_name)

@@ -98,7 +98,8 @@ class EscrowTransitionService:
         expires_at = timezone.now() + timedelta(days=timeout_config["days"])
 
         # Schedule the Celery task
-        task_result = timeout_config["task"].apply_async(
+        task = EscrowTransitionConfig._resolve_task(timeout_config["task"])
+        task_result = task.apply_async(
             args=[transaction.id],
             countdown=timeout_config["days"] * 86400,  # Convert to seconds
         )
@@ -170,7 +171,8 @@ class EscrowTransitionService:
             raise ValueError("Cannot schedule timeout in the past")
 
         # Schedule new task
-        task_result = timeout_config["task"].apply_async(
+        task = EscrowTransitionConfig._resolve_task(timeout_config["task"])
+        task_result = task.apply_async(
             args=[transaction.id],
             countdown=int(countdown),
         )

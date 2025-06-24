@@ -1,3 +1,4 @@
+from importlib import import_module
 from django.conf import settings
 
 
@@ -39,3 +40,9 @@ class EscrowTransitionConfig:
     @classmethod
     def get_timeout_config(cls, status: str):
         return cls.TIMEOUT_CONFIGS.get(status)
+
+    @staticmethod
+    def _resolve_task(task_path: str):
+        module_path, func_name = task_path.rsplit(".", 1)
+        module = import_module(module_path)
+        return getattr(module, func_name)

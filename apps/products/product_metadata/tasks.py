@@ -1,7 +1,7 @@
 # tasks.py
 from celery import shared_task
 import logging
-
+from django.db import transaction
 from apps.core.tasks import BaseTaskWithRetry
 
 logger = logging.getLogger(__name__)
@@ -57,13 +57,16 @@ def generate_seo_keywords_for_product(self, product_id):
                 f"{product.title} online",
                 f"cheap {product.title}",
             ]
-        pm = ProductMeta.objects.select_for_update().get(product_id=product_id)
-        # … generate the keywords …
-        pm.seo_keywords = ", ".join(keywords)
-        pm.seo_generation_queued = False
-        pm.save(update_fields=["seo_keywords", "seo_generation_queued"])
+        with transaction.atomic():
+            pm = ProductMeta.objects.select_for_update().get(product_id=product_id)
+            # … generate the keywords …
+            pm.seo_keywords = ", ".join(keywords)
+            pm.seo_generation_queued = True
+            pm.save(update_fields=["seo_keywords", "seo_generation_queued"])
 
-        logger.info(f"SEO keywords for product {product_id}: {len(keywords)} keywords")
+            logger.info(
+                f"SEO keywords for product {product_id}: {len(keywords)} keywords"
+            )
 
     except Exception as exc:
         logger.error(
