@@ -1,3 +1,4 @@
+import logging
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -26,6 +27,8 @@ from .serializers import (
     UnifiedEscrowTransactionSerializer,
 )
 from .services import InventoryService  # Import your existing service
+
+logger = logging.getLogger(__name__)
 
 
 class InventoryViewSet(
@@ -225,6 +228,9 @@ class InventoryViewSet(
         variant = get_object_or_404(
             ProductVariant.objects.select_related("product"), id=variant_id
         )
+        logger.info(
+            f"Creating escrow transaction for variant {variant.id} with quantity {quantity}"
+        )
 
         try:
             # Determine transaction context (negotiation vs direct purchase)
@@ -241,7 +247,7 @@ class InventoryViewSet(
                     message=validation_result["message"],
                     status_code=validation_result["status_code"],
                 )
-
+            logger.info(f"Transaction context validated: {transaction_context}")
             # Create the escrow transaction
             with transaction.atomic():
                 result = InventoryService.place_in_escrow(
@@ -249,7 +255,9 @@ class InventoryViewSet(
                     quantity=quantity,
                     buyer=request.user,
                     currency=variant.product.currency,
-                    price=transaction_context["price"],  # Could be negotiated or None
+                    negotiated_price=transaction_context[
+                        "price"
+                    ],  # Could be negotiated or None
                     notes=notes,
                 )
 
@@ -260,7 +268,9 @@ class InventoryViewSet(
                     )
 
                 variant_result, escrow_transaction, amount_paid = result
-
+                logger.info(
+                    f"Ids: variant: {variant_result} - tranx: {escrow_transaction} - price: {amount_paid}"
+                )
                 # Update negotiation if applicable
                 if transaction_context["negotiation"]:
                     link_negotiation_to_transaction(
@@ -268,7 +278,9 @@ class InventoryViewSet(
                     )
 
                 # Invalidate caches
-                invalidate_caches(variant.product, transaction_context["negotiation"])
+                invalidate_caches(
+                    variant.product, negotiation=transaction_context["negotiation"]
+                )
 
                 # Prepare response data
                 response_data = prepare_response_data(
@@ -280,7 +292,7 @@ class InventoryViewSet(
                 )
 
                 duration = (timezone.now() - start_time).total_seconds() * 1000
-                self.logger.info(
+                logger.info(
                     f"Escrow transaction created in {duration:.2f}ms "
                     f"(negotiation: {bool(negotiation_id)})"
                 )
@@ -291,7 +303,7 @@ class InventoryViewSet(
                 )
 
         except Exception as e:
-            self.logger.error(f"Error creating escrow transaction: {str(e)}")
+            logger.info(f"Error creating escrow transaction: {str(e)}")
             return self.error_response(
                 message=f"Failed to create transaction: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

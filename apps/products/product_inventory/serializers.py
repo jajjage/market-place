@@ -46,10 +46,10 @@ class UnifiedEscrowTransactionSerializer(serializers.Serializer):
     Unified serializer for both direct and negotiation-based escrow transactions.
     """
 
-    variant_id = serializers.IntegerField()
+    variant_id = serializers.UUIDField()
     quantity = serializers.IntegerField(min_value=1)
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
-    negotiation_id = serializers.IntegerField(required=False, allow_null=True)
+    negotiation_id = serializers.UUIDField(required=False, allow_null=True)
 
     def validate_quantity(self, value):
         if value <= 0:

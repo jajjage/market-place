@@ -11,6 +11,7 @@ from apps.products.product_negotiation.models import (
     NegotiationHistory,
 )
 from apps.products.product_base.models import Product
+from apps.products.product_variant.models import ProductVariant
 from apps.users.models import CustomUser as User
 
 logger = logging.getLogger("negotiation_performance")
@@ -21,7 +22,7 @@ class NegotiationValidationService:
 
     @staticmethod
     def validate_negotiation_eligibility(
-        product: Product, buyer: User
+        variant: ProductVariant, buyer: User
     ) -> Dict[str, any]:
         """Validate if a negotiation can be initiated"""
         start_time = timezone.now()
@@ -29,28 +30,28 @@ class NegotiationValidationService:
         errors = []
 
         # Check if product is negotiable
-        if not product.is_negotiable:
+        if not variant.product.is_negotiable:
             errors.append("This product does not allow price negotiation")
 
         # Check if product is negotiable
-        if not product.available_inventory != 0:
+        if not variant.available_inventory != 0:
             errors.append("This product is out of stock and cannot be negotiated")
 
-        if not product.status == "active":
+        if not variant.product.status == "active":
             errors.append("This product is not available for negotiation")
 
         # Check if buyer is not the seller
-        if buyer == product.seller:
+        if buyer == variant.product.seller:
             errors.append("You cannot negotiate price for your own product")
 
         # Check if product is available
-        if product.status != "active":
+        if variant.product.status != "active":
             errors.append("Product is not available for negotiation")
 
         # Check negotiation deadline
         if (
-            product.negotiation_deadline
-            and timezone.now() > product.negotiation_deadline
+            variant.product.negotiation_deadline
+            and timezone.now() > variant.product.negotiation_deadline
         ):
             errors.append("Negotiation period has expired")
 
@@ -70,7 +71,7 @@ class NegotiationValidationService:
 
     @staticmethod
     def validate_offer_price(
-        product: Product, offered_price: Decimal, buyer: User
+        variant: ProductVariant, offered_price: Decimal, buyer: User
     ) -> Dict[str, any]:
         """Validate the offered price against business rules"""
         start_time = timezone.now()
@@ -81,24 +82,17 @@ class NegotiationValidationService:
         if offered_price <= 0:
             errors.append("Offered price must be greater than zero")
 
-        # Check minimum acceptable price
-        if (
-            product.minimum_acceptable_price
-            and offered_price < product.minimum_acceptable_price
-        ):
-            errors.append(
-                f"Offered price is below minimum acceptable price of ${product.minimum_acceptable_price}"
-            )
-
         # Check if offer is reasonable (e.g., at least 30% of original price)
-        min_reasonable = product.price * Decimal("0.3")
+        min_reasonable = variant.product.price * Decimal(
+            "0.75"
+        )  # 75% of original price
         if offered_price < min_reasonable:
             errors.append(
                 f"Offered price is too low. Minimum reasonable offer is ${min_reasonable}"
             )
 
         # Check if offer is higher than original price
-        if offered_price > product.price:
+        if offered_price > variant.price:
             errors.append("Offered price cannot be higher than the original price")
 
         # Check buyer's recent negotiation behavior (anti-spam)
@@ -122,7 +116,7 @@ class NegotiationService:
 
     @staticmethod
     def initiate_negotiation(
-        product: Product,
+        variant: ProductVariant,
         buyer: User,
         offered_price: Decimal,
         notes: Optional[str] = None,
@@ -132,19 +126,19 @@ class NegotiationService:
 
         # Validate eligibility
         eligibility = NegotiationValidationService.validate_negotiation_eligibility(
-            product, buyer
+            variant, buyer
         )
         if not eligibility["is_valid"]:
             return False, {"errors": eligibility["errors"]}
 
         # Validate offer price
         price_validation = NegotiationValidationService.validate_offer_price(
-            product, offered_price, buyer
+            variant, offered_price, buyer
         )
         if not price_validation["is_valid"]:
             return False, {"errors": price_validation["errors"]}
         existing_negotiation = PriceNegotiation.objects.filter(
-            product=product, buyer=buyer, status__in=["pending", "countered"]
+            product=variant.product, buyer=buyer, status__in=["pending", "countered"]
         ).first()
         if existing_negotiation:
             return False, {
@@ -166,10 +160,11 @@ class NegotiationService:
                 else:
                     # Create new negotiation
                     negotiation = PriceNegotiation.objects.create(
-                        product=product,
+                        product=variant.product,
+                        variant=variant,
                         buyer=buyer,
-                        seller=product.seller,
-                        original_price=product.price,
+                        seller=variant.product.seller,
+                        original_price=variant.price,
                         offered_price=offered_price,
                         status="pending",
                         offered_at=timezone.now(),
@@ -187,7 +182,7 @@ class NegotiationService:
 
                 # Invalidate cache
                 CacheManager.invalidate(
-                    "negotiation", product_id=product.id, buyer_id=buyer.id
+                    "negotiation", product_id=variant.product.id, buyer_id=buyer.id
                 )
 
                 duration = (timezone.now() - start_time).total_seconds() * 1000

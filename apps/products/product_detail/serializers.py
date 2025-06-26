@@ -83,7 +83,6 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         model = ProductDetail
         fields = [
             "id",
-            "detail_type",
             "detail_type_display",
             "label",
             "value",
@@ -149,7 +148,7 @@ class ProductDetailBulkCreateSerializer(serializers.Serializer):
     details = serializers.ListField(child=serializers.DictField(), write_only=True)
 
     def validate_details(self, value):
-        required_fields = ["detail_type", "label", "value"]
+        required_fields = ["detail_type", "label", "value", "template_id"]
         for detail_data in value:
             for field in required_fields:
                 if field not in detail_data:

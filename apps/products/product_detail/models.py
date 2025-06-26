@@ -149,20 +149,3 @@ class ProductDetail(BaseModel):
                 raise ValidationError(
                     {"value": f"Value does not match required pattern: {pattern}"}
                 )
-
-    def save(self, *args, **kwargs):
-        # Auto-populate from template if available
-        if self.template:
-            if not self.unit and self.template.unit:
-                self.unit = self.template.unit
-            if not self.detail_type:
-                self.detail_type = self.template.detail_type
-            if not self.label:
-                self.label = self.template.label
-            if not self.display_order:
-                self.display_order = self.template.display_order
-
-            # Mark as created from template
-            self.created_from_template = True
-
-        super().save(*args, **kwargs)

@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
 from apps.products.product_base.models import Product
+from apps.products.product_variant.models import ProductVariant
 
 
 User = get_user_model()
@@ -35,6 +36,14 @@ class UserShortSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return obj.get_full_name()
+
+
+class VariantShortSerializer(serializers.ModelSerializer):
+    """Serializer for a short representation of the user."""
+
+    class Meta:
+        model = ProductVariant
+        fields = ["id", "sku", "price"]
 
 
 class BreadcrumbSerializer(serializers.Serializer):

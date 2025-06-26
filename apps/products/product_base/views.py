@@ -1,6 +1,5 @@
 import logging
 from django.utils.decorators import method_decorator
-from django.utils import timezone
 from rest_framework import status
 from django.views.decorators.vary import vary_on_cookie
 from rest_framework import permissions, filters, generics
@@ -26,17 +25,6 @@ from apps.products.product_metadata.serializers import (
     ProductMetaWriteSerializer,
 )
 from apps.products.product_metadata.services import ProductMetaService
-from apps.products.product_negotiation.serializers import (
-    InitiateNegotiationSerializer,
-    PriceNegotiationSerializer,
-)
-from apps.products.product_negotiation.services import (
-    NegotiationNotificationService,
-    NegotiationService,
-)
-from apps.products.product_negotiation.utils.rate_limiting import (
-    NegotiationInitiateRateThrottle,
-)
 from .models import (
     Product,
 )
@@ -213,70 +201,6 @@ class ProductViewSet(BaseViewSet):
     )
     def by_condition(self, request, condition_id=None):
         return ProductConditionService.by_condition(self, request, condition_id)
-
-    @action(
-        detail=True,
-        url_path=r"initiate-negotiation",
-        methods=["post"],
-        throttle_classes=[NegotiationInitiateRateThrottle],
-    )
-    def initiate_negotiation(self, request, pk=None):
-        """
-        Initiate a price negotiation for a product.
-        Enhanced with caching, validation, and rate limiting.
-        """
-        start_time = timezone.now()
-
-        product = self.get_object()
-        if not product.is_active:
-            return self.error_response(
-                message="Product is not active", status_code=status.HTTP_404_NOT_FOUND
-            )
-        # Validate request data
-        serializer = InitiateNegotiationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return self.error_response(
-                message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
-            )
-
-        offered_price = serializer.validated_data["offered_price"]
-        notes = serializer.validated_data.get("notes", "")
-
-        # Use service to initiate negotiation
-        success, result = NegotiationService.initiate_negotiation(
-            product=product,
-            buyer=request.user,
-            offered_price=offered_price,
-            notes=notes,
-        )
-
-        if not success:
-            return self.error_response(
-                message=result["errors"], status_code=status.HTTP_400_BAD_REQUEST
-            )
-
-        negotiation = result["negotiation"]
-        created = result["created"]
-
-        # Send notification
-        NegotiationNotificationService.notify_seller_response(negotiation)
-
-        # Serialize response
-        response_serializer = PriceNegotiationSerializer(
-            negotiation, context={"request": request}
-        )
-
-        duration = (timezone.now() - start_time).total_seconds() * 1000
-        self.logger.info(f"Negotiation initiated in {duration:.2f}ms")
-
-        return self.success_response(
-            data={
-                "message": result["message"],
-                "negotiation": response_serializer.data,
-                "created": created,
-            },
-            status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )
 
     @extend_schema(
         summary="Manage Product Metadata",

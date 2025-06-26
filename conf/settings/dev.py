@@ -156,7 +156,7 @@ PERFORMANCE_API_PREFIXES = {
     "/api/v1/conditions": "conditions",
     "/api/v1/categories": "categories",
     "/api/v1/products": "products",
-    "/api/v1/product_variant": "variant",
+    "/api/v1/variants": "variant",
     # …add more as needed…
 }
 

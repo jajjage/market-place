@@ -8,7 +8,6 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
-
 from apps.core.views import BaseViewSet
 from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
 from apps.products.product_base.models import Product
@@ -19,17 +18,21 @@ from apps.products.product_negotiation.models import (
 from apps.products.product_negotiation.services import (
     NegotiationService,
     NegotiationAnalyticsService,
+    NegotiationNotificationService,
 )
 from apps.products.product_negotiation.serializers import (
     NegotiationResponseSerializer,
+    InitiateNegotiationSerializer,
     PriceNegotiationSerializer,
     NegotiationStatsSerializer,
     UserNegotiationHistorySerializer,
 )
 from apps.products.product_negotiation.utils.rate_limiting import (
+    NegotiationInitiateRateThrottle,
     NegotiationRateThrottle,
     NegotiationRespondRateThrottle,
 )
+from apps.products.product_variant.models import ProductVariant
 
 logger = logging.getLogger("negotiation_performance")
 
@@ -56,6 +59,72 @@ class ProductNegotiationViewSet(BaseViewSet):
             )
             .select_related("product", "buyer", "seller")
             .prefetch_related("history")
+        )
+
+    @action(
+        detail=False,
+        url_path=r"initiate-negotiation",
+        methods=["post"],
+        throttle_classes=[NegotiationInitiateRateThrottle],
+    )
+    def initiate_negotiation(self, request):
+        """
+        Initiate a price negotiation for a product.
+        Enhanced with caching, validation, and rate limiting.
+        """
+        start_time = timezone.now()
+        variant_id = request.data.get("variant_id")
+        if not variant_id:
+            return self.error_response(
+                message="You must Provide variant id",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Validate request data
+        serializer = InitiateNegotiationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return self.error_response(
+                message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        variant = get_object_or_404(ProductVariant, id=variant_id)
+        offered_price = serializer.validated_data["offered_price"]
+        notes = serializer.validated_data.get("notes", "")
+
+        # Use service to initiate negotiation
+        success, result = NegotiationService.initiate_negotiation(
+            variant=variant,
+            buyer=request.user,
+            offered_price=offered_price,
+            notes=notes,
+        )
+
+        if not success:
+            return self.error_response(
+                message=result["errors"], status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        negotiation = result["negotiation"]
+        created = result["created"]
+
+        # Send notification
+        NegotiationNotificationService.notify_seller_response(negotiation)
+
+        # Serialize response
+        response_serializer = PriceNegotiationSerializer(
+            negotiation, context={"request": request}
+        )
+
+        duration = (timezone.now() - start_time).total_seconds() * 1000
+        self.logger.info(f"Negotiation initiated in {duration:.2f}ms")
+
+        return self.success_response(
+            data={
+                "message": result["message"],
+                "negotiation": response_serializer.data,
+                "created": created,
+            },
+            status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
     @action(

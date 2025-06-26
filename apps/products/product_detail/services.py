@@ -117,16 +117,21 @@ class ProductDetailService:
 
         details_to_create = []
         for data in details_data:
+            template = ProductDetailTemplate.objects.get(id=data["template_id"])
+
             detail = ProductDetail(
                 product=product,
-                template_id=data.get("template_id"),
-                detail_type=data["detail_type"],
-                label=data["label"],
+                template=template,
+                template_id=template.id,
+                detail_type=data.get("detail_type") or template.detail_type,
+                label=data.get("label") or template.label,
                 value=data["value"],
-                unit=data.get("unit", ""),
+                unit=data.get("unit") or template.unit,
                 is_highlighted=data.get("is_highlighted", False),
-                display_order=data.get("display_order", 0),
+                display_order=data.get("display_order") or template.display_order,
+                created_from_template=True,
             )
+
             details_to_create.append(detail)
 
         created_details = ProductDetail.objects.bulk_create(details_to_create)
@@ -136,7 +141,7 @@ class ProductDetailService:
             "product_detail", "list", product_id=detail.product_id
         )
         CacheManager.invalidate_key(
-            "product_base", "detail_by_shortcode", short_code=detail.product_short_code
+            "product_base", "detail_by_shortcode", short_code=detail.product.short_code
         )
 
         duration = (time.time() - start_time) * 1000

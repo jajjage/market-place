@@ -19,6 +19,13 @@ class PriceNegotiation(BaseModel):
         on_delete=models.CASCADE,
         related_name="negotiations",
     )
+    variant = models.ForeignKey(
+        "product_variant.ProductVariant",
+        on_delete=models.CASCADE,
+        related_name="variant_negotiations",
+        null=True,
+        blank=True,
+    )
     transaction = models.ForeignKey(
         EscrowTransaction,
         on_delete=models.CASCADE,

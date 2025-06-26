@@ -14,7 +14,7 @@ def get_transaction_context(user, negotiation_id, variant):
         "negotiation": None,
         "price": None,  # Will use variant's default price if None
         "is_negotiated": False,
-        "original_price": variant.final_price,
+        "original_price": variant.price,
     }
 
     if negotiation_id:
@@ -89,7 +89,7 @@ def link_negotiation_to_transaction(negotiation, escrow_transaction):
 def invalidate_caches(product, negotiation=None):
     """Invalidate relevant caches."""
     if negotiation:
-        CacheManager.invalidate("negotiation", "detail", id=negotiation.id)
+        CacheManager.invalidate_key("negotiation", "detail", id=negotiation.id)
 
 
 def prepare_response_data(variant, escrow_transaction, amount_paid, quantity, context):

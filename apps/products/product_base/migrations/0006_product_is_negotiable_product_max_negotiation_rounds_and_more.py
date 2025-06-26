@@ -25,7 +25,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name="product",
-            name="minimum_acceptable_price",
+            name="",
             field=models.DecimalField(
                 blank=True, decimal_places=2, max_digits=10, null=True
             ),

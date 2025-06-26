@@ -99,6 +99,7 @@
         "smembers",
         "sorl",
         "srem",
+        "tranx",
         "vertexai",
         "viewset",
         "viewsets",

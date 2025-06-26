@@ -82,9 +82,7 @@ class Product(BaseModel):
     # Negotiation and offers
     is_negotiable = models.BooleanField(default=False)
     requires_inspection = models.BooleanField(default=False)
-    minimum_acceptable_price = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True
-    )
+
     negotiation_deadline = models.DateTimeField(null=True, blank=True)
     max_negotiation_rounds = models.PositiveIntegerField(default=5)
 

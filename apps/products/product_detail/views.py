@@ -111,7 +111,7 @@ class ProductDetailViewSet(BaseViewSet):
 
         product = get_object_or_404(Product, id=product_id)
         category = getattr(product, "category", None)
-        print(category.id)
+
         # Get available templates for this product's category
         templates = ProductDetailService.get_templates_for_category(category.id)
 
@@ -226,17 +226,6 @@ class ProductDetailViewSet(BaseViewSet):
         return self.error_response(
             message=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST
         )
-
-    def perform_update(self, serializer):
-        """Override to invalidate cache on update"""
-        instance = serializer.save()
-        from apps.core.utils.cache_manager import CacheManager
-
-        CacheManager.invalidate("product_detail", product_id=instance.product_id)
-
-    def perform_destroy(self, instance):
-        """Soft delete instead of hard delete"""
-        ProductDetailService.delete_detail(instance.id)
 
 
 class ProductDetailTemplateViewSet(BaseViewSet):
@@ -359,7 +348,7 @@ class ProductDetailTemplateViewSet(BaseViewSet):
                     templates, many=True
                 )
                 return self.success_response(
-                    response_serializer.data, status=status.HTTP_201_CREATED
+                    data=response_serializer.data, status_code=status.HTTP_201_CREATED
                 )
             except ValueError as e:
                 return self.error_response(

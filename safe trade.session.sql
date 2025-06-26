@@ -1,2 +1,2 @@
-DELETE FROM public.product_negotiation_history
-WHERE negotiation_id = '3a8b6d37-b874-4f01-a6ac-1ef1818091aa' -- DELETE FROM public.product_meta WHERE featured=False
+DELETE FROM public.product_product_details
+WHERE product_id = '4fe0c891-b9e5-45db-8177-caed183c40ac'

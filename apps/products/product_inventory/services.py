@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from typing import List, Dict, Tuple
 from django.db import transaction
@@ -6,11 +7,14 @@ from django.core.exceptions import ValidationError
 # from django.utils import timezone
 # from datetime import timedelta
 
+from apps.products.product_variant.models import ProductVariant
 from apps.transactions.models import EscrowTransaction, TransactionHistory
 from apps.transactions.utils.tracking_id import generate_tracking_id
 from .models import (
     InventoryTransaction,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class InventoryService:
@@ -121,9 +125,8 @@ class InventoryService:
         return variant
 
     @staticmethod
-    @transaction.atomic
     def place_in_escrow(
-        variant,  # ProductVariant instance
+        variant: ProductVariant,
         quantity: int = 1,
         buyer=None,
         seller=None,
@@ -139,6 +142,19 @@ class InventoryService:
         Uses the variant's final_price (which includes option adjustments) unless
         a negotiated_price is provided.
         """
+        # 0) Validate required objects
+        if not variant:
+            raise ValidationError("Variant is required")
+        if not variant.product:
+            raise ValidationError(f"Variant {variant.sku} has no associated product")
+        if not buyer:
+            raise ValidationError("Buyer is required")
+
+        # Determine seller
+        seller = seller or variant.product.seller
+        if not seller:
+            raise ValidationError(f"No seller found for variant {variant.sku}")
+
         # 1) Inventory check on the variant level
         if not variant.is_active:
             raise ValidationError(f"Variant {variant.sku} is not active")
@@ -171,21 +187,30 @@ class InventoryService:
         # 4) Compute total amount
         total_amount = unit_price * quantity
 
-        # 5) Reserve the stock using the variant's method
+        # 5) Record previous values BEFORE making any changes
+        prev_total = variant.total_inventory
+        prev_available = variant.available_inventory
+        prev_in_escrow = variant.in_escrow_inventory
+
+        # 6) Reserve the stock using the variant's method (this adds to in_escrow_inventory)
         if not variant.reserve_stock(quantity):
             raise ValidationError(f"Failed to reserve stock for variant {variant.sku}")
 
+        # 7) Complete the inventory movement by reducing available_inventory
+        variant.available_inventory -= quantity  # Remove from available
+        variant.save(update_fields=["available_inventory"])
+
         try:
-            # 6) Record the inventory movement
+            # 8) Record the inventory movement with correct field names
             InventoryTransaction.objects.create(
                 product=variant.product,
                 variant=variant,
                 transaction_type="ESCROW",
                 quantity=quantity,
-                previous_available=variant.available_inventory
-                + quantity,  # before reservation
-                previous_in_escrow=variant.in_escrow_inventory
-                - quantity,  # before reservation
+                previous_total=prev_total,
+                previous_available=prev_available,
+                previous_in_escrow=prev_in_escrow,
+                new_total=variant.total_inventory,
                 new_available=variant.available_inventory,
                 new_in_escrow=variant.in_escrow_inventory,
                 created_by=user,
@@ -202,7 +227,7 @@ class InventoryService:
                 currency=currency,
                 status="initiated",
                 inspection_period_days=inspection_period_days,
-                unit_price=unit_price,
+                price=unit_price,
                 total_amount=total_amount,
                 shipping_address=shipping_address,
                 tracking_id=generate_tracking_id(variant, buyer, seller),
@@ -220,12 +245,19 @@ class InventoryService:
                 ),
                 created_by=user,
             )
+            logger.info(
+                f"Escrow transaction created: {escrow_tx.id} for {quantity}× {variant.sku}"
+            )
 
             return variant, escrow_tx, total_amount
 
         except Exception as e:
-            # If escrow creation fails, release the reserved stock
+            # If any database operation fails, release the reserved stock
+            # This will be called even if the outer transaction rolls back
             variant.release_stock(quantity)
+            logger.error(
+                f"Failed to create escrow transaction for {variant.sku}: {str(e)}"
+            )
             raise e
 
     @staticmethod

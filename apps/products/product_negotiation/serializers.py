@@ -6,6 +6,7 @@ from apps.core.serializers import (
     ProductSummarySerializer,
     TimestampedModelSerializer,
     UserShortSerializer,
+    VariantShortSerializer,
 )
 from apps.products.product_negotiation.models import (
     PriceNegotiation,
@@ -61,6 +62,7 @@ class PriceNegotiationSerializer(TimestampedModelSerializer):
     product = ProductSummarySerializer(read_only=True)
     buyer = UserShortSerializer(read_only=True)
     seller = UserShortSerializer(read_only=True)
+    variant = VariantShortSerializer(read_only=True)
     history = NegotiationHistorySerializer(many=True, read_only=True)
 
     # Formatted price fields
@@ -84,6 +86,7 @@ class PriceNegotiationSerializer(TimestampedModelSerializer):
             "product",
             "buyer",
             "seller",
+            "variant",
             "formatted_original_price",
             "formatted_offered_price",
             "formatted_final_price",
@@ -165,6 +168,7 @@ class InitiateNegotiationSerializer(serializers.Serializer):
         max_digits=10, decimal_places=2, min_value=Decimal("0.01")
     )
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    variant_id = serializers.UUIDField(required=True)
 
     def validate_offered_price(self, value):
         """Validate offered price"""
