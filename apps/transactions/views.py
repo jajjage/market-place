@@ -223,11 +223,11 @@ class EscrowTransactionViewSet(BaseViewSet):
                     message="Status is required",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
-            if not transaction.status != new_status:
-                return self.error_response(
-                    message=f"Status is already in: {new_status}",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
+            # if not transaction.status != new_status:
+            #     return self.error_response(
+            #         message=f"Status is already in: {new_status}",
+            #         status_code=status.HTTP_400_BAD_REQUEST,
+            #     )
 
             notes = request.data.get("notes", "")
             tracking_number = request.data.get("tracking_number")  # Fixed field name

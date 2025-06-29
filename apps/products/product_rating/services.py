@@ -58,7 +58,10 @@ class ProductRatingService:
         completed_purchase = EscrowTransaction.objects.filter(
             product_id=product_id,
             buyer_id=user_id,
-            status="completed",  # Adjust status field name as needed
+            status__in={
+                "completed",
+                "funds_released",
+            },  # Adjust status field name as needed
         ).exists()
 
         if not completed_purchase:

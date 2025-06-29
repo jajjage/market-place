@@ -134,6 +134,13 @@ def schedule_auto_inspection(self, transaction_id):
                     task_id, transaction_id, "delivered"
                 )
             )
+            # We need to find a way to automatically called the completion task,
+            # since the inspection is not allowed on certain product
+            is_allowed_inspection = escrow_txn.product.requires_inspection
+            if not is_allowed_inspection:
+                return (
+                    f"Inspection was NOT allow for this  product '{transaction.product.title}'",
+                )
 
             if not is_valid:
                 return f"Task {task_id} is no longer valid for transaction {transaction_id}"

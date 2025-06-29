@@ -55,7 +55,8 @@ class EscrowTransactionShortSerializer(TimestampedModelSerializer):
             "product_title",
             "product_image",
             "amount",
-            "quantity" "currency",
+            "quantity",
+            "currency",
             "status",
             "created_at",
         ]
@@ -137,6 +138,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
 
     breadcrumbs = serializers.SerializerMethodField()
     product_details = serializers.SerializerMethodField()
+    variant_details = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
     buyer_details = serializers.SerializerMethodField()
     seller_details = serializers.SerializerMethodField()
@@ -152,6 +154,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "tracking_id",
             "image",
             "product_details",
+            "variant_details",
             "buyer_details",
             "seller_details",
             "price",
@@ -169,8 +172,6 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "is_auto_transition_scheduled",
             "auto_transition_type",
             "next_auto_transition_at",
-            "created_at",
-            "updated_at",
             "history",
             # "next_actions",
             "breadcrumbs",
@@ -183,6 +184,14 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "title": product.title,
             "short_code": product.short_code,
             "price": product.price,
+        }
+
+    def get_variant_details(self, obj):
+        variant = obj.variant
+        return {
+            "id": variant.id,
+            "title": variant.sku,
+            "price": variant.price,
         }
 
     def get_image(self, obj):
@@ -239,56 +248,6 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
         )
         return TransactionHistorySerializer(history, many=True).data
 
-    # def get_next_actions(self, obj):
-    #     """Return possible next actions based on current status and user role"""
-    #     user = self.context["request"].user
-    #     user_type = getattr(user, "user_type", None)
-
-    #     # Define possible next actions by status and role
-    #     is_buyer = user == obj.buyer
-    #     is_seller = user == obj.seller
-
-    #     actions = {
-    #         "initiated": {
-    #             "BUYER": ["cancel"] if is_buyer else [],
-    #             "SELLER": ["confirm_payment", "cancel"] if is_seller else [],
-    #         },
-    #         "payment_received": {"BUYER": [], "SELLER": ["ship"] if is_seller else []},
-    #         "shipped": {
-    #             "BUYER": ["confirm_delivery"] if is_buyer else [],
-    #             "SELLER": [],
-    #         },
-    #         "delivered": {
-    #             "BUYER": ["start_inspection"] if is_buyer else [],
-    #             "SELLER": [],
-    #         },
-    #         "inspection": {
-    #             "BUYER": ["approve", "dispute"] if is_buyer else [],
-    #             "SELLER": [],
-    #         },
-    #         "disputed": {"BUYER": [], "SELLER": []},
-    #         "completed": {"BUYER": [], "SELLER": []},
-    #         "refunded": {"BUYER": [], "SELLER": []},
-    #         "cancelled": {"BUYER": [], "SELLER": []},
-    #     }
-
-    #     # For staff, return all possible actions
-    #     if user.is_staff:
-    #         return {
-    #             "initiated": ["confirm_payment", "cancel"],
-    #             "payment_received": ["ship", "refund"],
-    #             "shipped": ["confirm_delivery", "report_issue"],
-    #             "delivered": ["start_inspection", "report_issue"],
-    #             "inspection": ["approve", "dispute"],
-    #             "disputed": ["resolve_for_buyer", "resolve_for_seller"],
-    #             "completed": [],
-    #             "refunded": [],
-    #             "cancelled": [],
-    #         }.get(obj.status, [])
-
-    #     # For regular users, return actions based on user type
-    #     return actions.get(obj.status, {}).get(user_type, [])
-
 
 class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
     """Serializer specifically for tracking an escrow transaction"""
@@ -332,37 +291,6 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
                     # Or build manually: f"http://your-domain.com{primary_image.image_url}"
 
         return None
-
-    # def get_status_timeline(self, obj):
-    #     """Return a timeline of status changes for tracking visualization"""
-    #     history = TransactionHistory.objects.filter(transaction=obj).order_by(
-    #         "timestamp"
-    #     )
-    #     statuses = []
-
-    #     # Create a complete timeline with all possible statuses
-    #     status_order = [status[0] for status in EscrowTransaction.STATUS_CHOICES]
-    #     current_status_index = (
-    #         status_order.index(obj.status) if obj.status in status_order else -1
-    #     )
-
-    #     for i, status_code in enumerate(status_order):
-    #         # Find the history entry for this status if it exists
-    #         entry = next((h for h in history if h.status == status_code), None)
-
-    #         statuses.append(
-    #             {
-    #                 "code": status_code,
-    #                 "label": dict(EscrowTransaction.STATUS_CHOICES).get(status_code),
-    #                 "description": ESCROW_STATUSES[status_code]["description"],
-    #                 "completed": entry is not None,
-    #                 "active": status_code == obj.status,
-    #                 "timestamp": entry.timestamp if entry else None,
-    #                 "upcoming": i > current_status_index,
-    #             }
-    #         )
-
-    #     return statuses
 
     def get_estimated_completion(self, obj):
         """Estimate when the transaction will be completed"""

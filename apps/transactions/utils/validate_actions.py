@@ -73,7 +73,7 @@ def get_other_party_info(transaction, current_user):
 
     return {
         "id": other_party.id if other_party else None,
-        "username": other_party.full_name() if other_party else None,
+        "username": other_party.get_full_name() if other_party else None,
         "role": role,
     }
 

@@ -14,7 +14,7 @@ def get_transaction_context(user, negotiation_id, variant):
         "negotiation": None,
         "price": None,  # Will use variant's default price if None
         "is_negotiated": False,
-        "original_price": variant.price,
+        "original_price": variant.final_price,
     }
 
     if negotiation_id:
@@ -109,11 +109,6 @@ def prepare_response_data(variant, escrow_transaction, amount_paid, quantity, co
         "quantity": quantity,
         "total_amount": f"${float(amount_paid)}",
         "status": escrow_transaction.status,
-        "inventory": {
-            "total": variant.total_inventory,
-            "available": variant.available_inventory,
-            "in_escrow": variant.in_escrow_inventory,
-        },
     }
 
     # Add negotiation-specific data if applicable

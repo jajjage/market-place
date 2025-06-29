@@ -148,8 +148,6 @@ class ProductListSerializer(TimestampedModelSerializer):
             "currency",
             "category_name",
             "condition_name",
-            # "requires_shipping",
-            # "escrow_hold_period",
             "requires_inspection",
             "is_active",
             "is_featured",
@@ -163,9 +161,6 @@ class ProductListSerializer(TimestampedModelSerializer):
             "description",
             "image_url",
             "discount_percent",
-            "in_escrow_inventory",
-            "available_inventory",
-            "total_inventory",
             "brand_name",
         ]
 

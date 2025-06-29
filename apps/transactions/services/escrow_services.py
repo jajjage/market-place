@@ -76,7 +76,7 @@ class EscrowTransactionService:
         if transaction.status not in cls.VALID_TRANSITIONS[user_type]:
             return (
                 False,
-                f"No transitions available from current status '{transaction.status}'",
+                f"No transitions available from current status {transaction.status}",
             )
 
         # Check if new status is allowed
@@ -84,8 +84,16 @@ class EscrowTransactionService:
         if new_status not in allowed_statuses:
             return (
                 False,
-                f"Cannot transition from '{transaction.status}' to '{new_status}' as {user_type.lower()}",
+                f"Cannot transition from {transaction.status} to {new_status} as {user_type.lower()}",
             )
+        # Check if product is allow for inspection
+        if new_status == "inspection":
+            is_allowed_inspection = transaction.product.requires_inspection
+            if not is_allowed_inspection:
+                return (
+                    False,
+                    f"Inspection was NOT allow for this  product {transaction.product.title}",
+                )
 
         return True, "Transition allowed"
 
@@ -155,6 +163,7 @@ class EscrowTransactionService:
                     escrow_transaction, new_status, user
                 )
             )
+
             if not is_allowed:
                 raise ValidationError(f"Permission denied: {permission_reason}")
 
