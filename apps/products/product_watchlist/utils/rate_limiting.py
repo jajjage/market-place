@@ -19,7 +19,7 @@ class WatchlistRateThrottle(BaseCacheThrottle):
         return f"{base_key}_general"
 
 
-class WatchlistToggleThrottle(BaseCacheThrottle):
+class WatchlistCreateThrottle(BaseCacheThrottle):
     """
     Throttle for toggle operations (add/remove single product).
     Applied to: toggle_product endpoint

@@ -27,7 +27,7 @@ from .utils.rate_limiting import (
     AdminWatchlistThrottle,
     WatchlistBulkThrottle,
     WatchlistRateThrottle,
-    WatchlistToggleThrottle,
+    WatchlistCreateThrottle,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ class ProductWatchlistViewSet(BaseViewSet):
         """Apply appropriate throttling based on action."""
         throttle_mapping = {
             "bulk_operation": [WatchlistBulkThrottle],
-            "toggle_product": [WatchlistToggleThrottle],
+            "create": [WatchlistCreateThrottle],
             "by_product": [AdminWatchlistThrottle],
             "stats": [WatchlistRateThrottle],
             "insights": [WatchlistRateThrottle],
@@ -273,9 +273,9 @@ class ProductWatchlistViewSet(BaseViewSet):
                     request.user, product_ids
                 )
             else:
-                return Response(
-                    {"error": "Invalid operation. Must be 'add' or 'remove'"},
-                    status=status.HTTP_400_BAD_REQUEST,
+                return self.error_response(
+                    message="Invalid operation. Must be 'add' or 'remove'",
+                    status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
             # Serialize result
@@ -284,13 +284,16 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status.HTTP_200_OK if result.success else status.HTTP_400_BAD_REQUEST
             )
 
-            return Response(result_serializer.data, status=response_status)
+            return self.success_response(
+                data=result_serializer.data, status_code=response_status
+            )
 
         except Exception as e:
             logger.error(f"Error in bulk operation: {e}")
-            return Response(
-                {"error": "Failed to perform bulk operation"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            err_msg = extract_validation_error_message(e)
+            return self.error_response(
+                message=err_msg,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @extend_schema(
@@ -431,9 +434,9 @@ class ProductWatchlistViewSet(BaseViewSet):
         try:
             product_id = request.query_params.get("product_id")
             if not product_id:
-                return Response(
-                    {"error": "product_id parameter is required"},
-                    status=status.HTTP_400_BAD_REQUEST,
+                return self.error_response(
+                    message="product_id parameter is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
             # Validate product_id format
