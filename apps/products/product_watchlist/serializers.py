@@ -1,195 +1,408 @@
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
 
-from apps.core.serializers import (
-    BreadcrumbSerializer,
-    TimestampedModelSerializer,
-    UserShortSerializer,
-)
-from apps.core.utils.breadcrumbs import BreadcrumbService
+# from apps.core.utils.import_resolver import resolver
+from apps.core.serializers import TimestampedModelSerializer, UserShortSerializer
+from apps.products.product_base.models import Product
+from apps.products.product_image.services import ProductImageService
+
 from .models import ProductWatchlistItem
 
+User = get_user_model()
 
-class ProductWatchlistItemListSerializer(TimestampedModelSerializer):
-    """Serializer for listing watchlist items."""
 
-    user = UserShortSerializer(read_only=True)
-    product_title = serializers.CharField(source="product.title", read_only=True)
-    product_price = serializers.DecimalField(
-        source="product.price", max_digits=10, decimal_places=2, read_only=True
+class ProductListSerializer(TimestampedModelSerializer):
+    """
+    Serializer for listing products with essential information.
+    Optimized for displaying products in listings.
+    """
+
+    brand_name = serializers.SerializerMethodField(read_only=True)
+    originalPrice = serializers.DecimalField(
+        source="original_price", max_digits=10, decimal_places=2
     )
-    product_image = serializers.SerializerMethodField()
+    escrowFee = serializers.DecimalField(
+        source="escrow_fee", max_digits=10, decimal_places=2
+    )
+
+    seller = serializers.SerializerMethodField()
+    # Use direct annotation fields instead of nested serializer for better performance
+    ratings = serializers.SerializerMethodField()
+
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    condition_name = serializers.CharField(source="condition.name", read_only=True)
+    image_url = serializers.SerializerMethodField()
+    discount_percent = serializers.SerializerMethodField()
 
     class Meta:
-        model = ProductWatchlistItem
+        model = Product
         fields = [
             "id",
-            "user",
-            "product",
-            "product_title",
-            "product_price",
-            "product_image",
-            "added_at",
+            "title",
+            "price",
+            "originalPrice",
+            "currency",
+            "category_name",
+            "condition_name",
+            "requires_inspection",
+            "is_active",
+            "is_featured",
+            "status",
+            "slug",
+            "ratings",
+            "short_code",
+            "seller",
+            "escrowFee",
+            "location",
+            "description",
+            "image_url",
+            "discount_percent",
+            "brand_name",
         ]
 
-    def get_product_image(self, obj):
-        """Get the primary image URL for the product."""
-        request = self.context.get("request")
-        primary_image = (
-            obj.product.images.filter(is_primary=True).first()
-            or obj.product.images.first()
-        )
+    def get_brand_name(self, obj):
+        return obj.brand.name
 
-        if request and primary_image and primary_image.image:
-            return request.build_absolute_uri(primary_image.image.url)
+    def get_seller(self, obj):
+        profile_obj = obj.seller
+        return UserShortSerializer(profile_obj, context=self.context).data
+
+    def get_image_url(self, obj):
+        request = self.context.get("request")
+        primary_image = ProductImageService.get_primary_image(obj.id)
+        if primary_image and primary_image.image_url:
+            # Try to build absolute URL if request is available
+            if request:
+                return request.build_absolute_uri(primary_image.image_url)
+            else:
+                # Fallback to relative URL or build manually
+                return primary_image.image_url
+                # Or build manually: f"http://your-domain.com{primary_image.image_url}"
+
         return None
 
+    def get_discount_percent(self, obj):
+        if obj.original_price and obj.price < obj.original_price:
+            discount = ((obj.original_price - obj.price) / obj.original_price) * 100
+            return round(discount, 1)
+        return 0
 
-class ProductWatchlistItemDetailSerializer(TimestampedModelSerializer):
-    """Detailed serializer for a single watchlist item."""
-
-    breadcrumbs = serializers.SerializerMethodField()
-    user = UserShortSerializer(read_only=True)
-    product_details = serializers.SerializerMethodField()
-
-    class Meta:
-        model = ProductWatchlistItem
-        fields = ["id", "user", "product", "product_details", "added_at"]
-
-    def get_product_details(self, obj):
-        """Get detailed information about the watched product."""
-        request = self.context.get("request")
-        primary_image = (
-            obj.product.images.filter(is_primary=True).first()
-            or obj.product.images.first()
-        )
-
-        details = {
-            "id": obj.product.id,
-            "title": obj.product.title,
-            "price": obj.product.price,
-            "description": (
-                obj.product.description[:150] + "..."
-                if len(obj.product.description) > 150
-                else obj.product.description
-            ),
-            "status": obj.product.status,
-            "is_active": obj.product.is_active,
-            "slug": obj.product.slug,
-            "short_code": (
-                obj.product.short_code if hasattr(obj.product, "short_code") else None
-            ),
+    def get_ratings(self, obj):
+        """Get ratings from annotated fields"""
+        return {
+            "average": getattr(obj, "avg_rating_db", 0),
+            "total": getattr(obj, "ratings_count_db", 0),
+            "verified_count": getattr(obj, "verified_ratings_count", 0),
+            "distribution": {
+                "5": getattr(obj, "five_star_count", 0),
+                "4": getattr(obj, "four_star_count", 0),
+                "3": getattr(obj, "three_star_count", 0),
+                "2": getattr(obj, "two_star_count", 0),
+                "1": getattr(obj, "one_star_count", 0),
+            },
         }
-
-        if request and primary_image and primary_image.image:
-            details["image_url"] = request.build_absolute_uri(primary_image.image.url)
-
-        return details
-
-    def get_breadcrumbs(self, obj):
-        breadcrumb_data = BreadcrumbService.generate_watchlist_breadcrumbs(obj)
-        return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
 
 class ProductWatchlistItemCreateSerializer(TimestampedModelSerializer):
-    """Serializer for adding a product to watchlist."""
+    """Serializer for creating watchlist items."""
+
+    product_id = serializers.UUIDField(write_only=True)
 
     class Meta:
         model = ProductWatchlistItem
-        fields = ["product"]
+        fields = ["product_id"]
 
-    def validate_product(self, value):
-        """
-        Validate that:
-        1. The product exists and is active
-        2. The user isn't already watching this product
-        """
-        user = self.context["request"].user
-
-        # Check if product is active
-        if not value.is_active:
-            raise serializers.ValidationError(
-                "Cannot add inactive product to watchlist."
-            )
-
-        # Check if already in watchlist
-        if ProductWatchlistItem.objects.filter(user=user, product=value).exists():
-            raise serializers.ValidationError(
-                "This product is already in your watchlist."
-            )
-
-        return value
+    def validate_product_id(self, value):
+        """Validate that the product exists and is active."""
+        try:
+            # Just validate the product exists, but return the UUID value
+            Product.objects.get(id=value, is_active=True, status="active")
+            return value  # Return the UUID, not the product object
+        except Product.DoesNotExist:
+            raise serializers.ValidationError("Product not found or inactive")
 
     def create(self, validated_data):
-        """Add the current user to the watchlist item."""
+        """Create watchlist item with proper user assignment."""
+        print(validated_data)
+
+        # Get the product object using the validated product_id
+        product = Product.objects.get(id=validated_data.pop("product_id"))
+
         validated_data["user"] = self.context["request"].user
+        validated_data["product"] = product
+
         return super().create(validated_data)
+
+
+class ProductWatchlistItemListSerializer(TimestampedModelSerializer):
+    """Serializer for listing watchlist items with minimal product info."""
+
+    product = serializers.SerializerMethodField()
+    added_at = serializers.DateTimeField(read_only=True, format="%Y-%m-%d %H:%M:%S")
+    days_in_watchlist = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductWatchlistItem
+        fields = ["id", "product", "added_at", "days_in_watchlist"]
+        read_only_fields = ["id", "added_at"]
+
+    def get_days_in_watchlist(self, obj) -> int:
+        """Calculate days since item was added to watchlist."""
+        from datetime import datetime
+
+        if obj.added_at:
+            delta = datetime.now() - obj.added_at.replace(tzinfo=None)
+            return delta.days
+        return 0
+
+    def get_product(self, obj):
+        # Try the prefetched list first
+        pref = getattr(obj, "prefetched_product", None)
+
+        if isinstance(pref, list):
+            prod = pref[0] if pref else None
+        elif pref is not None:
+            # could be a single Product
+            prod = pref
+        else:
+            # fallback to the FK
+            prod = obj.product
+
+        if not prod:
+            return None
+
+        return ProductListSerializer(prod, context=self.context).data
+
+
+class ProductWatchlistItemDetailSerializer(TimestampedModelSerializer):
+    """Detailed serializer for individual watchlist items."""
+
+    product = ProductListSerializer(read_only=True)
+    user = serializers.StringRelatedField(read_only=True)
+    added_at = serializers.DateTimeField(read_only=True, format="%Y-%m-%d %H:%M:%S")
+    days_in_watchlist = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductWatchlistItem
+        fields = ["id", "user", "product", "added_at", "days_in_watchlist"]
+        read_only_fields = fields
+
+    def get_days_in_watchlist(self, obj) -> int:
+        """Calculate days since item was added to watchlist."""
+        from datetime import datetime
+
+        if obj.added_at:
+            delta = datetime.now() - obj.added_at.replace(tzinfo=None)
+            return delta.days
+        return 0
 
 
 class ProductWatchlistBulkSerializer(serializers.Serializer):
     """Serializer for bulk watchlist operations."""
 
-    product_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
-    action = serializers.ChoiceField(choices=["add", "remove"])
+    OPERATION_CHOICES = [
+        ("add", "Add products to watchlist"),
+        ("remove", "Remove products from watchlist"),
+    ]
+
+    # product = resolver.get_model("apps.products.product_base", "Product")
+
+    operation = serializers.ChoiceField(
+        choices=OPERATION_CHOICES, help_text="Operation to perform: 'add' or 'remove'"
+    )
+    product_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        min_length=1,
+        max_length=100,
+        help_text="List of product IDs (max 100)",
+    )
+    validate_products = serializers.BooleanField(
+        default=True,
+        help_text="Whether to validate that all products exist and are active",
+    )
 
     def validate_product_ids(self, value):
-        """Validate that all product IDs exist."""
-        from apps.products.product_base.models import Product
+        """Validate product IDs and remove duplicates."""
+        if not value:
+            raise serializers.ValidationError("At least one product ID is required")
 
-        # Check if all products exist
-        existing_products = Product.objects.filter(id__in=value, is_active=True)
-        if len(existing_products) != len(value):
+        # Remove duplicates while preserving order
+        unique_ids = list(dict.fromkeys(value))
+
+        if len(unique_ids) > 100:
             raise serializers.ValidationError(
-                "One or more product IDs are invalid or inactive."
+                "Maximum 100 products allowed per operation"
             )
 
-        return value
+        return unique_ids
 
-    def save(self):
-        """Perform bulk add or remove operations."""
-        user = self.context["request"].user
-        product_ids = self.validated_data["product_ids"]
-        action = self.validated_data["action"]
+    def validate(self, attrs):
+        """Validate the bulk operation request."""
+        # product = resolver.get_model("apps.products.product_base", "Product")
+        validate_products = attrs.get("validate_products", True)
+        product_ids = attrs.get("product_ids", [])
 
-        from apps.products.product_base.models import Product
-
-        if action == "add":
-            # Get products that aren't already in the watchlist
-            existing_watchlist = ProductWatchlistItem.objects.filter(
-                user=user, product_id__in=product_ids
-            ).values_list("product_id", flat=True)
-
-            products_to_add = Product.objects.filter(id__in=product_ids).exclude(
-                id__in=existing_watchlist
+        if validate_products and product_ids:
+            # Check if all products exist and are active
+            existing_products = set(
+                Product.objects.filter(id__in=product_ids, is_active=True).values_list(
+                    "id", flat=True
+                )
             )
 
-            # Bulk create new watchlist items
-            watchlist_items = [
-                ProductWatchlistItem(user=user, product=product)
-                for product in products_to_add
-            ]
+            missing_products = set(product_ids) - existing_products
+            if missing_products:
+                raise serializers.ValidationError(
+                    {
+                        "product_ids": f"Products not found or inactive: {list(missing_products)}"
+                    }
+                )
 
-            if watchlist_items:
-                return ProductWatchlistItem.objects.bulk_create(watchlist_items)
-
-        elif action == "remove":
-            # Delete watchlist items for these products
-            items_to_delete = ProductWatchlistItem.objects.filter(
-                user=user, product_id__in=product_ids
-            )
-
-            count = items_to_delete.count()
-            items_to_delete.delete()
-
-            return {"removed_count": count}
-
-        return {"message": "No changes made"}
+        return attrs
 
 
 class WatchlistStatsSerializer(serializers.Serializer):
     """Serializer for watchlist statistics."""
 
     total_items = serializers.IntegerField()
-    recently_added = serializers.ListField(child=serializers.IntegerField())
-    most_watched_categories = serializers.ListField(
-        child=serializers.DictField(child=serializers.IntegerField())
+    recently_added = serializers.ListField(
+        child=serializers.UUIDField(), help_text="Product IDs of recently added items"
     )
+    most_watched_categories = serializers.ListField(
+        child=serializers.DictField(),
+        help_text="Categories with highest watchlist counts",
+    )
+    oldest_item_date = serializers.DateTimeField(
+        allow_null=True, format="%Y-%m-%d %H:%M:%S"
+    )
+    newest_item_date = serializers.DateTimeField(
+        allow_null=True, format="%Y-%m-%d %H:%M:%S"
+    )
+    categories_count = serializers.IntegerField()
+
+    def to_representation(self, instance):
+        """Convert WatchlistStats dataclass to dict."""
+        if hasattr(instance, "__dict__"):
+            # Handle dataclass instance
+            return {
+                "total_items": instance.total_items,
+                "recently_added": [str(pid) for pid in instance.recently_added],
+                "most_watched_categories": instance.most_watched_categories,
+                "oldest_item_date": instance.oldest_item_date,
+                "newest_item_date": instance.newest_item_date,
+                "categories_count": instance.categories_count,
+            }
+        return super().to_representation(instance)
+
+
+class WatchlistInsightsSerializer(serializers.Serializer):
+    """Serializer for advanced watchlist insights."""
+
+    total_items = serializers.IntegerField()
+    recent_activity = serializers.DictField(help_text="Recent activity breakdown")
+    category_distribution = serializers.ListField(
+        child=serializers.DictField(), help_text="Distribution of products by category"
+    )
+    activity_summary = serializers.CharField(
+        help_text="Human-readable activity summary"
+    )
+    recommendations = serializers.ListField(
+        child=serializers.CharField(), help_text="Personalized recommendations"
+    )
+
+
+class WatchlistOperationResultSerializer(serializers.Serializer):
+    """Serializer for watchlist operation results."""
+
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+    status = serializers.CharField()
+    affected_count = serializers.IntegerField(default=0)
+    errors = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
+
+    def to_representation(self, instance):
+        """Convert WatchlistOperationResult dataclass to dict."""
+        if hasattr(instance, "__dict__"):
+            # Handle dataclass instance
+            return {
+                "success": instance.success,
+                "message": instance.message,
+                "status": instance.status,
+                "affected_count": instance.affected_count,
+                "errors": instance.errors or [],
+            }
+        return super().to_representation(instance)
+
+
+class WatchlistToggleSerializer(serializers.Serializer):
+    """Serializer for toggle operations."""
+
+    product_id = serializers.UUIDField(help_text="Product ID to toggle in watchlist")
+
+    def validate_product_id(self, value):
+        """Validate that the product exists and is active."""
+        # product = resolver.get_model("apps.products.product_base", "Product")
+        try:
+            Product.objects.get(id=value, is_active=True)
+            return value
+        except Product.DoesNotExist:
+            raise serializers.ValidationError("Product not found or inactive")
+
+
+class WatchlistCheckSerializer(serializers.Serializer):
+    """Serializer for checking if product is in watchlist."""
+
+    in_watchlist = serializers.BooleanField()
+    product_id = serializers.UUIDField()
+
+
+class ProductWatchlistCountSerializer(serializers.Serializer):
+    """Serializer for product watchlist count (staff only)."""
+
+    product_id = serializers.UUIDField()
+    watchlist_count = serializers.IntegerField()
+    timestamp = serializers.DateTimeField(
+        format="%Y-%m-%d %H:%M:%S", help_text="Timestamp when count was retrieved"
+    )
+
+
+# Admin/Staff serializers
+class WatchlistItemAdminSerializer(TimestampedModelSerializer):
+    """Admin serializer with full details."""
+
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_price = serializers.DecimalField(
+        source="product.price", read_only=True, max_digits=10, decimal_places=2
+    )
+    category_name = serializers.CharField(
+        source="product.category.name", read_only=True
+    )
+
+    class Meta:
+        model = ProductWatchlistItem
+        fields = [
+            "id",
+            "user",
+            "user_email",
+            "product",
+            "product_name",
+            "product_price",
+            "category_name",
+            "added_at",
+        ]
+        read_only_fields = fields
+
+
+class WatchlistAnalyticsSerializer(serializers.Serializer):
+    """Serializer for advanced analytics (staff only)."""
+
+    total_users_with_watchlists = serializers.IntegerField()
+    total_watchlist_items = serializers.IntegerField()
+    average_watchlist_size = serializers.FloatField()
+    most_watched_products = serializers.ListField(child=serializers.DictField())
+    watchlist_growth = serializers.DictField(help_text="Growth statistics over time")
+    category_popularity = serializers.ListField(child=serializers.DictField())
+    user_engagement = serializers.DictField(help_text="User engagement metrics")

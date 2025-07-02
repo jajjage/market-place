@@ -4,7 +4,7 @@ from .views import ProductWatchlistViewSet
 
 
 router = DefaultRouter()
-router.register(r"watchlist", ProductWatchlistViewSet, basename="watchlist")
+router.register(r"watchlists", ProductWatchlistViewSet, basename="watchlist")
 
 urlpatterns = [
     path("", include(router.urls)),

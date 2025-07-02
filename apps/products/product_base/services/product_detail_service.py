@@ -1,11 +1,16 @@
 import logging
-from django.db import models
-from django.db.models import Avg, Count, Q, Prefetch
+from django.db.models import Prefetch, Avg, Count, Q, F, Exists, OuterRef
+from apps.products.product_base.models import Product
+from apps.products.product_rating.models import ProductRating
+from apps.products.product_detail.models import ProductDetail  # your “detail” model
+from apps.products.product_image.models import ProductImage
+from apps.products.product_variant.models import ProductVariant
+from apps.products.product_watchlist.models import ProductWatchlistItem
+from apps.transactions.models import EscrowTransaction
 from django.contrib.auth import get_user_model
 
 from django.core.cache import cache
 from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
-from apps.products.product_base.models import Product
 from apps.products.product_base.serializers import ProductDetailSerializer
 from rest_framework import status
 
@@ -72,100 +77,98 @@ class ProductDetailService:
 
     @staticmethod
     def get_base_product_queryset():
-        """Base queryset with common optimizations"""
         return Product.objects.select_related(
             "brand",
             "category",
             "condition",
             "seller",
-            "seller__profile",  # If you have user profiles
+            "seller__profile",
+            "meta",
         )
 
     @staticmethod
     def get_product_detail_queryset(request):
-        """Comprehensive queryset for product detail view"""
-        from apps.products.product_rating.models import ProductRating
+        base = ProductDetailService.get_base_product_queryset()
 
-        base_queryset = ProductDetailService.get_base_product_queryset()
-
-        # Prefetch ratings with users and helpfulness votes
-        detailed_ratings_prefetch = Prefetch(
+        # Approved ratings
+        ratings_qs = ProductRating.objects.filter(is_approved=True).select_related(
+            "user"
+        )
+        detailed_ratings = Prefetch(
             "ratings",
-            queryset=ProductRating.objects.filter(is_approved=True)
-            .select_related("user")
-            .prefetch_related("helpfulness_votes")
-            .order_by("-created_at"),
+            queryset=ratings_qs.order_by("-created_at"),
             to_attr="approved_ratings",
         )
 
-        # Prefetch user's own rating if authenticated
-        user_rating_prefetch = None
+        # This user's own rating
+        user_rating = None
         if request.user.is_authenticated:
-            user_rating_prefetch = Prefetch(
+            user_rating = Prefetch(
                 "ratings",
-                queryset=ProductRating.objects.filter(
-                    user=request.user, is_approved=True
-                ).select_related("user"),
+                queryset=ratings_qs.filter(user=request.user),
                 to_attr="user_rating",
             )
 
-        queryset = base_queryset.prefetch_related(
+        # ProductDetail extras
+        details_prefetch = Prefetch(
+            "product_details",
+            queryset=ProductDetail.objects.select_related("template"),
+            to_attr="prefetched_details",
+        )
+
+        # Primary image only
+        primary_image = Prefetch(
             "images",
-            "variants__images",  # If variants have images
-            "variants__options",  # If you have variant attributes
+            queryset=ProductImage.objects.filter(is_active=True, is_primary=True),
+            to_attr="primary_images",
+        )
+
+        # Watchlist items for this user
+        watch_prefetch = Prefetch(
             "watchers",
-            "meta",
-            detailed_ratings_prefetch,
-            "rating_aggregate",
-            # Related products if you have them
-            "category__products",
-            "brand__products",
+            queryset=ProductWatchlistItem.objects.filter(user=request.user),
+            to_attr="prefetched_watchlist",
+        )
+
+        # Variants + their options/images
+        variant_opts = Prefetch("options", to_attr="prefetched_variant_options")
+        variant_imgs = Prefetch("images", to_attr="prefetched_variant_images")
+        variant_prefetch = Prefetch(
+            "variants",
+            queryset=ProductVariant.objects.prefetch_related(
+                variant_opts, variant_imgs
+            ),
+            to_attr="prefetched_variants",
+        )
+
+        purchase_exists = Exists(
+            EscrowTransaction.objects.filter(
+                product=OuterRef("pk"),
+                buyer=request.user,
+                status="completed",
+            )
+        )
+
+        qs = base.prefetch_related(
+            detailed_ratings,
+            *([user_rating] if user_rating else []),
+            details_prefetch,
+            primary_image,
+            watch_prefetch,
+            variant_prefetch,
         ).annotate(
-            # Comprehensive rating annotations
             avg_rating_db=Avg("ratings__rating", filter=Q(ratings__is_approved=True)),
             ratings_count_db=Count("ratings", filter=Q(ratings__is_approved=True)),
             verified_ratings_count=Count(
                 "ratings",
                 filter=Q(ratings__is_approved=True, ratings__is_verified_purchase=True),
             ),
-            # Rating breakdown
-            five_star_count=Count(
-                "ratings", filter=Q(ratings__rating=5, ratings__is_approved=True)
-            ),
-            four_star_count=Count(
-                "ratings", filter=Q(ratings__rating=4, ratings__is_approved=True)
-            ),
-            three_star_count=Count(
-                "ratings", filter=Q(ratings__rating=3, ratings__is_approved=True)
-            ),
-            two_star_count=Count(
-                "ratings", filter=Q(ratings__rating=2, ratings__is_approved=True)
-            ),
-            one_star_count=Count(
-                "ratings", filter=Q(ratings__rating=1, ratings__is_approved=True)
-            ),
-            # User engagement metrics
             watchers_count=Count("watchers", distinct=True),
-            total_views=models.F("meta__views_count"),
+            total_views=F("meta__views_count"),
+            user_has_purchased=purchase_exists,
         )
 
-        # Add authenticated user specific annotations
-        if request.user.is_authenticated:
-            queryset = queryset.annotate(
-                user_has_purchased=Count(
-                    "escrow_transactions",
-                    filter=Q(
-                        escrow_transactions__buyer=request.user,
-                        escrow_transactions__status="completed",
-                    ),
-                ),
-            )
-
-        # Add user's rating prefetch if authenticated
-        if user_rating_prefetch:
-            queryset = queryset.prefetch_related(user_rating_prefetch)
-
-        return queryset
+        return qs
 
     @staticmethod
     def get_related_products_queryset(product):

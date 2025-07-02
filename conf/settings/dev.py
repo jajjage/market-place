@@ -474,6 +474,17 @@ CACHE_KEY_TEMPLATES = {
         # Wildcard patterns for bulk deletion
         "all_ratings": "ratings:*",  # For all ratings
     },
+    "watchlist": {
+        "stats": "watchlist:stats:user:{user_id}",
+        "recently_added": "watchlist:recently_added:user:{user_id}",
+        "insights": "watchlist:insights:user:{user_id}",
+        "most_watched_categories": "watchlist:most_watched_categories:user:{user_id}",
+        "check_product": "watchlist:check_product:user:{user_id}:product:{product_id}",
+        "by_product": "watchlist:by_product:product:{product_id}",
+        "product_count": "watchlist:product_count:product:{product_id}",
+        "toggle_product": "watchlist:toggle_product:user:{user_id}:product:{product_id}",
+        # Wildcard patterns for bulk deletion
+    },
     # …add new resources here as needed…
 }
 

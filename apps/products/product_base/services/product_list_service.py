@@ -1,5 +1,4 @@
-from django.db import models
-from django.db.models import Avg, Count, Q, Prefetch
+from django.db.models import Avg, Count, Q, F, Prefetch
 
 # from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -14,6 +13,7 @@ from apps.core.utils.cache_manager import CacheManager
 # from apps.products.product_breadcrumb.models import Breadcrumb
 from django_redis import get_redis_connection
 
+from apps.products.product_image.models import ProductImage
 from apps.products.product_rating.models import ProductRating
 
 logger = logging.getLogger("products_performance")
@@ -100,13 +100,15 @@ class ProductListService:
         Returns:
             Optimized queryset with select_related and prefetch_related
         """
+
         base_queryset = queryset.select_related(
             "brand",
             "category",
             "condition",
             "seller",
-            "seller__profile",
+            "seller__profile",  # if seller→profile is 1:1
         )
+
         approved_ratings_prefetch = Prefetch(
             "ratings",
             queryset=ProductRating.objects.filter(is_approved=True).select_related(
@@ -114,26 +116,32 @@ class ProductListService:
             ),
             to_attr="approved_ratings",
         )
-        return base_queryset.prefetch_related(
+
+        # If you only ever show the primary image, you can do a filtered Prefetch:
+        primary_images_prefetch = Prefetch(
             "images",
-            "variants",
-            "watchers",
-            "meta",
+            queryset=ProductImage.objects.filter(is_active=True, is_primary=True),
+            to_attr="primary_images",
+        )
+
+        optimized_qs = base_queryset.prefetch_related(
+            primary_images_prefetch,
+            "variants",  # if you list variants
+            # "watchers",        # you probably don’t need this if you only use watchers_count
             approved_ratings_prefetch,
-            # Prefetch rating aggregate for efficiency
-            "rating_aggregate",
+            # "meta",           # if meta is OneToOneField you can select_related it instead
         ).annotate(
-            # Add aggregated rating fields for list view
             avg_rating_db=Avg("ratings__rating", filter=Q(ratings__is_approved=True)),
             ratings_count_db=Count("ratings", filter=Q(ratings__is_approved=True)),
             verified_ratings_count=Count(
                 "ratings",
                 filter=Q(ratings__is_approved=True, ratings__is_verified_purchase=True),
             ),
-            # Add useful counts for sorting/filtering
-            total_views=models.F("meta__views_count"),  # If you track views
             watchers_count=Count("watchers", distinct=True),
+            total_views=F("meta__views_count"),  # if meta is 1:1
         )
+
+        return optimized_qs
 
     @staticmethod
     def _generate_list_cache_key(request, version="v1"):

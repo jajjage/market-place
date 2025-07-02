@@ -11,7 +11,6 @@ from apps.core.serializers import (
     UserShortSerializer,
 )
 from apps.core.utils.breadcrumbs import BreadcrumbService
-from apps.products.product_brand.services import BrandService
 from apps.products.product_brand.models import Brand
 from apps.products.product_condition.models import ProductCondition
 from apps.products.product_image.services import ProductImageService
@@ -21,7 +20,10 @@ from apps.products.product_condition.serializers import ProductConditionDetailSe
 from apps.products.product_image.serializers import ProductImageSerializer
 
 from apps.products.product_variant.serializers import ProductVariantSerializer
-from apps.products.product_brand.serializers import BrandListSerializer
+from apps.products.product_brand.serializers import (
+    BrandDetailSerializer,
+    BrandListSerializer,
+)
 from apps.products.product_watchlist.serializers import (
     ProductWatchlistItemListSerializer,
 )
@@ -29,8 +31,6 @@ from apps.products.product_metadata.serializers import ProductMetaDetailSerializ
 from apps.products.product_detail.serializers import (
     ProductDetailSerializer as ProductExtraDetailSerializer,
 )
-from apps.products.product_variant.services import ProductVariantService
-from apps.products.product_detail.services import ProductDetailService
 
 
 class ProductCreateSerializer(TimestampedModelSerializer):
@@ -172,16 +172,19 @@ class ProductListSerializer(TimestampedModelSerializer):
         return UserShortSerializer(profile_obj, context=self.context).data
 
     def get_image_url(self, obj):
-        request = self.context.get("request")
-        primary_image = ProductImageService.get_primary_image(obj.id)
-        if primary_image and primary_image.image_url:
-            # Try to build absolute URL if request is available
-            if request:
-                return request.build_absolute_uri(primary_image.image_url)
-            else:
-                # Fallback to relative URL or build manually
-                return primary_image.image_url
-                # Or build manually: f"http://your-domain.com{primary_image.image_url}"
+        # 1) Did we already prefetch primary_images?
+        imgs = getattr(obj, "primary_images", None)
+        if imgs is not None:
+            img = imgs[0] if imgs else None
+        else:
+            # 2) fallback to the old service method (one extra query)
+            img = ProductImageService.get_primary_image(obj.id)
+
+        if img and img.image_url:
+            request = self.context.get("request")
+            return (
+                request.build_absolute_uri(img.image_url) if request else img.image_url
+            )
 
         return None
 
@@ -197,13 +200,6 @@ class ProductListSerializer(TimestampedModelSerializer):
             "average": getattr(obj, "avg_rating_db", 0),
             "total": getattr(obj, "ratings_count_db", 0),
             "verified_count": getattr(obj, "verified_ratings_count", 0),
-            "distribution": {
-                "5": getattr(obj, "five_star_count", 0),
-                "4": getattr(obj, "four_star_count", 0),
-                "3": getattr(obj, "three_star_count", 0),
-                "2": getattr(obj, "two_star_count", 0),
-                "1": getattr(obj, "one_star_count", 0),
-            },
         }
 
 
@@ -215,7 +211,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
 
     # brand_detail = serializers.SerializerMethodField(read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
-    variant_summary = serializers.SerializerMethodField()
+    # variant_summary = serializers.SerializerMethodField()
 
     # Write-only for variant creation
     variant_combinations = serializers.ListField(
@@ -290,7 +286,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "location",
             "description",
             "variants",
-            "variant_summary",
+            # "variant_summary",
             "variant_combinations",
             "auto_generate_variants",
             "base_variant_price",
@@ -315,19 +311,19 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         profile_obj = obj.seller
         return UserShortSerializer(profile_obj, context=self.context).data
 
-    def get_variant_summary(self, obj):
-        """Get variant summary with statistics"""
-        return {
-            "total_variants": getattr(obj, "total_variants", 0),
-            "available_variants": getattr(obj, "available_variants", 0),
-            "price_range": {
-                "min": getattr(obj, "min_variant_price", None),
-                "max": getattr(obj, "max_variant_price", None),
-                "avg": getattr(obj, "avg_variant_price", None),
-            },
-            "total_stock": getattr(obj, "total_stock", 0),
-            "variant_types": getattr(obj, "variant_types", []),
-        }
+    # def get_variant_summary(self, obj):
+    #     """Get variant summary with statistics"""
+    #     return {
+    #         "total_variants": getattr(obj, "total_variants", 0),
+    #         "available_variants": getattr(obj, "available_variants", 0),
+    #         "price_range": {
+    #             "min": getattr(obj, "min_variant_price", None),
+    #             "max": getattr(obj, "max_variant_price", None),
+    #             "avg": getattr(obj, "avg_variant_price", None),
+    #         },
+    #         "total_stock": getattr(obj, "total_stock", 0),
+    #         "variant_types": getattr(obj, "variant_types", []),
+    #     }
 
     def get_discount_percent(self, obj):
         if obj.original_price and obj.price < obj.original_price:
@@ -339,79 +335,61 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         """Get the number of users watching this product"""
         return obj.watchers.count()
 
-    def get_variants(self, obj):
-        # Use ProductVariantService to get real variants for this product
-        variants = ProductVariantService.get_product_variants(obj.id, with_options=True)
-        result = []
-        for variant in variants:
-            options = [
-                {
-                    "type": opt.variant_type.name,
-                    "value": opt.value,
-                    "slug": opt.slug,
-                }
-                for opt in variant.options.all()
-            ]
-            result.append(
-                {
-                    "id": variant.id,
-                    "sku": variant.sku,
-                    "price": str(variant.price) if variant.price is not None else None,
-                    "stock_quantity": variant.total_inventory,
-                    "available_quantity": variant.available_inventory,
-                    "in_escrow_quantity": variant.in_escrow_inventory,
-                    "is_active": variant.is_active,
-                    "options": options,
-                }
-            )
-        result.append(
-            {
-                "total_variants": len(variants),
-            }
-        )
-        return result
-
-    def get_details(self, obj):
-        # Use ProductDetailService to get all details for this product
-        details = ProductDetailService.get_product_details(obj.id)
-        return ProductExtraDetailSerializer(details, many=True).data
-
     def get_breadcrumbs(self, obj):
         service = BreadcrumbService()
         breadcrumb_data = service.for_product(obj, include_brand=True)
         return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
-    def get_metadata(self, obj):
-        meta = getattr(obj, "meta", None)
-        if not meta:
-            from apps.products.product_metadata.models import ProductMeta
-
-            meta = ProductMeta.objects.filter(product=obj).first()
-        if meta:
-            return ProductMetaDetailSerializer(meta).data
-        return None
-
     def get_watchlist_items(self, obj):
-        request = self.context.get("request", None)
-        if not request or not request.user.is_authenticated:
-            return []
-        from apps.products.product_watchlist.models import ProductWatchlistItem
-
-        items = ProductWatchlistItem.objects.filter(product=obj, user=request.user)
+        items = getattr(obj, "prefetched_watchlist", [])
         return ProductWatchlistItemListSerializer(
             items, many=True, context=self.context
         ).data
 
     def get_brand_detail(self, obj):
-        brand = BrandService.get_brand_detail(obj.brand_id)
+        brand = getattr(obj, "brand", None)
+        return (
+            BrandDetailSerializer(brand, context=self.context).data if brand else None
+        )
 
-        return brand if brand else None
+    def get_metadata(self, obj):
+        meta = getattr(obj, "meta", None)
+        return (
+            ProductMetaDetailSerializer(meta, context=self.context).data
+            if meta
+            else None
+        )
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        # Convert condition object to string
-        data["condition"] = instance.condition.name
-        return data
+    def get_details(self, obj):
+        details = getattr(obj, "prefetched_details", [])
+        return ProductExtraDetailSerializer(
+            details, many=True, context=self.context
+        ).data
+
+    def get_variants(self, obj):
+        variants = getattr(obj, "prefetched_variants", [])
+        out = []
+        for v in variants:
+            opts = [
+                {"type": o.variant_type.name, "value": o.value, "slug": o.slug}
+                for o in getattr(v, "prefetched_variant_options", [])
+            ]
+            imgs = [i.image_url for i in getattr(v, "prefetched_variant_images", [])]
+            out.append(
+                {
+                    "id": v.id,
+                    "sku": v.sku,
+                    "price": str(v.price) if v.price is not None else None,
+                    "stock_quantity": v.total_inventory,
+                    "available_quantity": v.available_inventory,
+                    "in_escrow_quantity": v.in_escrow_inventory,
+                    "is_active": v.is_active,
+                    "options": opts,
+                    "images": imgs,
+                }
+            )
+        out.append({"total_variants": len(variants)})
+        return out
 
     def get_ratings(self, obj):
         """Get ratings from annotated fields"""
@@ -435,6 +413,12 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         if request and request.user.is_authenticated:
             return getattr(obj, "user_has_purchased", 0) > 0
         return None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Convert condition object to string
+        data["condition"] = instance.condition.name
+        return data
 
 
 class ProductStatsSerializer(TimestampedModelSerializer):
