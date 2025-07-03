@@ -99,6 +99,7 @@
         "smembers",
         "sorl",
         "srem",
+        "testpass",
         "tranx",
         "vertexai",
         "viewset",

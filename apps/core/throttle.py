@@ -1,6 +1,5 @@
 from django.core.cache import cache
 from rest_framework.throttling import UserRateThrottle
-from rest_framework.exceptions import Throttled
 import time
 import logging
 

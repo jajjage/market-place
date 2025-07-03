@@ -177,6 +177,8 @@ REST_FRAMEWORK = {
         "negotiation": "20/min",  # 20 negotiation actions per min
         "negotiation_initiate": "5/min",  # 5 new negotiations per min
         "negotiation_respond": "30/min",
+        "rating_create": "10/hour",
+        "rating_view": "100/hour",
     },
 }
 

@@ -485,6 +485,15 @@ CACHE_KEY_TEMPLATES = {
         "toggle_product": "watchlist:toggle_product:user:{user_id}:product:{product_id}",
         # Wildcard patterns for bulk deletion
     },
+    "rating": {
+        "detail": "ratings:detail:{id}",
+        "list": "ratings:list:user_id:{user_id}:page:{page}",
+        "eligibility": "ratings:eligibility:buyer_id:{buyer_id}:seller_id:{seller_id}",
+        "pending": "ratings:pending:user_id:{user_id}",
+        "aggregate": "ratings:aggregate:{product_id}",
+        "can_rate": "ratings:can_rate:{product_id}",
+        "recent": "ratings:recent:limit:{limit}",
+    },
     # …add new resources here as needed…
 }
 

@@ -10,6 +10,30 @@ class EscrowTransaction(BaseModel):
     with the associated product and status
     """
 
+    STATUS_INITIATED = "initiated"
+    STATUS_PAYMENT_RECEIVED = "payment_received"
+    STATUS_SHIPPED = "shipped"
+    STATUS_DELIVERED = "delivered"
+    STATUS_INSPECTION = "inspection"
+    STATUS_DISPUTED = "disputed"
+    STATUS_COMPLETED = "completed"
+    STATUS_REFUNDED = "refunded"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_FUNDS_RELEASED = "funds_released"
+
+    STATUS_CHOICES = [
+        (STATUS_INITIATED, "Initiated"),
+        (STATUS_PAYMENT_RECEIVED, "Payment Received"),
+        (STATUS_SHIPPED, "Shipped"),
+        (STATUS_DELIVERED, "Delivered"),
+        (STATUS_INSPECTION, "In Inspection"),
+        (STATUS_DISPUTED, "Disputed"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_REFUNDED, "Refunded"),
+        (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_FUNDS_RELEASED, "Funds Released"),
+    ]
+
     # Existing fields shown for context
     product = models.ForeignKey(
         "product_base.Product",
@@ -37,21 +61,8 @@ class EscrowTransaction(BaseModel):
     quantity = models.IntegerField(default=1)
     currency = models.CharField(max_length=3, default="USD")
 
-    # Status tracking
-    STATUS_CHOICES = [
-        ("initiated", "Initiated"),
-        ("payment_received", "Payment Received"),
-        ("shipped", "Shipped"),
-        ("delivered", "Delivered"),
-        ("inspection", "In Inspection"),
-        ("disputed", "Disputed"),
-        ("completed", "Completed"),
-        ("refunded", "Refunded"),
-        ("cancelled", "Cancelled"),
-        ("funds_released", "Funds Released"),
-    ]
     status = models.CharField(
-        max_length=20, choices=STATUS_CHOICES, default="initiated"
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_INITIATED
     )
 
     # Tracking number info

@@ -237,7 +237,7 @@ class EscrowTransactionService:
 
         # Set completion timestamp
         if status == "completed":
-            escrow_transaction.completed_at = timezone.now()
+            escrow_transaction.status_changed_at = timezone.now()
 
         # Set fund release timestamp
         if status == "funds_released":

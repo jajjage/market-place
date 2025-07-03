@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 from django.db.models import Sum
-from apps.comments.serializers import UserRatingSerializer
+from apps.comments.serializers import RatingListSerializer
 from apps.core.serializers import TimestampedModelSerializer, get_timestamp_fields
 from apps.disputes.serializers import DisputeSerializer
 from apps.store.serializers import UserStoreSerializer
@@ -153,7 +153,7 @@ class UserSerializer(TimestampedModelSerializer):
     profile = UserProfileSerializer(required=False)
     store = UserStoreSerializer(required=False)
     addresses = UserAddressSerializer(many=True, required=False)
-    received_ratings = UserRatingSerializer(
+    received_ratings = RatingListSerializer(
         many=True, read_only=True
     )  # Always read-only for security
 
