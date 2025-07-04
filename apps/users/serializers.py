@@ -4,7 +4,7 @@ from rest_framework import serializers
 from django.db.models import Sum
 from apps.comments.serializers import RatingListSerializer
 from apps.core.serializers import TimestampedModelSerializer, get_timestamp_fields
-from apps.disputes.serializers import DisputeSerializer
+from apps.disputes.serializers import DisputeListSerializer
 from apps.store.serializers import UserStoreSerializer
 from apps.users.models import CustomUser, UserProfile
 from apps.users.models.user_address import UserAddress
@@ -157,7 +157,9 @@ class UserSerializer(TimestampedModelSerializer):
         many=True, read_only=True
     )  # Always read-only for security
 
-    disputes = DisputeSerializer(many=True, read_only=True, source="opened_disputes")
+    disputes = DisputeListSerializer(
+        many=True, read_only=True, source="opened_disputes"
+    )
     transaction_history = TransactionHistorySerializer(
         many=True, read_only=True, source="created_transaction_history"
     )

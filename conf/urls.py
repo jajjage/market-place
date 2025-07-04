@@ -1,3 +1,4 @@
+import os
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -36,15 +37,15 @@ urlpatterns = [
     path("api/v1/", include("apps.products.product_image.urls")),
 ]
 
-if env("DEBUG") == "True":
+if os.environ.get("DEBUG") == "True":
     import debug_toolbar
 
     urlpatterns += [
+        path("__debug__/", include(debug_toolbar.urls)),
         path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
         path(
             "api/schema/swagger-ui/",
             SpectacularSwaggerView.as_view(url_name="schema"),
             name="swagger-ui",
         ),
-        path("__debug__/", include(debug_toolbar.urls)),
     ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

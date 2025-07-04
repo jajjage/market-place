@@ -179,6 +179,7 @@ REST_FRAMEWORK = {
         "negotiation_respond": "30/min",
         "rating_create": "10/hour",
         "rating_view": "100/hour",
+        "dispute_create": "100/min",
     },
 }
 

@@ -1,3 +1,4 @@
+import socket
 from .base import *  # noqa
 from .base import REST_FRAMEWORK, MIDDLEWARE, INSTALLED_APPS
 import tempfile
@@ -122,9 +123,15 @@ STATIC_ROOT = tempfile.mkdtemp()
 # -----------------------------------------------------------------------------
 # Debug Toolbar
 # -----------------------------------------------------------------------------
+
+hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
 INSTALLED_APPS += ["debug_toolbar"]
-INTERNAL_IPS = ["127.0.0.1"]
+INTERNAL_IPS = ips + ["127.0.0.1"]
 MIDDLEWARE.insert(0, "debug_toolbar.middleware.DebugToolbarMiddleware")
+DEBUG_TOOLBAR_CONFIG = {
+    # always show, regardless of cookies or internal‐ips
+    "SHOW_TOOLBAR_CALLBACK": lambda request: True,
+}
 
 FRONTEND_DOMAIN = "http://localhost:3000"  # or whatever port you use for your frontend
 
@@ -157,6 +164,7 @@ PERFORMANCE_API_PREFIXES = {
     "/api/v1/categories": "categories",
     "/api/v1/products": "products",
     "/api/v1/variants": "variant",
+    "/api/v1/disputes": "disputes",
     # …add more as needed…
 }
 
@@ -493,6 +501,12 @@ CACHE_KEY_TEMPLATES = {
         "aggregate": "ratings:aggregate:{product_id}",
         "can_rate": "ratings:can_rate:{product_id}",
         "recent": "ratings:recent:limit:{limit}",
+    },
+    "dispute": {
+        "detail": "dispute:detail:{id}",
+        "user_list": "dispute:list:user_id:{user_id}:status:{status}",
+        "stats": "dispute:stats:user_id:{user_id}",
+        "open_disputes": "dispute:open:user_id:{user_id}",
     },
     # …add new resources here as needed…
 }
