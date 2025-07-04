@@ -4,7 +4,7 @@
 
 ### Linux ###
 *~
-conf/logs/
+safetrade/logs/
 # temporary files which can be created if a process still has a handle open of a deleted file
 .fuse_hidden*
 
@@ -13,8 +13,8 @@ conf/logs/
 /.devcontainer/.env
 # Linux trash folder which might appear on any partition or disk
 .Trash-*
-/conf/products
-/conf/settings/logs
+/safetrade/products
+/safetrade/settings/logs
 /media_root
 # .nfs files are created when an open file is removed but is still being accessed
 .nfs*

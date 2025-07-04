@@ -12,13 +12,13 @@ env = environ.Env()
 
 # set the default Django settings module for the 'celery' program.
 if env("DEBUG") == "True":
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "conf.settings.dev")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "safetrade.settings.dev")
 else:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "conf.settings.prod")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "safetrade.settings.prod")
     # os.environ.setdefault("DJANGO_SETTINGS_MODULE", "conf.settings.prod")
 # Set the default Django settings module for the 'celery' program.
 
-app = Celery("conf")  # worker
+app = Celery("safetrade")  # worker
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.

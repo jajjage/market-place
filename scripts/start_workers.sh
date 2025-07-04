@@ -4,7 +4,7 @@
 set -e
 
 # Configuration
-PROJECT_NAME="conf"
+PROJECT_NAME="safetrade"
 DJANGO_ENV=${DJANGO_ENV:-production}
 CELERY_WORKER_ENV=${CELERY_WORKER_ENV:-production}
 LOG_DIR="/var/log/celery"

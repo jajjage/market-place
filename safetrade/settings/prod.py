@@ -1,13 +1,6 @@
 from .base import *  # noqa
 import sentry_sdk
-
-
-import environ
-
-# Initialize environment variables
-env = environ.Env()
-root_path = environ.Path(__file__) - 3  # Adjust this based on your folder structure
-env.read_env(str(root_path.path(".env")))
+from .base import env, BASE_DIR
 
 # -----------------------------------------------------------------------------
 # Production Settings
@@ -19,8 +12,7 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 # -----------------------------------------------------------------------------
 # Databases for Production
 # -----------------------------------------------------------------------------
-DJANGO_DATABASE_URL = env.db("DATABASE_URL")
-DATABASES = {"default": DJANGO_DATABASE_URL}
+DATABASES = {"default": env.db("DATABASE_URL")}
 
 # -----------------------------------------------------------------------------
 # Email Configuration - Production
@@ -62,7 +54,7 @@ CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND")
 # -----------------------------------------------------------------------------
 # Static Files - Production
 # -----------------------------------------------------------------------------
-STATIC_ROOT = root_path("static_root")
+STATIC_ROOT = BASE_DIR / "static_root"
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
@@ -102,7 +94,7 @@ LOGGING = {
             "level": "INFO",
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": "file",
-            "filename": f"{root_path('logs')}/info.log",
+            "filename": f"{BASE_DIR / 'logs'}/info.log",
             "maxBytes": 1000000,
             "backupCount": 10,
         },
@@ -110,7 +102,7 @@ LOGGING = {
             "level": "ERROR",
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": "file",
-            "filename": f"{root_path('logs')}/error.log",
+            "filename": f"{BASE_DIR / 'logs'}/error.log",
             "maxBytes": 1000000,
             "backupCount": 10,
         },
@@ -128,3 +120,20 @@ LOGGING = {
         },
     },
 }
+
+
+# -----------------------------------------------------------------------------
+# Security Settings - Production
+# -----------------------------------------------------------------------------
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_SSL_REDIRECT = True
+SECURE_HSTS_SECONDS = 3600
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+JWT_AUTH_SECURE = True
+JWT_AUTH_SAMESITE = "Lax"

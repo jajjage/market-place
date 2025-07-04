@@ -1,26 +1,23 @@
+import environ
 from datetime import timedelta
 from pathlib import Path
 
 from corsheaders.defaults import default_headers
 import os
-from dotenv import load_dotenv
 
-# Initialize environment variables
-# Get the path to the .env file
-BASE_DIR = Path(__file__).resolve().parent.parent
-env_path = BASE_DIR / ".env"
-
-# Load the .env file
-load_dotenv(dotenv_path=env_path)
+# Initialize environment variables with django-environ
+env = environ.Env()
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
+
 
 
 # -----------------------------------------------------------------------------
 # Basic Config
 # -----------------------------------------------------------------------------
-ROOT_URLCONF = "conf.urls"
-WSGI_APPLICATION = "conf.wsgi.application"
-SECRET_KEY = os.environ.get(
+ROOT_URLCONF = "safetrade.urls"
+WSGI_APPLICATION = "safetrade.wsgi.application"
+SECRET_KEY = env(
     "DJANGO_SECRET_KEY", default="django-insecure-development-key-change-me"
 )
 # -----------------------------------------------------------------------------
@@ -68,29 +65,30 @@ INSTALLED_APPS = [
     "djoser",
     "social_django",
     # local apps
-    "apps.users",
-    "apps.core",
-    "apps.transactions",
-    "apps.notifications",
-    "apps.comments",
-    "apps.store",
-    "apps.disputes",
-    "apps.flutterwave",
-    "apps.categories",
-    "apps.auth.google",
-    "apps.auth.traditional",
-    "apps.monitoring",
-    "apps.products.product_base",
-    "apps.products.product_detail",
-    "apps.products.product_condition",
-    "apps.products.product_brand",
-    "apps.products.product_rating",
-    "apps.products.product_metadata",
-    "apps.products.product_negotiation",
-    "apps.products.product_watchlist",
-    "apps.products.product_variant",
-    "apps.products.product_inventory",
-    "apps.products.product_image",
+    "apps.users.apps.UsersConfig",
+    "apps.core.apps.CoreConfig",
+    "apps.transactions.apps.TransactionsConfig",
+    "apps.notifications.apps.NotificationsConfig",
+    "apps.comments.apps.CommentsConfig",
+    "apps.store.apps.StoreConfig",
+    "apps.disputes.apps.DisputesConfig",
+    "apps.flutterwave.apps.FlutterwaveConfig",
+    "apps.categories.apps.CategoriesConfig",
+    "apps.auth.google.apps.GoogleAuthConfig",
+    "apps.auth.traditional.apps.TraditionalAuthConfig",
+    "apps.monitoring.apps.MonitoringConfig",
+    "apps.products.product_base.apps.ProductBaseConfig",
+    "apps.products.product_brand.apps.ProductBrandConfig",
+    "apps.products.product_common.apps.ProductCommonConfig",
+    "apps.products.product_condition.apps.ProductConditionConfig",
+    "apps.products.product_detail.apps.ProductDetailConfig",
+    "apps.products.product_image.apps.ProductImageConfig",
+    "apps.products.product_inventory.apps.ProductInventoryConfig",
+    "apps.products.product_metadata.apps.ProductMetadataConfig",
+    "apps.products.product_negotiation.apps.ProductPriceNegotiationConfig",
+    "apps.products.product_rating.apps.ProductRatingConfig",
+    "apps.products.product_variant.apps.ProductVariantConfig",
+    "apps.products.product_watchlist.apps.ProductWatchlistConfig",
 ]
 
 MIDDLEWARE = [
@@ -192,10 +190,13 @@ DJOSER = {
     "SET_PASSWORD_RETYPE": True,
     "PASSWORD_RESET_CONFIRM_RETYPE": True,
     "TOKEN_MODEL": None,
-    "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": [
-        "http://localhost:3000/auth/google/",
-        "http://127.0.0.1:3000/auth/google/",
-    ],
+    "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": env.list(
+        "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS",
+        default=[
+            "http://localhost:3000/auth/google/",
+            "http://127.0.0.1:3000/auth/google/",
+        ],
+    ),
     "SERIALIZERS": {
         "user": "apps.users.serializers.UserSerializer",
         "current_user": "apps.users.serializers.UserSerializer",
@@ -218,7 +219,7 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,  # Blacklist old refresh tokens
     "TOKEN_OBTAIN_SERIALIZER": "apps.auth.traditional.serializers.CustomTokenObtainSerializer",
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": os.environ.get("DJANGO_SECRET_KEY", default="django-insecure$@"),
+    "SIGNING_KEY": env("DJANGO_SECRET_KEY", default="django-insecure$@"),
     "VERIFYING_KEY": None,
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",  # Using UUID field from your User model
@@ -241,22 +242,16 @@ JWT_AUTH_REFRESH_COOKIE = "refresh_token"
 JWT_REFRESH_THRESHOLD = 300  # 5 minutes in seconds
 JWT_ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
 JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=1)
-JWT_AUTH_SECURE = False
-JWT_AUTH_SAMESITE = (
-    "Lax"  # if os.environ.get("JWT_AUTH_SECURE", default="False") == "True" else "None"
-)
+JWT_AUTH_SECURE = env.bool("JWT_AUTH_SECURE", default=False)
+JWT_AUTH_SAMESITE = env("JWT_AUTH_SAMESITE", default="Lax")
 JWT_AUTH_HTTPONLY = True
 JWT_AUTH_PATH = "/"
 
 # -----------------------------------------------------------------------------
 # Google OAuth
 # -----------------------------------------------------------------------------
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ.get(
-    "SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default=""
-)
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get(
-    "SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default=""
-)
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = env("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = env("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default="")
 SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
@@ -282,7 +277,7 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 # Email Template
 # -----------------------------------------------------------------------------
 
-DOMAIN = os.environ.get("DOMAIN", default="localhost:3000")
+DOMAIN = env("DOMAIN", default="localhost:3000")
 SITE_NAME = "Safe Trade MarketPlace"
 
 # -----------------------------------------------------------------------------
@@ -440,3 +435,12 @@ CELERY_TASK_QUEUES = {
         "routing_key": "default",
     },
 }
+
+# -----------------------------------------------------------------------------
+# Import modular settings
+# -----------------------------------------------------------------------------
+from .logging import *
+from .cache_keys import *
+from .negotiation import *
+from .performance import *
+

@@ -10,7 +10,7 @@ def run_worker_default():
                 "-m",
                 "celery",
                 "-A",
-                "conf",
+                "safetrade",
                 "worker",
                 "--loglevel=info",
                 "--queues=high_priority,medium_priority,low_priority,default",
@@ -33,7 +33,7 @@ def run_worker_low():
                 "-m",
                 "celery",
                 "-A",
-                "conf",
+                "safetrade",
                 "worker",
                 "--loglevel=info",
                 "--queues=low_priority",
@@ -56,7 +56,7 @@ def run_worker_medium():
                 "-m",
                 "celery",
                 "-A",
-                "conf",
+                "safetrade",
                 "worker",
                 "--loglevel=info",
                 "--queues=medium_priority",
@@ -79,7 +79,7 @@ def run_worker_high():
                 "-m",
                 "celery",
                 "-A",
-                "conf",
+                "safetrade",
                 "worker",
                 "--loglevel=info",
                 "--queues=high_priority",
@@ -95,7 +95,7 @@ def run_worker_high():
 
 def run_beat():
     try:
-        check_call(["python", "-m", "celery", "-A", "conf", "beat", "--loglevel=info"])
+        check_call(["python", "-m", "celery", "-A", "safetrade", "beat", "--loglevel=info"])
     except FileNotFoundError:
         print(
             "Error: Celery not found. Make sure it's installed with 'pip install celery'"
@@ -104,7 +104,7 @@ def run_beat():
 
 def run_flower():
     try:
-        check_call(["python", "-m", "celery", "-A", "conf", "flower", "--port=5555"])
+        check_call(["python", "-m", "celery", "-A", "safetrade", "flower", "--port=5555"])
     except FileNotFoundError:
         print(
             "Error: Celery not found. Make sure it's installed with 'pip install celery'"

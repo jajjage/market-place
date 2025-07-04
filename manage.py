@@ -6,7 +6,7 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "conf.settings.dev")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "safetrade.settings.dev")
     os.environ.setdefault("DJANGO_ENV", "development")
 
     try:
