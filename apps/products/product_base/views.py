@@ -288,7 +288,7 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
                     product_id=instance.id, use_cache_buffer=True
                 )
             except Exception as e:
-                print(instance.id)
-                print(e)
-                pass
+                logger.error(
+                    f"Error incrementing view count for product {instance.id}: {e}"
+                )
         return product

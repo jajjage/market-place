@@ -1,12 +1,12 @@
-from rest_framework import viewsets, status, permissions
+from rest_framework import status, permissions
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 from django.utils import timezone
 from apps.core.utils.cache_manager import CacheKeyManager
+from apps.core.views import BaseViewSet
+from apps.disputes.models import Dispute
 from apps.disputes.utils.rate_limiting import DisputeRateThrottle
-from .models import Dispute, DisputeStatus
 from .serializers import (
     DisputeCreateSerializer,
     DisputeDetailSerializer,
@@ -22,7 +22,7 @@ from rest_framework.exceptions import ValidationError
 logger = logging.getLogger("dispute_performance")
 
 
-class DisputeViewSet(viewsets.ModelViewSet):
+class DisputeViewSet(BaseViewSet):
     """
     ViewSet for managing disputes
     - Create: POST /disputes/
@@ -86,10 +86,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
             duration = (timezone.now() - start_time).total_seconds() * 1000
             logger.info(f"Created dispute via API in {duration:.2f}ms")
 
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            return self.success_response(
+                data=response_serializer.data, status_code=status.HTTP_201_CREATED
+            )
 
         except ValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return self.error_response(
+                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+            )
 
     def retrieve(self, request, *args, **kwargs):
         """Get dispute details with caching"""
@@ -102,7 +106,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
         cached_dispute = cache.get(cache_key)
         if cached_dispute is not None:
             logger.info(f"Retrieved dispute {dispute_id} from cache")
-            return Response(cached_dispute)
+            return self.success_response(data=cached_dispute)
 
         start_time = timezone.now()
 
@@ -115,7 +119,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
         duration = (timezone.now() - start_time).total_seconds() * 1000
         logger.info(f"Retrieved dispute {dispute_id} in {duration:.2f}ms")
 
-        return Response(serializer.data)
+        return self.success_response(data=serializer.data)
 
     @action(
         detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
@@ -123,9 +127,9 @@ class DisputeViewSet(viewsets.ModelViewSet):
     def resolve(self, request, pk=None):
         """Resolve a dispute (admin/staff only)"""
         if not request.user.is_staff:
-            return Response(
-                {"error": "Only staff can resolve disputes"},
-                status=status.HTTP_403_FORBIDDEN,
+            return self.error_response(
+                message="Only staff can resolve disputes",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         dispute = self.get_object()
@@ -141,10 +145,12 @@ class DisputeViewSet(viewsets.ModelViewSet):
             )
 
             response_serializer = DisputeDetailSerializer(resolved_dispute)
-            return Response(response_serializer.data)
+            return self.success_response(data=response_serializer.data)
 
         except ValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return self.error_response(
+                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+            )
 
     @action(detail=False, methods=["get"])
     def my_disputes(self, request):
@@ -154,51 +160,16 @@ class DisputeViewSet(viewsets.ModelViewSet):
         disputes = DisputeService.get_user_disputes(request.user, status_filter)
         serializer = DisputeListSerializer(disputes, many=True)
 
-        return Response(serializer.data)
+        return self.success_response(data=serializer.data)
 
     @action(detail=False, methods=["get"])
     def stats(self, request):
-        """Get dispute statistics (admin only)"""
-        if not request.user.is_staff:
-            return Response(
-                {"error": "Only staff can view statistics"},
-                status=status.HTTP_403_FORBIDDEN,
+        """Get dispute statistics (admin only)."""
+        try:
+            stats = DisputeService.get_stats(request.user)
+        except PermissionError as e:
+            return self.error_response(
+                message=str(e), status_code=status.HTTP_403_FORBIDDEN
             )
 
-        cache_key = CacheKeyManager.make_key(
-            "dispute", "stats", user_id=request.user.id
-        )
-
-        # Try cache first
-        from django.core.cache import cache
-
-        cached_stats = cache.get(cache_key)
-        if cached_stats is not None:
-            logger.info("Retrieved dispute stats from cache")
-            return Response(cached_stats)
-
-        start_time = timezone.now()
-
-        stats = {
-            "total_disputes": Dispute.objects.count(),
-            "open_disputes": Dispute.objects.filter(
-                status=DisputeStatus.OPENED
-            ).count(),
-            "resolved_for_buyer": Dispute.objects.filter(
-                status=DisputeStatus.RESOLVED_BUYER
-            ).count(),
-            "resolved_for_seller": Dispute.objects.filter(
-                status=DisputeStatus.RESOLVED_SELLER
-            ).count(),
-            "closed_disputes": Dispute.objects.filter(
-                status=DisputeStatus.CLOSED
-            ).count(),
-        }
-
-        # Cache for 30 minutes
-        cache.set(cache_key, stats, 1800)
-
-        duration = (timezone.now() - start_time).total_seconds() * 1000
-        logger.info(f"Generated dispute stats in {duration:.2f}ms")
-
-        return Response(stats)
+        return self.success_response(data=stats)

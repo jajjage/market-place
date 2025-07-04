@@ -1,4 +1,6 @@
 from django.db import transaction
+from django.db.models import Count, Q
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
@@ -16,6 +18,8 @@ logger = logging.getLogger("dispute_performance")
 
 class DisputeService:
     """Service class for dispute business logic"""
+
+    CACHE_TTL = 60 * 15
 
     @staticmethod
     def create_dispute(transaction_id, user, reason, description):
@@ -103,7 +107,7 @@ class DisputeService:
             send_resolution_notification.delay(dispute.id)
 
             # Invalidate cache
-            CacheManager.invalidate("dispute", id=dispute.id)
+            CacheManager.invalidate_key("dispute", "detail", id=dispute.id)
             TransactionListService.invalidate_user_transaction_caches(
                 dispute.opened_by.id
             )
@@ -149,3 +153,37 @@ class DisputeService:
         logger.info(f"Retrieved {len(disputes)} user disputes in {duration:.2f}ms")
 
         return disputes
+
+    @staticmethod
+    def get_stats(user):
+        """Return dispute stats dict for staff users, cached."""
+        if not user.is_staff:
+            raise PermissionError("Only staff can view statistics")
+
+        cache_key = CacheKeyManager.make_key("dispute", "stats", user_id=user.id)
+        stats = cache.get(cache_key)
+        if stats is not None:
+            logger.info("Dispute stats (cached)")
+            return stats
+
+        start = timezone.now()
+
+        agg = Dispute.objects.aggregate(
+            total_disputes=Count("pk"),
+            open_disputes=Count("pk", filter=Q(status=DisputeStatus.OPENED)),
+            resolved_for_buyer=Count(
+                "pk", filter=Q(status=DisputeStatus.RESOLVED_BUYER)
+            ),
+            resolved_for_seller=Count(
+                "pk", filter=Q(status=DisputeStatus.RESOLVED_SELLER)
+            ),
+            closed_disputes=Count("pk", filter=Q(status=DisputeStatus.CLOSED)),
+        )
+
+        # Django’s aggregate returns a dict of ints
+        cache.set(cache_key, agg, DisputeService.CACHE_TTL)
+
+        elapsed_ms = (timezone.now() - start).total_seconds() * 1000
+        logger.info(f"Computed dispute stats in {elapsed_ms:.2f}ms")
+
+        return agg

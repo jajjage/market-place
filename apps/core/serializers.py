@@ -37,6 +37,14 @@ class UserShortSerializer(serializers.ModelSerializer):
     def get_full_name(self, obj):
         return obj.get_full_name()
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        user = self.context.get("request", None)
+        if user and user.user.is_authenticated:
+            # optionally add extra fields for logged-in users
+            data["is_me"] = instance == user.user
+        return data
+
 
 class VariantShortSerializer(serializers.ModelSerializer):
     """Serializer for a short representation of the user."""

@@ -1,5 +1,7 @@
+from datetime import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.db import transaction
 from apps.transactions.models import EscrowTransaction
 from .models import UserRating
 from .tasks import setup_rating_eligibility, update_rating_stats
@@ -10,23 +12,30 @@ logger = logging.getLogger("ratings_performance")
 
 @receiver(post_save, sender=EscrowTransaction)
 def handle_transaction_completion(sender, instance, created, **kwargs):
-    """Handle transaction completion - setup rating eligibility"""
-    if (
+    # only run when status just moved into a “completed” state
+    just_completed = (
         not created
-        and instance.status not in ["completed", "funds_released"]
-        and instance.status_changed_at
-    ):
-        # Check if we've already processed this completion
-        if not hasattr(instance, "_rating_setup_done"):
-            # Trigger async task for rating setup
-            setup_rating_eligibility.delay(instance.id)
+        and instance.status in ["completed", "funds_released"]
+        and instance.status_changed_at  # you already track this
+    )
+    if not just_completed or instance.rating_setup_done:
+        return
 
-            # Mark as processed to avoid double processing
-            instance._rating_setup_done = True
+    def enqueue_and_mark():
+        # 1. enqueue the Celery task
+        setup_rating_eligibility.delay(instance.id)
 
-            logger.info(
-                f"Transaction {instance.id} completed, rating eligibility setup queued"
-            )
+        # 2. mark the DB flag so we never enqueue again
+        # use .filter/.update to avoid a second save() signal
+        EscrowTransaction.objects.filter(pk=instance.pk).update(
+            rating_setup_done=True,
+            # optionally also update a timestamp, e.g.:
+            rating_setup_done_at=timezone.now(),
+        )
+        logger.info(f"Transaction {instance.id}: rating task queued")
+
+    # defer to after the outer transaction commits
+    transaction.on_commit(enqueue_and_mark)
 
 
 @receiver(post_save, sender=UserRating)

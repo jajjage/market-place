@@ -85,6 +85,9 @@ class EscrowTransaction(BaseModel):
     auto_transition_type = models.CharField(max_length=30, blank=True, null=True)
     next_auto_transition_at = models.DateTimeField(blank=True, null=True)
 
+    rating_setup_done = models.BooleanField(default=False, db_index=True)
+    rating_setup_done_at = models.DateTimeField(blank=True, null=True)
+
     notes = models.TextField(blank=True)
 
     class Meta:

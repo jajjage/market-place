@@ -1,5 +1,5 @@
 import logging
-from django.db.models import Prefetch, Avg, Count, Q, F, Exists, OuterRef
+from django.db.models import Prefetch, Avg, Count, Q, F, Exists, OuterRef, Value
 from apps.products.product_base.models import Product
 from apps.products.product_rating.models import ProductRating
 from apps.products.product_detail.models import ProductDetail  # your “detail” model
@@ -102,7 +102,16 @@ class ProductDetailService:
 
         # This user's own rating
         user_rating = None
+        watch_prefetch = None
+        annotations = {}
+        # Watchlist items for this user
         if request.user.is_authenticated:
+            watch_prefetch = Prefetch(
+                "watchers",
+                queryset=ProductWatchlistItem.objects.filter(user=request.user),
+                to_attr="prefetched_watchlist",
+            )
+
             user_rating = Prefetch(
                 "ratings",
                 queryset=ratings_qs.filter(user=request.user),
@@ -123,13 +132,6 @@ class ProductDetailService:
             to_attr="primary_images",
         )
 
-        # Watchlist items for this user
-        watch_prefetch = Prefetch(
-            "watchers",
-            queryset=ProductWatchlistItem.objects.filter(user=request.user),
-            to_attr="prefetched_watchlist",
-        )
-
         # Variants + their options/images
         variant_opts = Prefetch("options", to_attr="prefetched_variant_options")
         variant_imgs = Prefetch("images", to_attr="prefetched_variant_images")
@@ -140,35 +142,43 @@ class ProductDetailService:
             ),
             to_attr="prefetched_variants",
         )
-
-        purchase_exists = Exists(
-            EscrowTransaction.objects.filter(
-                product=OuterRef("pk"),
-                buyer=request.user,
-                status="completed",
-            )
-        )
-
-        qs = base.prefetch_related(
+        prefetches = [
             detailed_ratings,
-            *([user_rating] if user_rating else []),
             details_prefetch,
             primary_image,
-            watch_prefetch,
             variant_prefetch,
-        ).annotate(
-            avg_rating_db=Avg("ratings__rating", filter=Q(ratings__is_approved=True)),
-            ratings_count_db=Count("ratings", filter=Q(ratings__is_approved=True)),
-            verified_ratings_count=Count(
+        ]
+
+        if user_rating:
+            prefetches.append(user_rating)
+        if watch_prefetch:
+            prefetches.append(watch_prefetch)
+
+        base = base.prefetch_related(*prefetches)
+
+        annotations = {
+            "avg_rating_db": Avg(
+                "ratings__rating", filter=Q(ratings__is_approved=True)
+            ),
+            "ratings_count_db": Count("ratings", filter=Q(ratings__is_approved=True)),
+            "verified_ratings_count": Count(
                 "ratings",
                 filter=Q(ratings__is_approved=True, ratings__is_verified_purchase=True),
             ),
-            watchers_count=Count("watchers", distinct=True),
-            total_views=F("meta__views_count"),
-            user_has_purchased=purchase_exists,
-        )
+            "watchers_count": Count("watchers", distinct=True),
+            "total_views": F("meta__views_count"),
+        }
 
-        return qs
+        if request.user.is_authenticated:
+            annotations["user_has_purchased"] = Exists(
+                EscrowTransaction.objects.filter(
+                    product=OuterRef("pk"), user=request.user
+                )
+            )
+        else:
+            annotations["user_has_purchased"] = Value(False)
+
+        return base.annotate(**annotations)
 
     @staticmethod
     def get_related_products_queryset(product):
