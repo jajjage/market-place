@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Room</title>
+</head>
+<body>
+    <h1>Chat Room</h1>
+    <div id="messages">
+        {% for message in messages %}
+            <p><b>{{ message.user.username }}</b>: {{ message.message }}</p>
+        {% endfor %}
+    </div>
+    <form id="message-form">
+        <input type="text" id="message-input" placeholder="Enter message">
+        <button type="submit">Send</button>
+    </form>
+
+    <script>
+        const chatSocket = new WebSocket(
+            'ws://'
+            + window.location.host
+            + '/ws/chat/'
+        );
+
+        chatSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const messages = document.getElementById('messages');
+            messages.innerHTML += '<p><b>' + data.username + '</b>: ' + data.message + '</p>';
+        };
+
+        chatSocket.onclose = function(e) {
+            console.error('Chat socket closed unexpectedly');
+        };
+
+        document.getElementById('message-form').onsubmit = function(e) {
+            e.preventDefault();
+            const messageInput = document.getElementById('message-input');
+            const message = messageInput.value;
+            chatSocket.send(JSON.stringify({
+                'message': message
+            }));
+            messageInput.value = '';
+        };
+    </script>
+</body>
+</html>

@@ -10,9 +10,8 @@ from apps.products.product_brand.models import (
     BrandVariant,
     BrandVariantTemplate,
 )
+from apps.notifications.services.notification_service import NotificationService
 from apps.products.product_brand.tasks import (
-    notify_brand_request_approved,
-    notify_brand_request_rejected,
     update_brand_stats,
 )
 from apps.core.utils.cache_manager import CacheManager
@@ -224,10 +223,16 @@ class BrandRequestService:
             if action == "approve":
                 brand = BrandService.create_brand_from_request(request_obj)
                 # Send notification to user
-                notify_brand_request_approved.delay(request_obj.id, brand.id)
+                context = {"brand_name": brand.name}
+                NotificationService.send_notification(
+                    request_obj.requested_by, "brand_request_approved", context
+                )
             else:
                 request_obj.status = BrandRequest.Status.REJECTED
-                notify_brand_request_rejected.delay(request_obj.id)
+                context = {"brand_name": request_obj.brand_name}
+                NotificationService.send_notification(
+                    request_obj.requested_by, "brand_request_rejected", context
+                )
 
             request_obj.save()
             return request_obj

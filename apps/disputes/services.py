@@ -6,10 +6,9 @@ from django.utils import timezone
 from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
 from apps.transactions.services.transaction_list_service import TransactionListService
 from .models import Dispute, DisputeStatus
+from apps.notifications.services.notification_service import NotificationService
 from .tasks import (
-    send_dispute_notification,
     update_transaction_status,
-    send_resolution_notification,
 )
 import logging
 
@@ -64,7 +63,11 @@ class DisputeService:
             update_transaction_status.delay(transaction_obj.id, "disputed")
 
             # Send notifications
-            send_dispute_notification.delay(dispute.id)
+            recipient = dispute.get_other_party()
+            if recipient:
+                NotificationService.send_notification(
+                    recipient, "new_dispute", {"dispute_id": dispute.id}
+                )
 
             # Invalidate cache
             CacheManager.invalidate("dispute", transaction_id=transaction_obj.id)
@@ -104,7 +107,16 @@ class DisputeService:
                 update_transaction_status.delay(dispute.transaction.id, "completed")
 
             # Send notifications
-            send_resolution_notification.delay(dispute.id)
+            NotificationService.send_notification(
+                dispute.opened_by,
+                "dispute_resolved",
+                {"dispute_id": dispute.id, "status": status},
+            )
+            NotificationService.send_notification(
+                dispute.get_other_party(),
+                "dispute_resolved",
+                {"dispute_id": dispute.id, "status": status},
+            )
 
             # Invalidate cache
             CacheManager.invalidate_key("dispute", "detail", id=dispute.id)

@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.conf import settings
 
 from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
+from apps.notifications.services.notification_service import NotificationService
 from apps.products.product_negotiation.models import (
     PriceNegotiation,
     NegotiationHistory,
@@ -185,6 +186,9 @@ class NegotiationService:
                     "negotiation", product_id=variant.product.id, buyer_id=buyer.id
                 )
 
+                # Send notification to seller
+                NegotiationNotificationService.notify_seller_of_new_offer(negotiation)
+
                 duration = (timezone.now() - start_time).total_seconds() * 1000
                 logger.info(f"Negotiation initiated in {duration:.2f}ms")
 
@@ -311,11 +315,11 @@ class NegotiationService:
 
                 # Send appropriate notifications
                 if is_seller:
-                    NegotiationNotificationService.notify_buyer_response(
+                    NegotiationNotificationService.notify_buyer_of_response(
                         negotiation, response_type
                     )
                 else:
-                    NegotiationNotificationService.notify_seller_response(
+                    NegotiationNotificationService.notify_seller_of_response(
                         negotiation, response_type
                     )
 
@@ -496,22 +500,48 @@ class NegotiationNotificationService:
     """Service for handling negotiation notifications"""
 
     @staticmethod
-    def notify_seller_response(
-        negotiation: PriceNegotiation, response_type: str = None
-    ):
-        """Notify seller about new offer"""
-        # Implementation depends on your notification system
-        # This could send email, push notification, or in-app notification
-        pass
+    def notify_seller_of_new_offer(negotiation: PriceNegotiation):
+        """Notify seller about a new negotiation offer."""
+        context = {
+            "negotiation_id": negotiation.id,
+            "product_name": negotiation.product.title,
+            "offered_price": negotiation.offered_price,
+        }
+        NotificationService.send_notification(
+            negotiation.seller, "new_negotiation_offer", context
+        )
 
     @staticmethod
-    def notify_buyer_response(negotiation: PriceNegotiation, response_type: str):
-        """Notify buyer about seller's response"""
-        # Implementation depends on your notification system
-        pass
+    def notify_buyer_of_response(negotiation: PriceNegotiation, response_type: str):
+        """Notify buyer about seller's response."""
+        context = {
+            "negotiation_id": negotiation.id,
+            "product_name": negotiation.product.title,
+            "response_type": response_type,
+        }
+        NotificationService.send_notification(
+            negotiation.buyer, "negotiation_response", context
+        )
+
+    @staticmethod
+    def notify_seller_of_response(negotiation: PriceNegotiation, response_type: str):
+        """Notify seller about buyer's response."""
+        context = {
+            "negotiation_id": negotiation.id,
+            "product_name": negotiation.product.title,
+            "response_type": response_type,
+        }
+        NotificationService.send_notification(
+            negotiation.seller, "negotiation_response", context
+        )
 
     @staticmethod
     def notify_negotiation_expired(negotiation: PriceNegotiation):
-        """Notify parties about expired negotiation"""
-        # Implementation depends on your notification system
-        pass
+        """Notify parties about expired negotiation."""
+        context = {"negotiation_id": negotiation.id, "product_name": negotiation.product.title}
+        NotificationService.send_notification(
+            negotiation.buyer, "negotiation_expired", context
+        )
+        NotificationService.send_notification(
+            negotiation.seller, "negotiation_expired", context
+        )

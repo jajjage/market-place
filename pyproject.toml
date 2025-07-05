@@ -36,6 +36,9 @@ drf-nested-routers = "^0.94.2"
 flower = "^2.0.1"
 openai = "^1.88.0"
 google-cloud-aiplatform = "^1.97.0"
+channels = {extras = ["daphne"], version = "^4.2.2"}
+channels-redis = "^4.2.1"
+twisted = {extras = ["http2", "tls"], version = "^25.5.0"}
 
 
 [tool.poetry.group.dev.dependencies]

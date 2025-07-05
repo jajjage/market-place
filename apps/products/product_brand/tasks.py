@@ -42,21 +42,7 @@ def bulk_update_brand_stats():
     brand_ids = Brand.objects.active().values_list("id", flat=True)
 
     for brand_id in brand_ids:
-        update_brand_stats.delay(brand_id)
-
-
-@shared_task(bind=True, base=BaseTaskWithRetry)
-def notify_brand_request_approved(request_id: int, brand_id: int):
-    """Send notification when brand request is approved"""
-    # Implementation depends on your notification system
-    pass
-
-
-@shared_task(bind=True, base=BaseTaskWithRetry)
-def notify_brand_request_rejected(request_id: int):
-    """Send notification when brand request is rejected"""
-    # Implementation depends on your notification system
-    pass
+        update_brand_stats.delay(brand_.id)
 
 
 @shared_task

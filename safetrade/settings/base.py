@@ -11,11 +11,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
 
-
 # -----------------------------------------------------------------------------
 # Basic Config
 # -----------------------------------------------------------------------------
 ROOT_URLCONF = "safetrade.urls"
+ASGI_APPLICATION = "safetrade.asgi.application"
 WSGI_APPLICATION = "safetrade.wsgi.application"
 SECRET_KEY = env(
     "DJANGO_SECRET_KEY", default="django-insecure-development-key-change-me"
@@ -45,6 +45,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Applications configuration
 # -----------------------------------------------------------------------------
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -77,6 +78,7 @@ INSTALLED_APPS = [
     "apps.auth.google.apps.GoogleAuthConfig",
     "apps.auth.traditional.apps.TraditionalAuthConfig",
     "apps.monitoring.apps.MonitoringConfig",
+    "apps.chat.apps.ChatConfig",
     "apps.products.product_base.apps.ProductBaseConfig",
     "apps.products.product_brand.apps.ProductBrandConfig",
     "apps.products.product_common.apps.ProductCommonConfig",
@@ -439,8 +441,19 @@ CELERY_TASK_QUEUES = {
 # -----------------------------------------------------------------------------
 # Import modular settings
 # -----------------------------------------------------------------------------
-from .logging import *
-from .cache_keys import *
-from .negotiation import *
-from .performance import *
+from .performance import *  # noqa: F403 F401
+from .logging import *  # noqa: F403 F401
+from .cache_keys import *  # noqa: F403 F401
+from .negotiation import *  # noqa: F403 F401
 
+# -----------------------------------------------------------------------------
+# Channels Configuration
+# -----------------------------------------------------------------------------
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}

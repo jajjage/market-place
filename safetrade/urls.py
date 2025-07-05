@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/v1/", include("apps.disputes.urls")),
     path("api/v1/", include("apps.categories.urls")),
     path("api/v1/", include("apps.products.urls")),
+    path("", include("apps.chat.urls")),
 ]
 
 if os.environ.get("DEBUG") == "True":

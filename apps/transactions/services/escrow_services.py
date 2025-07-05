@@ -273,11 +273,6 @@ class EscrowTransactionService:
     ):
         """Handle actions that should happen after status update"""
 
-        # Send notifications
-        # EscrowNotificationService.send_status_update_notification(
-        #     escrow_transaction, previous_status, new_status, user
-        # )
-
         # Update analytics/metrics
         # EscrowAnalyticsService.track_status_change(
         #     escrow_transaction, previous_status, new_status
