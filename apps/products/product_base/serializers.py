@@ -1,7 +1,8 @@
+from decimal import Decimal
 from rest_framework import serializers
 from django.utils.text import slugify
 from apps.categories.models import Category
-from apps.categories.serializers import (
+from apps.categories.api.serializers import (
     # CategoryDetailSerializer,
     CategorySummarySerializer,
 )
@@ -123,10 +124,18 @@ class ProductListSerializer(TimestampedModelSerializer):
 
     brand_name = serializers.SerializerMethodField(read_only=True)
     originalPrice = serializers.DecimalField(
-        source="original_price", max_digits=10, decimal_places=2
+        source="original_price",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
     escrowFee = serializers.DecimalField(
-        source="escrow_fee", max_digits=10, decimal_places=2
+        source="escrow_fee",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
 
     seller = serializers.SerializerMethodField()
@@ -164,14 +173,14 @@ class ProductListSerializer(TimestampedModelSerializer):
             "brand_name",
         ]
 
-    def get_brand_name(self, obj):
+    def get_brand_name(self, obj) -> str | None:
         return obj.brand.name
 
-    def get_seller(self, obj):
+    def get_seller(self, obj) -> dict | None:
         profile_obj = obj.seller
         return UserShortSerializer(profile_obj, context=self.context).data
 
-    def get_image_url(self, obj):
+    def get_image_url(self, obj) -> str | None:
         # 1) Did we already prefetch primary_images?
         imgs = getattr(obj, "primary_images", None)
         if imgs is not None:
@@ -188,13 +197,13 @@ class ProductListSerializer(TimestampedModelSerializer):
 
         return None
 
-    def get_discount_percent(self, obj):
+    def get_discount_percent(self, obj) -> float:
         if obj.original_price and obj.price < obj.original_price:
             discount = ((obj.original_price - obj.price) / obj.original_price) * 100
             return round(discount, 1)
         return 0
 
-    def get_ratings(self, obj):
+    def get_ratings(self, obj) -> dict:
         """Get ratings from annotated fields"""
         return {
             "average": getattr(obj, "avg_rating_db", 0),
@@ -231,16 +240,26 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     base_variant_price = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
         write_only=True,
         required=False,
         help_text="Base price for auto-generated variants",
     )
 
     originalPrice = serializers.DecimalField(
-        source="original_price", max_digits=10, decimal_places=2
+        source="original_price",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
     escrowFee = serializers.DecimalField(
-        source="escrow_fee", max_digits=10, decimal_places=2
+        source="escrow_fee",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
     images = ProductImageSerializer(many=True, read_only=True)
     seller = serializers.SerializerMethodField()
@@ -250,7 +269,12 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     details = serializers.SerializerMethodField()
     breadcrumbs = serializers.SerializerMethodField()
     category = CategorySummarySerializer(read_only=True)
-    total_views = serializers.IntegerField(source="meta.views_count", read_only=True)
+    total_views = serializers.IntegerField(
+        source="meta.views_count",
+        max_value=1000,  # Use int for integer fields
+        min_value=1,
+        read_only=True,
+    )
     user_has_purchased = serializers.SerializerMethodField()
 
     condition = ProductConditionDetailSerializer(read_only=True)
@@ -262,6 +286,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
 
     class Meta:
         model = Product
+        ref_name = "BaseProductDetail"
         fields = [
             "id",
             "seller",
@@ -307,7 +332,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "user_has_purchased",
         ]
 
-    def get_seller(self, obj):
+    def get_seller(self, obj) -> dict | None:
         profile_obj = obj.seller
         return UserShortSerializer(profile_obj, context=self.context).data
 
@@ -325,34 +350,34 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     #         "variant_types": getattr(obj, "variant_types", []),
     #     }
 
-    def get_discount_percent(self, obj):
+    def get_discount_percent(self, obj) -> float:
         if obj.original_price and obj.price < obj.original_price:
             discount = ((obj.original_price - obj.price) / obj.original_price) * 100
             return round(discount, 1)
         return 0
 
-    def get_watching_count(self, obj):
+    def get_watching_count(self, obj) -> int:
         """Get the number of users watching this product"""
         return obj.watchers.count()
 
-    def get_breadcrumbs(self, obj):
+    def get_breadcrumbs(self, obj) -> list[dict]:
         service = BreadcrumbService()
         breadcrumb_data = service.for_product(obj, include_brand=True)
         return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
-    def get_watchlist_items(self, obj):
+    def get_watchlist_items(self, obj) -> list[dict]:
         items = getattr(obj, "prefetched_watchlist", [])
         return ProductWatchlistItemListSerializer(
             items, many=True, context=self.context
         ).data
 
-    def get_brand_detail(self, obj):
+    def get_brand_detail(self, obj) -> dict | None:
         brand = getattr(obj, "brand", None)
         return (
             BrandDetailSerializer(brand, context=self.context).data if brand else None
         )
 
-    def get_metadata(self, obj):
+    def get_metadata(self, obj) -> dict | None:
         meta = getattr(obj, "meta", None)
         return (
             ProductMetaDetailSerializer(meta, context=self.context).data
@@ -360,13 +385,13 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             else None
         )
 
-    def get_details(self, obj):
+    def get_details(self, obj) -> list[dict]:
         details = getattr(obj, "prefetched_details", [])
         return ProductExtraDetailSerializer(
             details, many=True, context=self.context
         ).data
 
-    def get_variants(self, obj):
+    def get_variants(self, obj) -> list[dict]:
         variants = getattr(obj, "prefetched_variants", [])
         out = []
         for v in variants:
@@ -391,7 +416,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         out.append({"total_variants": len(variants)})
         return out
 
-    def get_ratings(self, obj):
+    def get_ratings(self, obj) -> dict:
         """Get ratings from annotated fields"""
         return {
             "average": getattr(obj, "avg_rating_db", 0),
@@ -407,7 +432,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             },
         }
 
-    def get_user_has_purchased(self, obj):
+    def get_user_has_purchased(self, obj) -> bool | None:
         """Return purchase status for authenticated users"""
         request = self.context.get("request")
         if request and request.user.is_authenticated:
@@ -427,9 +452,9 @@ class ProductStatsSerializer(TimestampedModelSerializer):
     Focused on fields useful for analytics.
     """
 
-    seller_id = serializers.IntegerField(source="seller.id")
+    seller_id = serializers.UUIDField(source="seller.id")
     seller_name = serializers.CharField(source="seller.get_full_name")
-    category_id = serializers.IntegerField(source="category.id")
+    category_id = serializers.UUIDField(source="category.id")
     category_name = serializers.CharField(source="category.name")
     condition_name = serializers.CharField(source="condition.name")
     watching_count = serializers.SerializerMethodField()
@@ -463,27 +488,27 @@ class ProductStatsSerializer(TimestampedModelSerializer):
             "updated_at",
         ]
 
-    def get_watching_count(self, obj):
+    def get_watching_count(self, obj) -> int:
         return obj.watchers.count()
 
-    def get_images_count(self, obj):
+    def get_images_count(self, obj) -> int:
         return obj.images.count()
 
-    def get_has_discount(self, obj):
+    def get_has_discount(self, obj) -> bool:
         return bool(obj.original_price and obj.price < obj.original_price)
 
-    def get_discount_amount(self, obj):
+    def get_discount_amount(self, obj) -> float:
         if obj.original_price and obj.price < obj.original_price:
             return obj.original_price - obj.price
         return 0
 
-    def get_discount_percent(self, obj):
+    def get_discount_percent(self, obj) -> float:
         if obj.original_price and obj.price < obj.original_price:
             discount = ((obj.original_price - obj.price) / obj.original_price) * 100
             return round(discount, 1)
         return 0
 
-    def get_variants(self, obj):
+    def get_variants(self, obj) -> list[dict]:
         # This would need to be implemented based on your variant logic
         # For now, returning a sample structure
         return [
@@ -491,7 +516,7 @@ class ProductStatsSerializer(TimestampedModelSerializer):
             {"type": "Condition", "options": ["New with tags", "Like New", "Good"]},
         ]
 
-    def get_details(self, obj):
+    def get_details(self, obj) -> list[dict]:
         """Generate details list from model fields"""
         details = []
 
@@ -515,7 +540,7 @@ class ProductStatsSerializer(TimestampedModelSerializer):
 
         return details
 
-    def get_breadcrumbs(self, obj):
+    def get_breadcrumbs(self, obj) -> list[dict]:
         # You can implement this based on your category structure
         return [
             {"name": "TrustLock", "href": "/"},
@@ -523,8 +548,37 @@ class ProductStatsSerializer(TimestampedModelSerializer):
             {"name": "Women's Bags & Handbags", "href": "/explore?category=bags"},
         ]
 
-    def to_representation(self, instance):
+    def to_representation(self, instance) -> dict:
         data = super().to_representation(instance)
         # Convert condition object to string
         data["condition"] = instance.condition.name
         return data
+
+
+class ManageMetadataSerializer(TimestampedModelSerializer):
+    """
+    Serializer for managing product metadata.
+    Used in the product management interface.
+    """
+
+    class Meta:
+        model = Product
+        fields = [
+            "id",
+            "title",
+            "description",
+            "price",
+            "original_price",
+            "currency",
+            "category",
+            "condition",
+            "is_active",
+            "is_featured",
+            "status",
+            "brand",
+            "escrow_fee",
+            "requires_inspection",
+            "authenticity_guaranteed",
+            "warranty_period",
+        ]
+        read_only_fields = ["id", "slug", "short_code"]

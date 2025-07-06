@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from django.core.exceptions import ValidationError
 
@@ -38,11 +39,11 @@ class ProductVariantOptionSerializer(TimestampedModelSerializer):
         ]
         read_only_fields = ["id"]
 
-    def get_display_name(self, obj):
+    def get_display_name(self, obj) -> str:
         """Get display name or fallback to value"""
         return obj.display_value or obj.value
 
-    def get_image_url(self, obj):
+    def get_image_url(self, obj) -> str | None:
         """Get image URL if available"""
         if obj.image:
             request = self.context.get("request")
@@ -51,7 +52,7 @@ class ProductVariantOptionSerializer(TimestampedModelSerializer):
             return obj.image.url
         return None
 
-    def create(self, validated_data):
+    def create(self, validated_data) -> ProductVariantOption:
         variant_type_uuid = validated_data.pop("variant_type")
         try:
             variant_type = ProductVariantType.objects.get(id=variant_type_uuid)
@@ -86,7 +87,7 @@ class ProductVariantTypeSerializer(TimestampedModelSerializer):
         ]
         read_only_fields = ["id", "option_count"]
 
-    def get_option_count(self, obj):
+    def get_option_count(self, obj) -> int:
         """Get count of active options"""
         return obj.options.filter(is_active=True).count()
 
@@ -100,7 +101,7 @@ class ProductVariantImageSerializer(TimestampedModelSerializer):
         model = ProductVariantImage
         fields = ["id", "image", "image_url", "alt_text", "sort_order", "is_primary"]
 
-    def get_image_url(self, obj):
+    def get_image_url(self, obj) -> str | None:
         """Get absolute image URL"""
         if obj.image:
             request = self.context.get("request")
@@ -149,24 +150,24 @@ class ProductVariantSerializer(TimestampedModelSerializer):
             "option_summary",
         ]
 
-    def get_final_price(self, obj):
+    def get_final_price(self, obj) -> str | None:
         """Get final price including option adjustments"""
         final_price = obj.final_price
         return str(final_price) if final_price is not None else None
 
-    def get_available_quantity(self, obj):
+    def get_available_quantity(self, obj) -> int:
         """Get available quantity (stock - reserved)"""
         return obj.available_quantity
 
-    def get_is_in_stock(self, obj):
+    def get_is_in_stock(self, obj) -> bool:
         """Check if variant is in stock"""
         return obj.is_in_stock
 
-    def get_is_low_stock(self, obj):
+    def get_is_low_stock(self, obj) -> bool:
         """Check if variant is low on stock"""
         return obj.is_low_stock
 
-    def get_option_summary(self, obj):
+    def get_option_summary(self, obj) -> str:
         """Get formatted option summary"""
         return " - ".join(
             [
@@ -175,7 +176,7 @@ class ProductVariantSerializer(TimestampedModelSerializer):
             ]
         )
 
-    def get_dimensions(self, obj):
+    def get_dimensions(self, obj) -> dict | None:
         """Get dimensions as a dict"""
         if any([obj.dimensions_length, obj.dimensions_width, obj.dimensions_height]):
             return {
@@ -220,7 +221,7 @@ class ProductVariantCreateSerializer(TimestampedModelSerializer):
             "sku": {"required": True},
         }
 
-    def validate_option_ids(self, value):
+    def validate_option_ids(self, value) -> list:
         """Validate that all option IDs exist and are active"""
         if not value:
             raise serializers.ValidationError("At least one option is required")
@@ -242,13 +243,13 @@ class ProductVariantCreateSerializer(TimestampedModelSerializer):
 
         return value
 
-    def validate_sku(self, value):
+    def validate_sku(self, value) -> str:
         """Validate SKU uniqueness"""
         if ProductVariant.objects.filter(sku=value).exists():
             raise serializers.ValidationError(f"SKU '{value}' already exists")
         return value
 
-    def validate(self, attrs):
+    def validate(self, attrs) -> dict:
         """Cross-field validation"""
         # Validate reserved quantity doesn't exceed stock
         stock = attrs.get("total_inventory", 0)
@@ -260,7 +261,7 @@ class ProductVariantCreateSerializer(TimestampedModelSerializer):
 
         return attrs
 
-    def create(self, validated_data):
+    def create(self, validated_data) -> ProductVariant:
         """Create variant using service layer"""
         option_ids = validated_data.pop("option_ids")
         product_id = validated_data.pop("product").id
@@ -282,13 +283,15 @@ class ProductVariantCreateSerializer(TimestampedModelSerializer):
 class ProductVariantBulkCreateSerializer(serializers.Serializer):
     """Serializer for bulk creating variants"""
 
-    product_id = serializers.IntegerField()
+    product_id = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     async_processing = serializers.BooleanField(default=False, source="async")
     variants = serializers.ListField(
         child=serializers.DictField(), help_text="List of variant data dictionaries"
     )
 
-    def validate_product_id(self, value):
+    def validate_product_id(self, value) -> int:
         """Validate product exists"""
         from apps.products.product_base.models import Product
 
@@ -298,7 +301,7 @@ class ProductVariantBulkCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"Product with id {value} does not exist")
         return value
 
-    def validate_variants(self, value):
+    def validate_variants(self, value) -> list:
         """Validate variant data structure"""
         if not value:
             raise serializers.ValidationError("At least one variant is required")
@@ -332,11 +335,16 @@ class ProductVariantCombinationGeneratorSerializer(serializers.Serializer):
         help_text="Dict mapping variant_type_id to list of option_ids",
     )
     base_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, allow_null=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        required=False,
+        allow_null=True,
     )
     sku_separator = serializers.CharField(default="-", max_length=5)
 
-    def validate_product_id(self, value):
+    def validate_product_id(self, value) -> int:
         """Validate product exists"""
         from apps.products.product_base.models import Product
 
@@ -346,7 +354,7 @@ class ProductVariantCombinationGeneratorSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"Product with id {value} does not exist")
         return value
 
-    def validate_variant_type_options(self, value):
+    def validate_variant_type_options(self, value) -> None:
         """Validate variant type options structure"""
         if not value:
             raise serializers.ValidationError(
@@ -466,7 +474,7 @@ class ProductVariantMatrixSerializer(serializers.Serializer):
         help_text="Dictionary of variant data keyed by variant ID"
     )
 
-    def to_representation(self, instance):
+    def to_representation(self, instance) -> dict:
         """Custom representation for matrix data"""
         from .serializers import ProductVariantTypeSerializer
 
@@ -492,32 +500,66 @@ class ProductVariantMatrixSerializer(serializers.Serializer):
 class ProductVariantStatsSerializer(serializers.Serializer):
     """Serializer for variant statistics"""
 
-    total_variants = serializers.IntegerField()
-    active_variants = serializers.IntegerField()
-    inactive_variants = serializers.IntegerField()
-    in_stock_variants = serializers.IntegerField()
-    out_of_stock_variants = serializers.IntegerField()
-    low_stock_variants = serializers.IntegerField()
-    total_inventory = serializers.IntegerField()
-    total_in_escrow_inventory = serializers.IntegerField()
-    total_available_inventory = serializers.IntegerField()
+    total_variants = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    active_variants = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    inactive_variants = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    in_stock_variants = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    out_of_stock_variants = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    low_stock_variants = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    total_inventory = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    total_in_escrow_inventory = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    total_available_inventory = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     average_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, allow_null=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        allow_null=True,
     )
     min_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, allow_null=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        allow_null=True,
     )
     max_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, allow_null=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        allow_null=True,
     )
     total_value = serializers.DecimalField(
-        max_digits=12, decimal_places=2, allow_null=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("100.00"),  # ✅ Decimal instance
+        min_value=Decimal("0.00"),
+        allow_null=True,
     )
 
     # Optional breakdown by variant type
     variant_type_breakdown = serializers.DictField(required=False)
 
-    def to_representation(self, instance):
+    def to_representation(self, instance) -> dict:
         """Add computed fields to representation"""
         data = super().to_representation(instance)
 
@@ -548,16 +590,20 @@ class ProductVariantTemplateSerializer(serializers.Serializer):
         child=serializers.DictField(), help_text="Available variant types with options"
     )
     total_combinations = serializers.IntegerField(
-        help_text="Total possible combinations"
+        max_value=1000,  # Use int for integer fields
+        min_value=1,
+        help_text="Total possible combinations",
     )
     estimated_storage_mb = serializers.FloatField(
-        help_text="Estimated storage requirements in MB"
+        max_value=5.0,  # Use float for float fields
+        min_value=0.0,
+        help_text="Estimated storage requirements in MB",
     )
     combination_matrix = serializers.ListField(
         child=serializers.ListField(), help_text="Matrix of all possible combinations"
     )
 
-    def to_representation(self, instance):
+    def to_representation(self, instance) -> dict:
         """Enhanced representation with additional metadata"""
         data = super().to_representation(instance)
 
@@ -592,13 +638,13 @@ class ProductVariantValidationSerializer(serializers.Serializer):
 
     is_valid = serializers.BooleanField()
     is_unique = serializers.BooleanField()
-    existing_variant_id = serializers.IntegerField(allow_null=True)
+    existing_variant_id = serializers.UUIDField(allow_null=True)
     errors = serializers.ListField(child=serializers.CharField(), required=False)
     warnings = serializers.ListField(child=serializers.CharField(), required=False)
     suggested_sku = serializers.CharField(allow_null=True, required=False)
     combination_summary = serializers.CharField(required=False)
 
-    def to_representation(self, instance):
+    def to_representation(self, instance) -> dict:
         """Add contextual information to validation response"""
         data = super().to_representation(instance)
 

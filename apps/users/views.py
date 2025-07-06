@@ -1,10 +1,10 @@
 import logging
 from django.db.models import Count, Sum, Q
 
-from drf_spectacular.utils import extend_schema
+
 from django.core.cache import cache
 from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
+
 from django.views.decorators.vary import vary_on_cookie
 
 
@@ -21,7 +21,6 @@ from apps.users.models.user_address import UserAddress
 logger = logging.getLogger(__name__)
 
 
-@extend_schema(tags=["User Address"])
 class UserAddressViewSet(BaseViewSet):
     """ViewSet for managing user addresses"""
 
@@ -45,12 +44,10 @@ class UserAddressViewSet(BaseViewSet):
         user = self.request.user
         return UserAddress.objects.filter(user=user)
 
-    @method_decorator(cache_page(CACHE_TTL))
     @method_decorator(vary_on_cookie)
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @method_decorator(cache_page(CACHE_TTL))
     @method_decorator(vary_on_cookie)
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
@@ -71,7 +68,6 @@ class UserAddressViewSet(BaseViewSet):
         serializer.save()
 
 
-@extend_schema(tags=["User Profile"])
 class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
     """ViewSet for user profiles with caching"""
 
@@ -109,12 +105,10 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet, BaseViewSet):
             )
         )
 
-    @method_decorator(cache_page(CACHE_TTL))
     @method_decorator(vary_on_cookie)
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @method_decorator(cache_page(CACHE_TTL))
     @method_decorator(vary_on_cookie)
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)

@@ -8,6 +8,8 @@ class InventoryActionSerializer(serializers.Serializer):
     """Base serializer for inventory actions"""
 
     quantity = serializers.IntegerField(
+        max_value=1000,  # Use int for integer fields
+        min_value=1,
         validators=[MinValueValidator(1)],
         help_text="Quantity must be a positive integer",
     )
@@ -35,6 +37,8 @@ class ActivateInventorySerializer(InventoryActionSerializer):
     """Serializer for activating inventory (moving from total to available)"""
 
     quantity = serializers.IntegerField(
+        max_value=1000,  # Use int for integer fields
+        min_value=1,
         required=False,
         validators=[MinValueValidator(1)],
         help_text="Quantity to activate. If not provided, all inactive inventory will be activated",
@@ -47,7 +51,9 @@ class UnifiedEscrowTransactionSerializer(serializers.Serializer):
     """
 
     variant_id = serializers.UUIDField()
-    quantity = serializers.IntegerField(min_value=1)
+    quantity = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
     negotiation_id = serializers.UUIDField(required=False, allow_null=True)
 
@@ -117,8 +123,14 @@ class InventoryStatusSerializer(serializers.Serializer):
     """Serializer for inventory status response"""
 
     status = serializers.CharField(read_only=True)
-    total = serializers.IntegerField(read_only=True)
-    available = serializers.IntegerField(read_only=True)
-    in_escrow = serializers.IntegerField(read_only=True)
+    total = serializers.IntegerField(
+        max_value=1000, min_value=1, read_only=True  # Use int for integer fields
+    )
+    available = serializers.IntegerField(
+        max_value=1000, min_value=1, read_only=True  # Use int for integer fields
+    )
+    in_escrow = serializers.IntegerField(
+        max_value=1000, min_value=1, read_only=True  # Use int for integer fields
+    )
     transaction_id = serializers.CharField(read_only=True, required=False)
     message = serializers.CharField(read_only=True, required=False)

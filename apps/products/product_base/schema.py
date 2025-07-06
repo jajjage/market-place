@@ -1,9 +1,10 @@
-from drf_spectacular.utils import OpenApiResponse, OpenApiExample
-from apps.products.serializers import ProductBaseSerializer
+from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiExample
+from apps.products.product_base.serializers import ProductDetailSerializer
+from apps.products.product_base.serializers import ManageMetadataSerializer
 
 PRODUCT_DETAIL_RESPONSE_SCHEMA = {
     200: OpenApiResponse(
-        response=ProductBaseSerializer,
+        response=ProductDetailSerializer,
         description="Product details retrieved successfully",
         examples=[
             OpenApiExample(
@@ -37,7 +38,7 @@ PRODUCT_DETAIL_RESPONSE_SCHEMA = {
 
 PRODUCT_LIST_RESPONSE_SCHEMA = {
     200: OpenApiResponse(
-        response=ProductBaseSerializer(many=True),
+        response=ProductDetailSerializer(many=True),
         description="List of products",
         examples=[
             OpenApiExample(
@@ -60,3 +61,11 @@ PRODUCT_LIST_RESPONSE_SCHEMA = {
         ],
     ),
 }
+
+PRODUCT_MANAGE_METADATA = extend_schema(
+    responses={
+        200: ManageMetadataSerializer,
+        403: OpenApiResponse(description="Not the owner of this product"),
+        404: OpenApiResponse(description="Product not found"),
+    }
+)

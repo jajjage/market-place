@@ -1,5 +1,5 @@
 from rest_framework import permissions
-from .services import RatingService
+from ..services import RatingService
 
 
 class CanRateTransactionPermission(permissions.BasePermission):

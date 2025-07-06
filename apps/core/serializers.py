@@ -34,7 +34,7 @@ class UserShortSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "first_name", "full_name"]
 
-    def get_full_name(self, obj):
+    def get_full_name(self, obj) -> str:
         return obj.get_full_name()
 
     def to_representation(self, instance):
@@ -60,7 +60,9 @@ class BreadcrumbSerializer(serializers.Serializer):
     id = serializers.CharField()
     name = serializers.CharField()
     href = serializers.CharField(allow_null=True)
-    order = serializers.IntegerField()
+    order = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
 
 
 class ProductSummarySerializer(serializers.ModelSerializer):
@@ -73,5 +75,5 @@ class ProductSummarySerializer(serializers.ModelSerializer):
         model = Product
         fields = ["id", "title", "price", "formatted_price", "seller_name"]
 
-    def get_formatted_price(self, obj):
+    def get_formatted_price(self, obj) -> str:
         return f"${obj.price:,.2f}"

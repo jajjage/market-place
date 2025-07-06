@@ -1,10 +1,9 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from apps.products.product_negotiation.views import ProductNegotiationViewSet
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register(r"negotiations", ProductNegotiationViewSet, basename="negotiation")
-
 urlpatterns = [
     path("", include(router.urls)),
 ]

@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*- #
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
-from django.views.decorators.vary import vary_on_headers
 from rest_framework import status, filters
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
@@ -24,12 +20,6 @@ from .services import BrandService, BrandRequestService, BrandVariantService
 from .utils.filters import BrandFilter
 
 
-@method_decorator(
-    [
-        vary_on_headers("Accept-Language", "Authorization"),
-    ],
-    name="dispatch",
-)
 class BrandViewSet(BaseViewSet):
     """
     Brand ViewSet with optimized queries and caching
@@ -105,7 +95,6 @@ class BrandViewSet(BaseViewSet):
         return queryset
 
     @action(detail=False, methods=["GET"])
-    @method_decorator(cache_page(900))  # 15 minute cache
     def featured(self, request):
         """Get featured brands"""
         limit = int(request.query_params.get("limit", 10))

@@ -1,13 +1,16 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.core.serializers import TimestampedModelSerializer, UserShortSerializer
 from apps.transactions.models.transaction import EscrowTransaction
-from .models import UserRating
+from ..models import UserRating
 
 
 class RatingCreateSerializer(serializers.Serializer):
     """Simplified serializer for creating ratings - business logic handled in service"""
 
-    rating = serializers.IntegerField(min_value=1, max_value=5)
+    rating = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     comment = serializers.CharField(max_length=1000, required=False, allow_blank=True)
     transaction_id = serializers.CharField(
         max_length=1000, required=False, allow_blank=True
@@ -117,7 +120,9 @@ class RateableTransactionSerializer(serializers.Serializer):
     transaction_amount = serializers.CharField()
     status_changed_at = serializers.DateTimeField()
     rating_deadline = serializers.DateTimeField()
-    days_remaining = serializers.IntegerField()
+    days_remaining = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
 
 
 class BuyerSellerEligibilitySerializer(serializers.Serializer):
@@ -126,22 +131,35 @@ class BuyerSellerEligibilitySerializer(serializers.Serializer):
     can_rate = serializers.BooleanField()
     reason = serializers.CharField()
     rateable_transactions = RateableTransactionSerializer(many=True)
-    total_completed_transactions = serializers.IntegerField()
+    total_completed_transactions = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     seller_name = serializers.CharField(allow_null=True)
     seller_id = serializers.UUIDField()
 
 
 class RatingStatsSerializer(serializers.Serializer):
-    average_rating = serializers.DecimalField(max_digits=3, decimal_places=2)
-    total_ratings = serializers.IntegerField()
+    average_rating = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+    )
+    total_ratings = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     rating_distribution = serializers.DictField()
-    recent_ratings_count = serializers.IntegerField()
+    recent_ratings_count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
 
 
 class PendingRatingSerializer(serializers.Serializer):
-    transaction_id = serializers.IntegerField()
+    transaction_id = serializers.UUIDField()
     transaction_title = serializers.CharField()
     seller_name = serializers.CharField()
     status_changed_at = serializers.DateTimeField()
     expires_at = serializers.DateTimeField()
-    days_remaining = serializers.IntegerField()
+    days_remaining = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )

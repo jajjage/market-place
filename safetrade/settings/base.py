@@ -5,8 +5,9 @@ from pathlib import Path
 from corsheaders.defaults import default_headers
 import os
 
-# Initialize environment variables with django-environ
-env = environ.Env()
+from ..utils.get_env import env
+
+# # Initialize environment variables with django-environ
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
@@ -17,9 +18,7 @@ environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 ROOT_URLCONF = "safetrade.urls"
 ASGI_APPLICATION = "safetrade.asgi.application"
 WSGI_APPLICATION = "safetrade.wsgi.application"
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY", default="django-insecure-development-key-change-me"
-)
+SECRET_KEY = env.get("DJANGO_SECRET_KEY", default="django-insecure$@")
 # -----------------------------------------------------------------------------
 # Time & Language
 # -----------------------------------------------------------------------------
@@ -192,13 +191,13 @@ DJOSER = {
     "SET_PASSWORD_RETYPE": True,
     "PASSWORD_RESET_CONFIRM_RETYPE": True,
     "TOKEN_MODEL": None,
-    "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": env.list(
+    "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS": env.get(
         "SOCIAL_AUTH_ALLOWED_REDIRECT_URIS",
         default=[
             "http://localhost:3000/auth/google/",
             "http://127.0.0.1:3000/auth/google/",
         ],
-    ),
+    ).split(","),
     "SERIALIZERS": {
         "user": "apps.users.serializers.UserSerializer",
         "current_user": "apps.users.serializers.UserSerializer",
@@ -221,7 +220,7 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,  # Blacklist old refresh tokens
     "TOKEN_OBTAIN_SERIALIZER": "apps.auth.traditional.serializers.CustomTokenObtainSerializer",
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": env("DJANGO_SECRET_KEY", default="django-insecure$@"),
+    "SIGNING_KEY": env.get("DJANGO_SECRET_KEY", default="django-insecure$@"),
     "VERIFYING_KEY": None,
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",  # Using UUID field from your User model
@@ -244,16 +243,18 @@ JWT_AUTH_REFRESH_COOKIE = "refresh_token"
 JWT_REFRESH_THRESHOLD = 300  # 5 minutes in seconds
 JWT_ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
 JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=1)
-JWT_AUTH_SECURE = env.bool("JWT_AUTH_SECURE", default=False)
-JWT_AUTH_SAMESITE = env("JWT_AUTH_SAMESITE", default="Lax")
+JWT_AUTH_SECURE = env.get("JWT_AUTH_SECURE", default=False, cast_to=bool)
+JWT_AUTH_SAMESITE = env.get("JWT_AUTH_SAMESITE", default="Lax")
 JWT_AUTH_HTTPONLY = True
 JWT_AUTH_PATH = "/"
 
 # -----------------------------------------------------------------------------
 # Google OAuth
 # -----------------------------------------------------------------------------
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = env("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default="")
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = env("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = env.get("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", default="")
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = env.get(
+    "SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", default=""
+)
 SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
@@ -279,7 +280,7 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 # Email Template
 # -----------------------------------------------------------------------------
 
-DOMAIN = env("DOMAIN", default="localhost:3000")
+DOMAIN = env.get("DOMAIN", default="localhost:3000")
 SITE_NAME = "Safe Trade MarketPlace"
 
 # -----------------------------------------------------------------------------
@@ -304,11 +305,21 @@ SOCIAL_AUTH_PIPELINE = (
 # -----------------------------------------------------------------------------
 # DRF Spectacular Settings
 # -----------------------------------------------------------------------------
+
+
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Safe Trade MarketPlace API",
-    "DESCRIPTION": "A comprehensive starting point for your new API with Django and DRF",
-    "VERSION": "0.1.0",
-    "SERVE_INCLUDE_SCHEMA": False,
+    "TITLE": "Safe Trade Marketplace API",
+    "DESCRIPTION": "API for the Safe Trade Marketplace",
+    "VERSION": "1.0.0",
+    "ENUM_NAME_OVERRIDES": {
+        # "TaskResultStatusEnum": "django_celery_results.models.TaskResult.STATUS_CHOICES",
+        "EscrowTransactionStatusEnum": "apps.transactions.models.transaction.EscrowTransaction.STATUS_CHOICES",
+        "DisputeStatusEnum": "apps.disputes.models.DisputeStatus",
+        "DisputeReasonEnum": "apps.disputes.models.DisputeReason",
+        "ProductStatusEnum": "apps.products.product_base.models.Product.ProductsStatus",
+        "BrandRequestStatusEnum": "apps.products.product_brand.models.BrandRequest.Status",
+        "PriceNegotiationStatusEnum": "apps.products.product_negotiation.models.PriceNegotiation.STATUS_CHOICES",
+    },
 }
 
 # -----------------------------------------------------------------------------

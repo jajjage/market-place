@@ -8,7 +8,7 @@ class BreadcrumbService:
     """
 
     @staticmethod
-    def get_product_breadcrumbs(product_id):
+    def get_product_breadcrumbs(product_id) -> list:
         """Get breadcrumbs for a specific product"""
         try:
             product = Product.objects.select_related("category", "brand").get(

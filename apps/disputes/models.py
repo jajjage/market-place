@@ -1,14 +1,16 @@
-# apps/transactions/models.py
-
+import uuid
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-import uuid
 
 from apps.core.models import BaseModel
 
 
 class DisputeReason(models.TextChoices):
+    """
+    An enumeration of possible reasons for a dispute.
+    """
+
     NOT_AS_DESCRIBED = "not_as_described", _("Item Not As Described")
     NOT_RECEIVED = "not_received", _("Item Not Received")
     DAMAGED = "damaged", _("Item Damaged")
@@ -17,6 +19,10 @@ class DisputeReason(models.TextChoices):
 
 
 class DisputeStatus(models.TextChoices):
+    """
+    An enumeration of possible statuses for a dispute.
+    """
+
     OPENED = "opened", _("Opened")
     IN_REVIEW = "in_review", _("In Review")
     RESOLVED_BUYER = "resolved_buyer", _("Resolved for Buyer")
@@ -26,8 +32,10 @@ class DisputeStatus(models.TextChoices):
 
 class Dispute(BaseModel):
     """
-    A single dispute per transaction. Tracks why, who opened it,
-    and how/when it was resolved.
+    Represents a dispute raised for a transaction.
+
+    A dispute can be opened by either the buyer or the seller for a transaction
+    that has gone wrong. Each transaction can have at most one dispute.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -43,7 +51,6 @@ class Dispute(BaseModel):
         related_name="opened_disputes",
         help_text=_("User who opened this dispute"),
     )
-
     reason = models.CharField(
         max_length=30,
         choices=DisputeReason.choices,
@@ -52,7 +59,6 @@ class Dispute(BaseModel):
     description = models.TextField(
         help_text=_("Details provided by the user opening the dispute")
     )
-
     status = models.CharField(
         max_length=20,
         choices=DisputeStatus.choices,
@@ -77,12 +83,16 @@ class Dispute(BaseModel):
         verbose_name = _("Dispute")
         verbose_name_plural = _("Disputes")
         ordering = ["-created_at"]
-        # OneToOneField on transaction already ensures one dispute per txn
-
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["opened_by"]),
         ]
 
     def __str__(self):
-        return f"Dispute({self.transaction_id}) by {self.opened_by_id} ─ {self.get_reason_display()}"
+        """
+        Return a string representation of the dispute.
+        """
+        return (
+            f"Dispute({self.transaction_id}) by {self.opened_by_id} "
+            f"─ {self.get_reason_display()}"
+        )

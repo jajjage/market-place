@@ -132,7 +132,7 @@ class ProductDetail(BaseModel):
         return f"{self.product.title} - {self.label}: {self.value}"
 
     @property
-    def formatted_value(self):
+    def formatted_value(self) -> str:
         """Returns formatted value with unit if available"""
         if self.unit:
             return f"{self.value} {self.unit}"

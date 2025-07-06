@@ -35,8 +35,8 @@ from apps.transactions.services.escrow_services import (
     EscrowTransactionService,
     EscrowTransactionUtility,
 )
-from .utils.transaction_filters import TransactionFilter
-from .utils.validate_actions import (
+from ..utils.transaction_filters import TransactionFilter
+from ..utils.validate_actions import (
     get_other_party_info,
     get_required_fields_for_status,
     get_action_warnings,
@@ -77,6 +77,9 @@ class EscrowTransactionViewSet(BaseViewSet):
     def get_queryset(self):
         """Base queryset - only return transactions where user is involved"""
         user = self.request.user
+        if getattr(self, "swagger_fake_view", False):
+            # Return an empty queryset so schema generation doesn't fail
+            return EscrowTransaction.objects.none()
         if user.is_staff:
             return EscrowTransaction.objects.all()
 

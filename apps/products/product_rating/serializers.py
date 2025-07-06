@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
@@ -50,13 +51,13 @@ class ProductRatingsSerializer(TimestampedModelSerializer):
             "is_owner",
         ]
 
-    def get_can_vote(self, obj):
+    def get_can_vote(self, obj) -> bool:
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
         return request.user != obj.user
 
-    def get_user_vote(self, obj):
+    def get_user_vote(self, obj) -> bool | None:
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return None
@@ -67,7 +68,7 @@ class ProductRatingsSerializer(TimestampedModelSerializer):
         except RatingHelpfulness.DoesNotExist:
             return None
 
-    def get_is_owner(self, obj):
+    def get_is_owner(self, obj) -> bool:
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
@@ -75,11 +76,15 @@ class ProductRatingsSerializer(TimestampedModelSerializer):
 
 
 class RatingBreakdownSerializer(serializers.Serializer):
-    stars = serializers.IntegerField()
-    count = serializers.IntegerField()
+    stars = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     percentage = serializers.SerializerMethodField()
 
-    def get_percentage(self, obj):
+    def get_percentage(self, obj) -> float:
         total = self.context.get("total_count", 0)
         if total == 0:
             return 0
@@ -88,10 +93,18 @@ class RatingBreakdownSerializer(serializers.Serializer):
 
 class ProductRatingAggregateSerializer(TimestampedModelSerializer):
     average = serializers.DecimalField(
-        source="average_rating", max_digits=3, decimal_places=2
+        source="average_rating",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
-    count = serializers.IntegerField(source="total_count")
-    verified_count = serializers.IntegerField()
+    count = serializers.IntegerField(
+        max_value=1000, min_value=1, source="total_count"  # Use int for integer fields
+    )
+    verified_count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     breakdown = serializers.SerializerMethodField()
 
     class Meta:
@@ -105,7 +118,7 @@ class ProductRatingAggregateSerializer(TimestampedModelSerializer):
             "last_rating_date",
         ]
 
-    def get_breakdown(self, obj):
+    def get_breakdown(self, obj) -> list[dict]:
         breakdown_data = obj.rating_breakdown
         serializer = RatingBreakdownSerializer(
             breakdown_data, many=True, context={"total_count": obj.total_count}
@@ -148,10 +161,16 @@ class CreateRatingSerializer(serializers.ModelSerializer):
 class RatingFilterSerializer(serializers.Serializer):
     """Serializer for rating filter parameters"""
 
-    product_id = serializers.IntegerField(required=True)
-    page = serializers.IntegerField(default=1, min_value=1)
-    per_page = serializers.IntegerField(default=10, min_value=1, max_value=50)
-    rating = serializers.IntegerField(required=False, min_value=1, max_value=5)
+    product_id = serializers.UUIDField(required=True)
+    page = serializers.IntegerField(
+        default=1, max_value=1000, min_value=1  # Use int for integer fields
+    )
+    per_page = serializers.IntegerField(
+        default=10,
+        min_value=1,
+        max_value=50,
+    )
+    rating = serializers.IntegerField(required=False, max_value=5, min_value=1)
     sort = serializers.ChoiceField(
         choices=["newest", "oldest", "helpful", "rating_high", "rating_low"],
         default="newest",
@@ -162,7 +181,15 @@ class RatingFilterSerializer(serializers.Serializer):
 class UserRatingStatsSerializer(serializers.Serializer):
     """Serializer for user rating statistics"""
 
-    total_ratings = serializers.IntegerField()
-    average_rating_given = serializers.FloatField()
-    verified_purchases_rated = serializers.IntegerField()
-    helpful_votes_received = serializers.IntegerField()
+    total_ratings = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    average_rating_given = serializers.FloatField(
+        max_value=5.0, min_value=0.0  # Use float for float fields
+    )
+    verified_purchases_rated = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    helpful_votes_received = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )

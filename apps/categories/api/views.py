@@ -3,22 +3,26 @@ from rest_framework import status
 from rest_framework.decorators import action
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import extend_schema
 
-from apps.categories.throttle import CategoryRateThrottle
 from apps.core.views import BaseViewSet
 
-from apps.categories.models import Category
-from apps.categories.services import CACHE_TTL, CategoryService
-from apps.categories.serializers import (
+from ..throttle import CategoryRateThrottle
+
+
+from ..models import Category
+from ..services import CACHE_TTL, CategoryService
+from .serializers import (
     CategoryListSerializer,
     CategoryDetailSerializer,
     CategoryWriteSerializer,
     CategoryBreadcrumbSerializer,
     CategoryTreeSerializer,
 )
+from .schema import category_viewset_schema
 
 
+@extend_schema(tags=["Categories"])
 class CategoryViewSet(BaseViewSet):
     """
     API endpoint for managing product categories.
@@ -60,17 +64,7 @@ class CategoryViewSet(BaseViewSet):
         )
         serializer.instance = category
 
-    @extend_schema(
-        parameters=[
-            OpenApiParameter(name="depth", description="Maximum depth", type=int),
-            OpenApiParameter(
-                name="include_inactive",
-                description="Include inactive categories",
-                type=bool,
-            ),
-        ]
-    )
-    @method_decorator(cache_page(CACHE_TTL))  # Cache for 15 minutes
+    @extend_schema(**category_viewset_schema.get("tree", {}))
     @action(detail=False, methods=["get"])
     def tree(self, request):
         """Get hierarchical tree of categories."""
@@ -82,6 +76,7 @@ class CategoryViewSet(BaseViewSet):
         tree_data = CategoryService.get_category_tree(max_depth, include_inactive)
         return Response(tree_data)
 
+    @extend_schema(**category_viewset_schema.get("subcategories", {}))
     @action(detail=True, methods=["get"])
     def subcategories(self, request, pk=None):
         """Get direct subcategories of a specific category."""
@@ -95,31 +90,14 @@ class CategoryViewSet(BaseViewSet):
         )
         return Response(serializer.data)
 
+    @extend_schema(**category_viewset_schema.get("breadcrumb", {}))
     @action(detail=True, methods=["get"])
     def breadcrumb(self, request, pk=None):
         """Get breadcrumb path for a category."""
         breadcrumb_path = CategoryService.get_breadcrumb_path(int(pk))
         return Response({"path": breadcrumb_path})
 
-    @extend_schema(
-        parameters=[
-            OpenApiParameter(
-                name="include_subcategories",
-                description="Include products from subcategories",
-                type=bool,
-            ),
-            OpenApiParameter(
-                name="price_min", description="Minimum price filter", type=float
-            ),
-            OpenApiParameter(
-                name="price_max", description="Maximum price filter", type=float
-            ),
-            OpenApiParameter(name="brand", description="Brand slug filter", type=str),
-            OpenApiParameter(
-                name="in_stock", description="Only in-stock products", type=bool
-            ),
-        ]
-    )
+    @extend_schema(**category_viewset_schema.get("products", {}))
     @action(detail=True, methods=["get"])
     def products(self, request, pk=None):
         """Get products belonging to this category."""
@@ -159,6 +137,7 @@ class CategoryViewSet(BaseViewSet):
         )
         return Response(serializer.data)
 
+    @extend_schema(**category_viewset_schema.get("popular", {}))
     @method_decorator(cache_page(CACHE_TTL))  # Cache for 30 minutes
     @action(detail=False, methods=["get"])
     def popular(self, request):
@@ -170,3 +149,18 @@ class CategoryViewSet(BaseViewSet):
             categories, many=True, context={"request": request}
         )
         return Response(serializer.data)
+
+
+class CategoryAdminViewSet(BaseViewSet):
+    """
+    Admin-only endpoint for managing categories, including inactive ones.
+    """
+
+    queryset = Category.objects.all()
+    # permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        if self.action in ["create", "update", "partial_update"]:
+            return CategoryWriteSerializer
+        return CategoryDetailSerializer

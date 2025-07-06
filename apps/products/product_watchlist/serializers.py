@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
@@ -11,7 +12,7 @@ from .models import ProductWatchlistItem
 User = get_user_model()
 
 
-class ProductListSerializer(TimestampedModelSerializer):
+class WatchlistProductListSerializer(TimestampedModelSerializer):
     """
     Serializer for listing products with essential information.
     Optimized for displaying products in listings.
@@ -19,10 +20,18 @@ class ProductListSerializer(TimestampedModelSerializer):
 
     brand_name = serializers.SerializerMethodField(read_only=True)
     originalPrice = serializers.DecimalField(
-        source="original_price", max_digits=10, decimal_places=2
+        source="original_price",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
     escrowFee = serializers.DecimalField(
-        source="escrow_fee", max_digits=10, decimal_places=2
+        source="escrow_fee",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
 
     seller = serializers.SerializerMethodField()
@@ -60,14 +69,14 @@ class ProductListSerializer(TimestampedModelSerializer):
             "brand_name",
         ]
 
-    def get_brand_name(self, obj):
+    def get_brand_name(self, obj) -> str | None:
         return obj.brand.name
 
-    def get_seller(self, obj):
+    def get_seller(self, obj) -> dict | None:
         profile_obj = obj.seller
         return UserShortSerializer(profile_obj, context=self.context).data
 
-    def get_image_url(self, obj):
+    def get_image_url(self, obj) -> str | None:
         request = self.context.get("request")
         primary_image = ProductImageService.get_primary_image(obj.id)
         if primary_image and primary_image.image_url:
@@ -81,13 +90,13 @@ class ProductListSerializer(TimestampedModelSerializer):
 
         return None
 
-    def get_discount_percent(self, obj):
+    def get_discount_percent(self, obj) -> float:
         if obj.original_price and obj.price < obj.original_price:
             discount = ((obj.original_price - obj.price) / obj.original_price) * 100
             return round(discount, 1)
         return 0
 
-    def get_ratings(self, obj):
+    def get_ratings(self, obj) -> dict:
         """Get ratings from annotated fields"""
         return {
             "average": getattr(obj, "avg_rating_db", 0),
@@ -155,7 +164,7 @@ class ProductWatchlistItemListSerializer(TimestampedModelSerializer):
             return delta.days
         return 0
 
-    def get_product(self, obj):
+    def get_product(self, obj) -> dict | None:
         # Try the prefetched list first
         pref = getattr(obj, "prefetched_product", None)
 
@@ -171,13 +180,13 @@ class ProductWatchlistItemListSerializer(TimestampedModelSerializer):
         if not prod:
             return None
 
-        return ProductListSerializer(prod, context=self.context).data
+        return WatchlistProductListSerializer(prod, context=self.context).data
 
 
 class ProductWatchlistItemDetailSerializer(TimestampedModelSerializer):
     """Detailed serializer for individual watchlist items."""
 
-    product = ProductListSerializer(read_only=True)
+    product = WatchlistProductListSerializer(read_only=True)
     user = serializers.StringRelatedField(read_only=True)
     added_at = serializers.DateTimeField(read_only=True, format="%Y-%m-%d %H:%M:%S")
     days_in_watchlist = serializers.SerializerMethodField()
@@ -264,7 +273,9 @@ class ProductWatchlistBulkSerializer(serializers.Serializer):
 class WatchlistStatsSerializer(serializers.Serializer):
     """Serializer for watchlist statistics."""
 
-    total_items = serializers.IntegerField()
+    total_items = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     recently_added = serializers.ListField(
         child=serializers.UUIDField(), help_text="Product IDs of recently added items"
     )
@@ -278,7 +289,9 @@ class WatchlistStatsSerializer(serializers.Serializer):
     newest_item_date = serializers.DateTimeField(
         allow_null=True, format="%Y-%m-%d %H:%M:%S"
     )
-    categories_count = serializers.IntegerField()
+    categories_count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
 
     def to_representation(self, instance):
         """Convert WatchlistStats dataclass to dict."""
@@ -298,7 +311,9 @@ class WatchlistStatsSerializer(serializers.Serializer):
 class WatchlistInsightsSerializer(serializers.Serializer):
     """Serializer for advanced watchlist insights."""
 
-    total_items = serializers.IntegerField()
+    total_items = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     recent_activity = serializers.DictField(help_text="Recent activity breakdown")
     category_distribution = serializers.ListField(
         child=serializers.DictField(), help_text="Distribution of products by category"
@@ -317,7 +332,9 @@ class WatchlistOperationResultSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     message = serializers.CharField()
     status = serializers.CharField()
-    affected_count = serializers.IntegerField(default=0)
+    affected_count = serializers.IntegerField(
+        max_value=100, min_value=1, default=0  # ✅ Integer
+    )
     errors = serializers.ListField(
         child=serializers.CharField(), required=False, default=list
     )
@@ -362,7 +379,9 @@ class ProductWatchlistCountSerializer(serializers.Serializer):
     """Serializer for product watchlist count (staff only)."""
 
     product_id = serializers.UUIDField()
-    watchlist_count = serializers.IntegerField()
+    watchlist_count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     timestamp = serializers.DateTimeField(
         format="%Y-%m-%d %H:%M:%S", help_text="Timestamp when count was retrieved"
     )
@@ -375,7 +394,12 @@ class WatchlistItemAdminSerializer(TimestampedModelSerializer):
     user_email = serializers.EmailField(source="user.email", read_only=True)
     product_name = serializers.CharField(source="product.name", read_only=True)
     product_price = serializers.DecimalField(
-        source="product.price", read_only=True, max_digits=10, decimal_places=2
+        source="product.price",
+        read_only=True,
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
     category_name = serializers.CharField(
         source="product.category.name", read_only=True
@@ -399,9 +423,15 @@ class WatchlistItemAdminSerializer(TimestampedModelSerializer):
 class WatchlistAnalyticsSerializer(serializers.Serializer):
     """Serializer for advanced analytics (staff only)."""
 
-    total_users_with_watchlists = serializers.IntegerField()
-    total_watchlist_items = serializers.IntegerField()
-    average_watchlist_size = serializers.FloatField()
+    total_users_with_watchlists = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    total_watchlist_items = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    average_watchlist_size = serializers.FloatField(
+        max_value=5.0, min_value=0.0  # Use float for float fields
+    )
     most_watched_products = serializers.ListField(child=serializers.DictField())
     watchlist_growth = serializers.DictField(help_text="Growth statistics over time")
     category_popularity = serializers.ListField(child=serializers.DictField())

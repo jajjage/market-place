@@ -17,7 +17,9 @@ class ProductImageSerializer(TimestampedModelSerializer):
     """Main serializer for ProductImage - matches API response example"""
 
     variant = ProductImageVariantSerializer(read_only=True)
-    file_size = serializers.IntegerField(read_only=True)  # Keep as bytes for accuracy
+    file_size = serializers.IntegerField(
+        max_value=1000, min_value=1, read_only=True  # Use int for integer fields
+    )  # Keep as bytes for accuracy
     dimensions = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
 
@@ -37,13 +39,13 @@ class ProductImageSerializer(TimestampedModelSerializer):
         ]
         read_only_fields = ["id", "file_size", "dimensions"]
 
-    def get_dimensions(self, obj):
+    def get_dimensions(self, obj) -> str:
         """Return dimensions as string format matching API example"""
         if obj.width and obj.height:
             return f"{obj.width}x{obj.height}"
         return ""
 
-    def get_image_url(self, obj):
+    def get_image_url(self, obj) -> str | None:
         request = self.context.get("request")
         if request and obj.image_url:
             return request.build_absolute_uri(obj.image_url)
@@ -53,7 +55,12 @@ class ProductImageSerializer(TimestampedModelSerializer):
 class ProductImageCreateSerializer(TimestampedModelSerializer):
     """Serializer for creating ProductImage instances"""
 
-    variant_id = serializers.IntegerField(required=False, allow_null=True)
+    variant_id = serializers.IntegerField(
+        max_value=1000,  # Use int for integer fields
+        min_value=1,
+        required=False,
+        allow_null=True,
+    )
     variant_name = serializers.CharField(
         required=False, allow_blank=True, write_only=True
     )
@@ -138,7 +145,9 @@ class ProductImageUploadSerializer(serializers.Serializer):
     product_id = serializers.UUIDField(required=True)
     alt_text = serializers.CharField(max_length=255, required=False, allow_blank=True)
     is_primary = serializers.BooleanField(default=False)
-    display_order = serializers.IntegerField(default=0, min_value=0)
+    display_order = serializers.IntegerField(
+        default=0, max_value=1000, min_value=1  # Use int for integer fields
+    )
     variant_name = serializers.CharField(required=False, allow_blank=True)
     created_by_user = serializers.BooleanField(
         default=True
@@ -188,7 +197,7 @@ class ProductImageBulkCreateSerializer(serializers.Serializer):
     """Serializer for bulk creating multiple product images"""
 
     images = ProductImageCreateSerializer(many=True)
-    product_id = serializers.IntegerField()
+    product_id = serializers.UUIDField()
 
     def validate_images(self, value):
         """Validate bulk image creation limits"""
@@ -323,7 +332,7 @@ class ProductImageDetailSerializer(TimestampedModelSerializer):
             return round(obj.file_size / (1024 * 1024), 2)
         return 0
 
-    def get_dimensions(self, obj):
+    def get_dimensions(self, obj) -> str:
         """Return dimensions as formatted string"""
         if obj.width and obj.height:
             return f"{obj.width}x{obj.height}"
@@ -336,7 +345,7 @@ class ProductImageDetailSerializer(TimestampedModelSerializer):
 class ProductImagesListSerializer(serializers.Serializer):
     """Serializer for listing all images for a product"""
 
-    product_id = serializers.IntegerField()
+    product_id = serializers.UUIDField()
     images = ProductImageSerializer(many=True, read_only=True)
 
     def to_representation(self, instance):

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.core.serializers import TimestampedModelSerializer
 from .models import ProductCondition
@@ -6,9 +7,15 @@ from .models import ProductCondition
 class ProductConditionListSerializer(TimestampedModelSerializer):
     """Optimized serializer for listing product conditions."""
 
-    products_count = serializers.IntegerField(read_only=True)
+    products_count = serializers.IntegerField(
+        max_value=1000, min_value=1, read_only=True  # Use int for integer fields
+    )
     avg_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, read_only=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        read_only=True,
     )
 
     class Meta:
@@ -33,9 +40,15 @@ class ProductConditionListSerializer(TimestampedModelSerializer):
 class ProductConditionDetailSerializer(TimestampedModelSerializer):
     """Detailed serializer with full information."""
 
-    products_count = serializers.IntegerField(read_only=True)
+    products_count = serializers.IntegerField(
+        max_value=1000, min_value=1, read_only=True  # Use int for integer fields
+    )
     avg_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, read_only=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        read_only=True,
     )
     avg_rating = serializers.DecimalField(
         max_digits=3, decimal_places=2, read_only=True
@@ -113,11 +126,25 @@ class ProductConditionWriteSerializer(TimestampedModelSerializer):
 class ProductConditionAnalyticsSerializer(serializers.ModelSerializer):
     """Serializer for condition analytics data."""
 
-    total_products = serializers.IntegerField()
-    avg_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_products = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    avg_price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+    )
     price_range = serializers.DictField()
-    categories_count = serializers.IntegerField()
-    avg_rating = serializers.DecimalField(max_digits=3, decimal_places=2)
+    categories_count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    avg_rating = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("100.00"),
+        min_value=Decimal("0.00"),  # ✅ Decimal instance
+    )
     stock_status = serializers.DictField()
 
     class Meta:
@@ -139,7 +166,11 @@ class ConditionBulkOrderSerializer(serializers.Serializer):
     """Serializer for bulk updating display order."""
 
     conditions = serializers.ListField(
-        child=serializers.DictField(child=serializers.IntegerField())
+        child=serializers.DictField(
+            child=serializers.IntegerField(
+                max_value=1000, min_value=1  # Use int for integer fields
+            )
+        )
     )
 
     def validate_conditions(self, value):

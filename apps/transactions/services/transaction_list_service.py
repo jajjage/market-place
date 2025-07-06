@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from django_redis import get_redis_connection
 from apps.core.utils.cache_manager import CacheKeyManager, CacheManager
 from apps.transactions.models import EscrowTransaction, TransactionHistory
-from apps.transactions.serializers import (
+from apps.transactions.api.serializers import (
     EscrowTransactionListSerializer,
     EscrowTransactionTrackingSerializer,
     ProductTrackingSerializer,

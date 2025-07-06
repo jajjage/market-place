@@ -33,7 +33,7 @@ class ProductDetailTemplateSerializer(TimestampedModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
-    def get_usage_count(self, obj):
+    def get_usage_count(self, obj) -> int:
         """Get count of active product details using this template"""
         return obj.product_details.filter(is_active=True).count()
 
@@ -81,6 +81,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductDetail
+        ref_name = "ExtendedProductDetail"
         fields = [
             "id",
             "detail_type_display",
@@ -307,11 +308,19 @@ class ProductDetailTemplateBulkCreateSerializer(serializers.Serializer):
 class ProductDetailTemplateUsageSerializer(serializers.Serializer):
     """Serializer for template usage information"""
 
-    template_id = serializers.IntegerField()
-    active_usage_count = serializers.IntegerField()
-    total_usage_count = serializers.IntegerField()
+    template_id = serializers.UUIDField()
+    active_usage_count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    total_usage_count = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
     can_delete = serializers.BooleanField()
-    products_using = serializers.ListField(child=serializers.IntegerField())
+    products_using = serializers.ListField(
+        child=serializers.IntegerField(
+            max_value=1000, min_value=1  # Use int for integer fields
+        )
+    )
 
 
 class ProductDetailFromTemplateSerializer(serializers.Serializer):
@@ -320,7 +329,9 @@ class ProductDetailFromTemplateSerializer(serializers.Serializer):
     template_id = serializers.UUIDField()
     value = serializers.CharField()
     is_highlighted = serializers.BooleanField(default=False)
-    display_order = serializers.IntegerField(required=False)
+    display_order = serializers.IntegerField(
+        max_value=1000, min_value=1, required=False  # Use int for integer fields
+    )
 
     def validate_template_id(self, template_id):
         """Validate that template exists and is active"""

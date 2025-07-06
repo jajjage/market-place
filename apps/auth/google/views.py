@@ -8,10 +8,12 @@ from djoser.social.views import ProviderAuthView
 from apps.core.views import BaseAPIView
 
 from apps.core.utils.cookie_set import CookieSet
+from .schema import google_auth_schema
 
 logger = logging.getLogger(__name__)
 
 
+# @google_auth_schema
 class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
     """
     Custom social provider view to handle authentication with social providers.
@@ -105,3 +107,12 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
                 message="Authentication failed",
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
+
+
+class GoogleAuthView(CustomSocialProviderView):
+    """
+    View to handle Google authentication.
+    This view inherits from CustomSocialProviderView and is specifically for Google OAuth2.
+    """
+
+    pass

@@ -2,24 +2,18 @@ from rest_framework import permissions
 
 
 class DisputePermission(permissions.BasePermission):
-    """Custom permission for disputes"""
-
-    def has_permission(self, request, view):
-        """Check if user has permission to access disputes"""
-        if not request.user.is_authenticated:
-            return False
-
-        # Staff can access all disputes
-        if request.user.is_staff:
-            return True
-
-        # Regular users can only access their own disputes
-        return True
+    """
+    Custom permission to only allow owners of a dispute to see it.
+    Staff users are allowed to see all disputes.
+    """
 
     def has_object_permission(self, request, view, obj):
-        """Check if user has permission to access specific dispute"""
+        """
+        Check if the user has permission to view the dispute.
+        """
         if request.user.is_staff:
             return True
-
-        # Users can only access disputes for their transactions
-        return request.user in [obj.transaction.buyer, obj.transaction.seller]
+        return (
+            obj.transaction.buyer == request.user
+            or obj.transaction.seller == request.user
+        )

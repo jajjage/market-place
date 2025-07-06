@@ -7,6 +7,8 @@ from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.core.views import BaseAPIView, BaseViewSet
+
+# from apps.products.product_base.schema import PRODUCT_MANAGE_METADATA
 from apps.products.product_base.services import (
     ProductMyService,
     ProductFeaturedService,
@@ -29,6 +31,7 @@ from .models import (
     Product,
 )
 from .serializers import (
+    ManageMetadataSerializer,
     ProductCreateSerializer,
     ProductUpdateSerializer,
     ProductListSerializer,
@@ -42,7 +45,7 @@ from apps.products.product_base.utils.rate_limiting import (
     ProductFeaturedRateThrottle,
 )
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 logger = logging.getLogger("products_performance")
 
@@ -203,15 +206,13 @@ class ProductViewSet(BaseViewSet):
         return ProductConditionService.by_condition(self, request, condition_id)
 
     @extend_schema(
-        summary="Manage Product Metadata",
-        description="Get or update metadata for a product owned by the authenticated user.",
         responses={
-            200: ProductMetaDetailSerializer,
-            403: "Not the owner of this product",
-            404: "Product not found",
-        },
+            200: ManageMetadataSerializer,  # your “success” schema
+            403: OpenApiResponse(description="Not the owner of this product"),
+            404: OpenApiResponse(description="Product not found"),
+        }
     )
-    @action(detail=True, methods=["get", "patch", "put"])
+    @action(detail=True, methods=["get", "put", "patch"], url_path="manage_metadata")
     def manage_metadata(self, request, pk=None):
         """
         Allow product owners to manage their product's metadata.

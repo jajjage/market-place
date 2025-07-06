@@ -50,9 +50,9 @@ class ProductRating(BaseModel):
         return f"{self.product.title} - {self.rating} stars by {self.user.username}"
 
     @property
-    def helpfulness_ratio(self):
+    def helpfulness_ratio(self) -> float:
         if self.total_votes == 0:
-            return 0
+            return 0.0
         return round((self.helpful_count / self.total_votes) * 100, 1)
 
 
@@ -104,7 +104,7 @@ class ProductRatingAggregate(BaseModel):
         ]
 
     @property
-    def rating_breakdown(self):
+    def rating_breakdown(self) -> list[dict]:
         return [
             {"stars": 5, "count": self.stars_5_count},
             {"stars": 4, "count": self.stars_4_count},

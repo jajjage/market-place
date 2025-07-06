@@ -3,12 +3,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 from django.utils import timezone
 import logging
 
 from apps.core.utils.extract_error import extract_validation_error_message
 from apps.core.views import BaseViewSet
+from apps.products.product_watchlist.models import ProductWatchlistItem
 from apps.products.product_watchlist.utils.exceptions import (
     WatchlistError,
     WatchlistValidationError,
@@ -55,6 +55,9 @@ class ProductWatchlistViewSet(BaseViewSet):
         try:
             user = self.request.user
             target_user_id = None
+            if getattr(self, "swagger_fake_view", False):
+                # Return an empty queryset so schema generation doesn't fail
+                return ProductWatchlistItem.objects.none()
 
             # Handle staff user operations
             if user.is_staff and "user_id" in self.request.query_params:
@@ -107,35 +110,6 @@ class ProductWatchlistViewSet(BaseViewSet):
         logger.error(f"Unexpected error in watchlist operation: {exc}")
         return super().handle_exception(exc)
 
-    @extend_schema(
-        summary="List user's watchlist items",
-        description="Retrieve paginated list of watchlist items with optional filtering and sorting",
-        parameters=[
-            OpenApiParameter(
-                name="user_id",
-                description="User ID (staff only)",
-                required=False,
-                type=str,
-            ),
-            OpenApiParameter(
-                name="search",
-                description="Search in product names and categories",
-                required=False,
-                type=str,
-            ),
-            OpenApiParameter(
-                name="ordering",
-                description="Order by: added_at, -added_at, product__name, product__price",
-                required=False,
-                type=str,
-            ),
-        ],
-        responses={
-            200: ProductWatchlistItemListSerializer(many=True),
-            400: OpenApiResponse(description="Invalid parameters"),
-            403: OpenApiResponse(description="Permission denied"),
-        },
-    )
     def list(self, request, *args, **kwargs):
         """Get user's watchlist with enhanced filtering and caching."""
         try:
@@ -169,17 +143,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @extend_schema(
-        summary="Add product to watchlist",
-        request=ProductWatchlistItemCreateSerializer,
-        responses={
-            201: ProductWatchlistItemDetailSerializer,
-            400: OpenApiResponse(
-                description="Invalid data or product already in watchlist"
-            ),
-            404: OpenApiResponse(description="Product not found"),
-        },
-    )
     def create(self, request, *args, **kwargs):
         """Add a single product to watchlist with validation."""
         try:
@@ -246,15 +209,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-    @extend_schema(
-        summary="Bulk watchlist operations",
-        description="Add or remove multiple products from watchlist in a single operation",
-        request=ProductWatchlistBulkSerializer,
-        responses={
-            200: WatchlistOperationResultSerializer,
-            400: OpenApiResponse(description="Invalid operation or data"),
-        },
-    )
     @action(detail=False, methods=["post"])
     def bulk_operation(self, request):
         """Perform bulk operations (add/remove) on watchlist items."""
@@ -296,29 +250,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @extend_schema(
-        summary="Get watchlist statistics",
-        description="Retrieve comprehensive statistics about user's watchlist",
-        parameters=[
-            OpenApiParameter(
-                name="user_id",
-                description="User ID (staff only)",
-                required=False,
-                type=str,
-            ),
-            OpenApiParameter(
-                name="force_refresh",
-                description="Force refresh cache",
-                required=False,
-                type=bool,
-            ),
-        ],
-        responses={
-            200: WatchlistStatsSerializer,
-            400: OpenApiResponse(description="Invalid user_id parameter"),
-            403: OpenApiResponse(description="Permission denied"),
-        },
-    )
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Get statistics about the user's watchlist with caching."""
@@ -362,23 +293,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @extend_schema(
-        summary="Get watchlist insights",
-        description="Get advanced analytics and insights about user's watchlist behavior",
-        parameters=[
-            OpenApiParameter(
-                name="user_id",
-                description="User ID (staff only)",
-                required=False,
-                type=str,
-            ),
-        ],
-        responses={
-            200: WatchlistInsightsSerializer,
-            400: OpenApiResponse(description="Invalid parameters"),
-            403: OpenApiResponse(description="Permission denied"),
-        },
-    )
     @action(detail=False, methods=["get"])
     def insights(self, request):
         """Get advanced insights about the user's watchlist."""
@@ -409,25 +323,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @extend_schema(
-        summary="Check if product is in watchlist",
-        description="Check if a specific product is in the user's watchlist",
-        parameters=[
-            OpenApiParameter(
-                name="product_id",
-                description="Product ID to check",
-                required=True,
-                type=str,
-            )
-        ],
-        responses={
-            200: {
-                "type": "object",
-                "properties": {"in_watchlist": {"type": "boolean"}},
-            },
-            400: OpenApiResponse(description="Invalid or missing product_id"),
-        },
-    )
     @action(detail=False, methods=["get"])
     def check_product(self, request):
         """Check if a product is in the user's watchlist with caching."""
@@ -464,21 +359,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @extend_schema(
-        summary="Toggle product in watchlist",
-        description="Add or remove a product from watchlist (toggle operation)",
-        request={
-            "type": "object",
-            "properties": {"product_id": {"type": "string", "format": "uuid"}},
-            "required": ["product_id"],
-        },
-        responses={
-            200: WatchlistOperationResultSerializer,
-            201: WatchlistOperationResultSerializer,
-            400: OpenApiResponse(description="Invalid product_id or operation failed"),
-            404: OpenApiResponse(description="Product not found"),
-        },
-    )
     @action(detail=False, methods=["post"])
     def toggle_product(self, request):
         """Toggle a product in the user's watchlist."""
@@ -516,29 +396,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @extend_schema(
-        summary="Get product watchlist count",
-        description="Get total count of users who have this product in their watchlist (staff only)",
-        parameters=[
-            OpenApiParameter(
-                name="product_id",
-                description="Product ID to get count for",
-                required=True,
-                type=str,
-            )
-        ],
-        responses={
-            200: {
-                "type": "object",
-                "properties": {
-                    "product_id": {"type": "string"},
-                    "watchlist_count": {"type": "integer"},
-                },
-            },
-            400: OpenApiResponse(description="Invalid product_id"),
-            403: OpenApiResponse(description="Permission denied"),
-        },
-    )
     @action(detail=False, methods=["get"])
     def by_product(self, request):
         """Get watchlist count for a specific product (Staff only) with caching."""
@@ -583,15 +440,6 @@ class ProductWatchlistViewSet(BaseViewSet):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @extend_schema(
-        summary="Remove item from watchlist",
-        description="Remove a specific watchlist item by ID",
-        responses={
-            204: OpenApiResponse(description="Item removed successfully"),
-            404: OpenApiResponse(description="Item not found"),
-            403: OpenApiResponse(description="Permission denied"),
-        },
-    )
     @action(detail=False, methods=["post"])
     def remove_from_watchlist(self, request, *args, **kwargs):
         """Remove a watchlist item with proper validation."""

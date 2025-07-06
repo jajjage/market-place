@@ -3,14 +3,17 @@ from rest_framework import serializers
 from apps.core.serializers import BreadcrumbSerializer, TimestampedModelSerializer
 from apps.core.utils.breadcrumbs import BreadcrumbService
 
-from .models import Category
+from ..models import Category
 
 
 class CategoryListSerializer(TimestampedModelSerializer):
     """Simple serializer for listing categories."""
 
     subcategories_count = serializers.IntegerField(
-        source="subcategories.count", read_only=True
+        source="subcategories.count",
+        max_value=1000,  # Use int for integer fields
+        min_value=1,
+        read_only=True,
     )
 
     class Meta:
@@ -46,7 +49,7 @@ class CategorySummarySerializer(serializers.Serializer):
     )
     subcategories = RecursiveField(many=True, read_only=True)
 
-    def get_products_count(self, obj):
+    def get_products_count(self, obj) -> int:
         """Get count of products in this category."""
         return obj.products.count()
 
@@ -79,11 +82,11 @@ class CategoryDetailSerializer(TimestampedModelSerializer):
             "updated_at",
         ]
 
-    def get_products_count(self, obj):
+    def get_products_count(self, obj) -> int:
         """Get count of products in this category."""
         return obj.products.count()
 
-    def get_breadcrumbs(self, obj):
+    def get_breadcrumbs(self, obj) -> list:
         service = BreadcrumbService()
         breadcrumb_data = service.for_category(obj)
         return BreadcrumbSerializer(breadcrumb_data, many=True).data
@@ -131,7 +134,7 @@ class CategoryBreadcrumbSerializer(TimestampedModelSerializer):
         model = Category
         fields = ["id", "name", "path"]
 
-    def get_path(self, obj):
+    def get_path(self, obj) -> list:
         """Build breadcrumb path from root to current category."""
         breadcrumbs = []
         category = obj
@@ -153,7 +156,7 @@ class CategoryTreeSerializer(TimestampedModelSerializer):
         model = Category
         fields = ["id", "name", "description", "slug", "is_active", "subcategories"]
 
-    def get_subcategories(self, obj):
+    def get_subcategories(self, obj) -> list:
         if hasattr(obj, "prefetched_subcategories"):
             return CategoryTreeSerializer(
                 obj.prefetched_subcategories, many=True, context=self.context

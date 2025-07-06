@@ -34,12 +34,12 @@ class NegotiationHistorySerializer(TimestampedModelSerializer):
             "notes",
         ]
 
-    def get_formatted_price(self, obj):
+    def get_formatted_price(self, obj) -> str | None:
         if obj.price:
             return f"${obj.price:,.2f}"
         return None
 
-    def get_time_ago(self, obj):
+    def get_time_ago(self, obj) -> str | None:
         """Human readable time difference"""
         now = timezone.now()
         diff = now - obj.timestamp
@@ -99,23 +99,23 @@ class PriceNegotiationSerializer(TimestampedModelSerializer):
             "history",
         ]
 
-    def get_formatted_original_price(self, obj):
+    def get_formatted_original_price(self, obj) -> str:
         return f"${obj.original_price:,.2f}"
 
-    def get_formatted_offered_price(self, obj):
+    def get_formatted_offered_price(self, obj) -> str:
         return f"${obj.offered_price:,.2f}"
 
-    def get_formatted_final_price(self, obj):
+    def get_formatted_final_price(self, obj) -> str | None:
         if obj.final_price:
             return f"${obj.final_price:,.2f}"
         return None
 
-    def get_discount_amount(self, obj):
+    def get_discount_amount(self, obj) -> float:
         """Calculate discount amount from original price"""
         price_to_compare = obj.final_price or obj.offered_price
         return float(obj.original_price - price_to_compare)
 
-    def get_discount_percentage(self, obj):
+    def get_discount_percentage(self, obj) -> float:
         """Calculate discount percentage"""
         price_to_compare = obj.final_price or obj.offered_price
         if obj.original_price > 0:
@@ -124,7 +124,7 @@ class PriceNegotiationSerializer(TimestampedModelSerializer):
             )
         return 0
 
-    def get_time_remaining(self, obj):
+    def get_time_remaining(self, obj) -> str | None:
         """Calculate time remaining for negotiation response"""
         if obj.product.negotiation_deadline:
             now = timezone.now()
@@ -142,7 +142,7 @@ class PriceNegotiationSerializer(TimestampedModelSerializer):
                 return "Expired"
         return None
 
-    def get_can_respond(self, obj):
+    def get_can_respond(self, obj) -> bool:
         """Check if current user can respond to this negotiation"""
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
@@ -165,7 +165,10 @@ class InitiateNegotiationSerializer(serializers.Serializer):
     """Serializer for initiating a negotiation"""
 
     offered_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, min_value=Decimal("0.01")
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
     )
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
     variant_id = serializers.UUIDField(required=True)
@@ -188,7 +191,12 @@ class NegotiationResponseSerializer(serializers.Serializer):
 
     response_type = serializers.ChoiceField(choices=RESPONSE_CHOICES)
     counter_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, allow_null=True
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        required=False,
+        allow_null=True,
     )
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
@@ -211,7 +219,9 @@ class NegotiationResponseSerializer(serializers.Serializer):
 class CreateTransactionFromNegotiationSerializer(serializers.Serializer):
     """Serializer for creating transaction from accepted negotiation"""
 
-    quantity = serializers.IntegerField(min_value=1, default=1)
+    quantity = serializers.IntegerField(
+        max_value=1000, min_value=1, default=1  # Use int for integer fields
+    )
     notes = serializers.CharField(max_length=1000, required=False, allow_blank=True)
     shipping_address = serializers.JSONField(required=False)
 
@@ -224,45 +234,65 @@ class CreateTransactionFromNegotiationSerializer(serializers.Serializer):
 class NegotiationStatsSerializer(serializers.Serializer):
     """Serializer for negotiation statistics"""
 
-    total_negotiations = serializers.IntegerField()
-    accepted_negotiations = serializers.IntegerField()
-    rejected_negotiations = serializers.IntegerField()
-    pending_negotiations = serializers.IntegerField()
-    average_offered_price = serializers.FloatField()
-    average_final_price = serializers.FloatField()
-    success_rate = serializers.FloatField()
+    total_negotiations = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    accepted_negotiations = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    rejected_negotiations = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    pending_negotiations = serializers.IntegerField(
+        max_value=1000, min_value=1  # Use int for integer fields
+    )
+    average_offered_price = serializers.FloatField(
+        max_value=5.0, min_value=0.0  # Use float for float fields
+    )
+    average_final_price = serializers.FloatField(
+        max_value=5.0, min_value=0.0  # Use float for float fields
+    )
+    success_rate = serializers.FloatField(
+        max_value=5.0, min_value=0.0  # Use float for float fields
+    )
 
     # Additional calculated fields
     formatted_avg_offered_price = serializers.SerializerMethodField()
     formatted_avg_final_price = serializers.SerializerMethodField()
     success_rate_display = serializers.SerializerMethodField()
 
-    def get_formatted_avg_offered_price(self, obj):
+    def get_formatted_avg_offered_price(self, obj) -> str:
         return (
             f"${obj['average_offered_price']:,.2f}"
             if obj["average_offered_price"]
             else "$0.00"
         )
 
-    def get_formatted_avg_final_price(self, obj):
+    def get_formatted_avg_final_price(self, obj) -> str:
         return (
             f"${obj['average_final_price']:,.2f}"
             if obj["average_final_price"]
             else "$0.00"
         )
 
-    def get_success_rate_display(self, obj):
+    def get_success_rate_display(self, obj) -> str:
         return f"{obj['success_rate']:.1f}%" if obj["success_rate"] else "0.0%"
 
 
 class UserNegotiationHistorySerializer(serializers.Serializer):
     """Serializer for user's negotiation history"""
 
-    id = serializers.IntegerField()
+    id = serializers.UUIDField()
     product_name = serializers.CharField()
-    original_price = serializers.FloatField()
-    offered_price = serializers.FloatField()
-    final_price = serializers.FloatField(allow_null=True)
+    original_price = serializers.FloatField(
+        max_value=5.0, min_value=0.0  # Use float for float fields
+    )
+    offered_price = serializers.FloatField(
+        max_value=5.0, min_value=0.0  # Use float for float fields
+    )
+    final_price = serializers.FloatField(
+        max_value=5.0, min_value=0.0, allow_null=True  # Use float for float fields
+    )
     status = serializers.CharField()
     role = serializers.CharField()  # 'buyer' or 'seller'
     created_at = serializers.DateTimeField()
@@ -274,18 +304,18 @@ class UserNegotiationHistorySerializer(serializers.Serializer):
     formatted_final_price = serializers.SerializerMethodField()
     outcome = serializers.SerializerMethodField()
 
-    def get_formatted_original_price(self, obj):
+    def get_formatted_original_price(self, obj) -> str:
         return f"${obj['original_price']:,.2f}"
 
-    def get_formatted_offered_price(self, obj):
+    def get_formatted_offered_price(self, obj) -> str:
         return f"${obj['offered_price']:,.2f}"
 
-    def get_formatted_final_price(self, obj):
+    def get_formatted_final_price(self, obj) -> str | None:
         if obj["final_price"]:
             return f"${obj['final_price']:,.2f}"
         return None
 
-    def get_outcome(self, obj):
+    def get_outcome(self, obj) -> str:
         """Get negotiation outcome description"""
         if obj["status"] == "accepted":
             final_price = obj["final_price"] or obj["offered_price"]

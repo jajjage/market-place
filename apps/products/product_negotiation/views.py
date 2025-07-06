@@ -15,6 +15,7 @@ from apps.products.product_negotiation.models import (
     PriceNegotiation,
     NegotiationHistory,
 )
+from apps.products.product_negotiation.schema import CANCEL_NEGOTIATION
 from apps.products.product_negotiation.services import (
     NegotiationService,
     NegotiationAnalyticsService,
@@ -325,6 +326,7 @@ class ProductNegotiationViewSet(BaseViewSet):
 
         return Response({"results": serializer.data, "count": len(serializer.data)})
 
+    @CANCEL_NEGOTIATION
     @action(
         detail=False, url_path=r"cancel/(?P<negotiation_id>[^/.]+)", methods=["post"]
     )
@@ -345,11 +347,9 @@ class ProductNegotiationViewSet(BaseViewSet):
 
         # Check if negotiation can be cancelled
         if negotiation.status not in ["pending", "countered"]:
-            return Response(
-                {
-                    "detail": f"Cannot cancel negotiation with status '{negotiation.status}'."
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return self.error_response(
+                message=f"Cannot cancel negotiation with status '{negotiation.status}'.",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         # Cancel the negotiation
@@ -371,8 +371,8 @@ class ProductNegotiationViewSet(BaseViewSet):
         duration = (timezone.now() - start_time).total_seconds() * 1000
         self.logger.info(f"Negotiation cancelled in {duration:.2f}ms")
 
-        return Response(
-            {
+        return self.success_response(
+            data={
                 "message": "Negotiation cancelled successfully",
                 "negotiation_id": negotiation.id,
             }

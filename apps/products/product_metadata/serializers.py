@@ -1,5 +1,6 @@
 # apps/products/product_meta/serializers.py
 
+from decimal import Decimal
 from rest_framework import serializers
 
 from apps.core.serializers import TimestampedModelSerializer
@@ -47,7 +48,12 @@ class ProductMetaDetailSerializer(TimestampedModelSerializer):
         source="product.shortcode", read_only=True
     )
     product_price = serializers.DecimalField(
-        source="product.price", max_digits=10, decimal_places=2, read_only=True
+        source="product.price",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        read_only=True,
     )
     product_is_featured = serializers.BooleanField(
         source="product.is_featured", read_only=True
@@ -70,7 +76,7 @@ class ProductMetaDetailSerializer(TimestampedModelSerializer):
         ]
         read_only_fields = fields  # This serializer is for reading only
 
-    def get_product_image_url(self, obj):
+    def get_product_image_url(self, obj) -> str | None:
         """
         Get the primary image URL for the product.
         This is efficient because the view will prefetch the images.

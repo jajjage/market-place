@@ -1,14 +1,12 @@
-# users/api/serializers.py
-
 from rest_framework import serializers
 from django.db.models import Sum
-from apps.comments.serializers import RatingListSerializer
+from apps.comments.api.serializers import RatingListSerializer
 from apps.core.serializers import TimestampedModelSerializer, get_timestamp_fields
-from apps.disputes.serializers import DisputeListSerializer
+from apps.disputes.api.serializers import DisputeListSerializer
 from apps.store.serializers import UserStoreSerializer
 from apps.users.models import CustomUser, UserProfile
 from apps.users.models.user_address import UserAddress
-from apps.transactions.serializers import (
+from apps.transactions.api.serializers import (
     TransactionHistorySerializer,
 )
 
@@ -18,13 +16,13 @@ class SellerReviewsSerializer(serializers.Serializer):
     neutral = serializers.SerializerMethodField()
     negative = serializers.SerializerMethodField()
 
-    def get_positive(self, obj):
+    def get_positive(self, obj) -> int:
         return obj.reviews.filter(review_type="positive").count()
 
-    def get_neutral(self, obj):
+    def get_neutral(self, obj) -> int:
         return obj.reviews.filter(review_type="neutral").count()
 
-    def get_negative(self, obj):
+    def get_negative(self, obj) -> int:
         return obj.reviews.filter(review_type="negative").count()
 
 
@@ -53,6 +51,7 @@ class UserProfileSerializer(TimestampedModelSerializer):
     transactions_completed = serializers.SerializerMethodField(read_only=True)
     total_sales = serializers.SerializerMethodField(read_only=True)
     total_purchases = serializers.SerializerMethodField(read_only=True)
+    verified_status = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = UserProfile
@@ -92,7 +91,7 @@ class UserProfileSerializer(TimestampedModelSerializer):
             "last_active",
         ] + get_timestamp_fields(UserProfile)
 
-    def get_transactions_completed(self, obj):
+    def get_transactions_completed(self, obj) -> int:
         """Get total completed transactions (as buyer + seller)"""
         # Try to get from annotations first (if available)
         if hasattr(obj.user, "completed_sales_count") and hasattr(
@@ -107,7 +106,7 @@ class UserProfileSerializer(TimestampedModelSerializer):
         buyer_completed = obj.user.buyer_transactions.filter(status="completed").count()
         return seller_completed + buyer_completed
 
-    def get_total_sales(self, obj):
+    def get_total_sales(self, obj) -> int:
         """Get total sales amount from completed transactions"""
         # Try to get from annotations first
         if hasattr(obj.user, "total_sales_amount"):
@@ -121,7 +120,7 @@ class UserProfileSerializer(TimestampedModelSerializer):
             or 0
         )
 
-    def get_total_purchases(self, obj):
+    def get_total_purchases(self, obj) -> int:
         """Get total purchase amount from completed transactions"""
         # Try to get from annotations first
         if hasattr(obj.user, "total_purchases_amount"):
@@ -135,8 +134,11 @@ class UserProfileSerializer(TimestampedModelSerializer):
             or 0
         )
 
-    def get_memberSince(self, obj):
+    def get_memberSince(self, obj) -> str:
         return obj.member_since.strftime("%b %Y")
+
+    def get_verified_status(self, obj) -> bool:
+        return getattr(obj, "verified_status", False)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -238,6 +240,7 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
     transactions_completed = serializers.SerializerMethodField(read_only=True)
     total_sales = serializers.SerializerMethodField(read_only=True)
     full_name = serializers.SerializerMethodField()
+    verified_status = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = UserProfile
@@ -249,6 +252,7 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             "is_verified",
             "bio",
             "reviews",
+            "verified_status",
             "transactions_completed",
             "country",
             "city",
@@ -262,10 +266,10 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_full_name(self, obj):
+    def get_full_name(self, obj) -> str:
         return obj.user.get_full_name()
 
-    def get_transactions_completed(self, obj):
+    def get_transactions_completed(self, obj) -> int:
         """Get total completed transactions (as buyer + seller)"""
         # Try to get from annotations first (if available)
         if hasattr(obj.user, "completed_sales_count") and hasattr(
@@ -280,7 +284,7 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
         buyer_completed = obj.user.buyer_transactions.filter(status="completed").count()
         return seller_completed + buyer_completed
 
-    def get_total_sales(self, obj):
+    def get_total_sales(self, obj) -> int:
         """Get total sales amount from completed transactions"""
         # Try to get from annotations first
         if hasattr(obj.user, "total_sales_amount"):
@@ -294,8 +298,11 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             or 0
         )
 
-    def get_memberSince(self, obj):
+    def get_memberSince(self, obj) -> str:
         return obj.member_since.strftime("%b %Y")
+
+    def get_verified_status(self, obj) -> bool:
+        return getattr(obj, "verified_status", False)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -314,6 +321,18 @@ class PublicUserSerializer(serializers.ModelSerializer):
     """Only the fields you’re okay exposing to others."""
 
     full_name = serializers.SerializerMethodField()
+
+    def get_full_name(self, obj) -> str:
+        if hasattr(obj, "get_full_name"):
+            return obj.get_full_name()
+        if (
+            hasattr(obj, "profile")
+            and hasattr(obj.profile, "user")
+            and hasattr(obj.profile.user, "get_full_name")
+        ):
+            return obj.profile.user.get_full_name()
+        return ""
+
     profile = PublicUserProfileSerializer(read_only=True)
 
     class Meta:

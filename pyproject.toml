@@ -62,6 +62,7 @@ beat = "scripts.celery:run_beat"
 flower = "scripts.celery:run_flower"
 bump = "scripts.bump:bum_version"
 create_dev_env = "scripts.django:create_dev_env"
+circular_dep = "scripts.find_circular_imports:find_cycles_command"
 
 [build-system]
 requires = ["poetry-core"]

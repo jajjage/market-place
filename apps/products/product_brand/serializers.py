@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 
 from apps.core.serializers import TimestampedModelSerializer
@@ -9,10 +10,18 @@ class BrandListSerializer(TimestampedModelSerializer):
 
     social_media_data = serializers.SerializerMethodField()
     product_count = serializers.IntegerField(
-        source="cached_product_count", read_only=True
+        source="cached_product_count",
+        max_value=100,  # ✅ Integer
+        min_value=1,
+        read_only=True,
     )
     average_rating = serializers.DecimalField(
-        source="cached_average_rating", max_digits=3, decimal_places=2, read_only=True
+        source="cached_average_rating",
+        max_digits=10,
+        decimal_places=2,
+        max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
+        min_value=Decimal("0.00"),
+        read_only=True,
     )
 
     class Meta:
@@ -30,7 +39,7 @@ class BrandListSerializer(TimestampedModelSerializer):
             "social_media_data",
         ]
 
-    def get_social_media_data(self, obj):
+    def get_social_media_data(self, obj) -> dict:
         # obj.social_media is already a dict because JSONField → Python dict
         return obj.social_media or {}
 
@@ -43,10 +52,10 @@ class BrandDetailSerializer(TimestampedModelSerializer):
         model = Brand
         exclude = ["cached_product_count", "cached_average_rating", "stats_updated_at"]
 
-    def get_stats(self, obj):
+    def get_stats(self, obj) -> dict:
         return obj.get_stats()
 
-    def get_social_links(self, obj):
+    def get_social_links(self, obj) -> list:
         return [
             {"platform": platform, "url": url}
             for platform, url in obj.social_media.items()

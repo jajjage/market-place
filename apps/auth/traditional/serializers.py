@@ -1,6 +1,20 @@
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
+class LogoutSerializer(TokenObtainPairSerializer):
+    """
+    Serializer for logging out users by clearing authentication cookies.
+    """
+
+    def validate(self, attrs):
+        # This method can be extended to perform additional validation if needed
+        return super().validate(attrs)
+
+    def save(self, **kwargs):
+        # This method can be extended to perform actions on logout if needed
+        pass
+
+
 class CustomTokenObtainSerializer(TokenObtainPairSerializer):
     """
     Custom serializer for JWT token generation.

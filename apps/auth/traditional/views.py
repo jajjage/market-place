@@ -13,10 +13,18 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 
+from apps.auth.traditional.serializers import LogoutSerializer
 from apps.core.views import BaseAPIView
 
 from apps.auth.traditional.throttles import UserLoginRateThrottle
 from apps.core.utils.cookie_set import CookieSet
+from .schema import (
+    # login_schema,
+    refresh_schema,
+    verify_schema,
+    logout_schema,
+    test_auth_schema,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +32,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
+# @login_schema
 class CookieTokenObtainPairView(TokenObtainPairView, CookieSet, BaseAPIView):
     """
     Custom view to obtain token pairs with cookie support.
@@ -76,6 +85,7 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet, BaseAPIView):
         return serializer.user
 
 
+@refresh_schema
 class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
     """
     Custom TokenRefreshView to handle refresh tokens in cookies.
@@ -169,8 +179,16 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
         return True
 
 
+@verify_schema
 class CookieTokenVerifyView(TokenVerifyView, BaseAPIView):
+    """
+    Verifies the access token from the cookie.
+    """
+
     def post(self, request, *args, **kwargs):
+        """
+        Handles the POST request to verify the token.
+        """
         token = request.COOKIES.get(settings.JWT_AUTH_COOKIE)
 
         if not token:
@@ -193,8 +211,18 @@ class CookieTokenVerifyView(TokenVerifyView, BaseAPIView):
             )
 
 
+@logout_schema
 class LogoutView(BaseAPIView):
+    """
+    Logs out the user by clearing the authentication cookies.
+    """
+
+    serializer_class = LogoutSerializer
+
     def post(self, request, *args, **kwargs):
+        """
+        Handles the POST request to log out the user.
+        """
         try:
             response = self.success_response(
                 message="Successfully logged out.", status_code=status.HTTP_200_OK
@@ -207,3 +235,18 @@ class LogoutView(BaseAPIView):
             return self.error_response(
                 message="Logout failed", status_code=status.HTTP_400_BAD_REQUEST
             )
+
+
+@test_auth_schema
+class TestAuthView(BaseAPIView):
+    """
+    A view to test if the user is authenticated.
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Handles the GET request to test authentication.
+        """
+        return self.success_response(
+            message="You are authenticated", status_code=status.HTTP_200_OK
+        )

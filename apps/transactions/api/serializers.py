@@ -1,4 +1,3 @@
-# serializers.py
 from rest_framework import serializers
 from apps.core.serializers import TimestampedModelSerializer
 from apps.core.utils.breadcrumbs import BreadcrumbService
@@ -32,7 +31,7 @@ class TransactionHistorySerializer(TimestampedModelSerializer):
             "created_by_name",
         ]
 
-    def get_created_by_name(self, obj):
+    def get_created_by_name(self, obj) -> str:
         if obj.created_by:
             return (
                 f"{obj.created_by.first_name} {obj.created_by.last_name}".strip()
@@ -61,14 +60,14 @@ class EscrowTransactionShortSerializer(TimestampedModelSerializer):
             "created_at",
         ]
 
-    def get_product_image(self, obj):
+    def get_product_image(self, obj) -> str | None:
         return (
             obj.product.images.first().image.url
             if obj.product.images.exists()
             else None
         )
 
-    def get_amount(self, obj):
+    def get_amount(self, obj) -> float:
         return obj.price if obj.price else 0
 
 
@@ -100,7 +99,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
             "history",
         ]
 
-    def get_buyer_name(self, obj):
+    def get_buyer_name(self, obj) -> str | None:
         if obj.buyer:
             return (
                 f"{obj.buyer.first_name} {obj.buyer.last_name}".strip()
@@ -108,7 +107,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
             )
         return None
 
-    def get_seller_name(self, obj):
+    def get_seller_name(self, obj) -> str | None:
         if obj.seller:
             return (
                 f"{obj.seller.first_name} {obj.seller.last_name}".strip()
@@ -116,7 +115,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
             )
         return None
 
-    def get_days_since_created(self, obj):
+    def get_days_since_created(self, obj) -> int:
         from django.utils import timezone
 
         return (timezone.now() - obj.created_at).days
@@ -125,7 +124,7 @@ class EscrowTransactionListSerializer(TimestampedModelSerializer):
     #     print(obj.price)
     #     return obj.price if obj.price else 0
 
-    def get_history(self, obj):
+    def get_history(self, obj) -> list:
         # obj.all_history is the full, prefetched, ordered history list
         latest_five = getattr(obj, "all_history", [])[:5]
         return TransactionHistorySerializer(
@@ -177,7 +176,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "breadcrumbs",
         ]
 
-    def get_product_details(self, obj):
+    def get_product_details(self, obj) -> dict:
         product = obj.product
         return {
             "id": product.id,
@@ -186,7 +185,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "price": product.price,
         }
 
-    def get_variant_details(self, obj):
+    def get_variant_details(self, obj) -> dict:
         variant = obj.variant
         return {
             "id": variant.id,
@@ -194,7 +193,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             "price": variant.price,
         }
 
-    def get_image(self, obj):
+    def get_image(self, obj) -> dict | None:
         request = self.context.get("request")
         if hasattr(obj.product, "images") and obj.product.images:
             primary_image = ProductImageService.get_primary_image(obj.product.id)
@@ -218,12 +217,13 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
                         "price": obj.product.price,
                         "image": None,
                     }
+        return None
 
-    def get_breadcrumbs(self, obj):
+    def get_breadcrumbs(self, obj) -> list:
         breadcrumb_data = BreadcrumbService.generate_transaction_breadcrumbs(obj)
         return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
-    def get_buyer_details(self, obj):
+    def get_buyer_details(self, obj) -> dict | None:
         if obj.buyer:
             return {
                 "id": obj.buyer.id,
@@ -232,7 +232,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             }
         return None
 
-    def get_seller_details(self, obj):
+    def get_seller_details(self, obj) -> dict | None:
         if obj.seller:
             return {
                 "id": obj.seller.id,
@@ -242,7 +242,7 @@ class EscrowTransactionDetailSerializer(TimestampedModelSerializer):
             }
         return None
 
-    def get_history(self, obj):
+    def get_history(self, obj) -> list:
         history = TransactionHistory.objects.filter(transaction=obj).order_by(
             "timestamp"
         )
@@ -275,7 +275,7 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
         ]
         read_only = ["id"]
 
-    def get_image_url(self, obj):
+    def get_image_url(self, obj) -> str | None:
         request = self.context.get("request")
 
         if hasattr(obj.product, "images") and obj.product.images:
@@ -292,7 +292,7 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
 
         return None
 
-    def get_estimated_completion(self, obj):
+    def get_estimated_completion(self, obj) -> str | None:
         """Estimate when the transaction will be completed"""
         from django.utils import timezone
         import datetime
@@ -319,7 +319,7 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
             .isoformat()
         )
 
-    def get_tracking_info(self, obj):
+    def get_tracking_info(self, obj) -> dict | None:
         """Get shipping tracking information if available"""
         if not obj.tracking_number or not obj.shipping_carrier:
             return None
@@ -332,7 +332,7 @@ class EscrowTransactionTrackingSerializer(TimestampedModelSerializer):
             ),
         }
 
-    def _get_tracking_url(self, carrier, tracking_number):
+    def _get_tracking_url(self, carrier, tracking_number) -> str:
         """Generate tracking URL based on carrier"""
         tracking_urls = {
             "UPS": f"https://www.ups.com/track?tracknum={tracking_number}",
