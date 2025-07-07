@@ -1,4 +1,3 @@
-# apps/auth/google/schema.py
 from drf_spectacular.utils import extend_schema, OpenApiExample
 from djoser.social.serializers import ProviderAuthSerializer
 

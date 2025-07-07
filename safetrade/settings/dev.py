@@ -3,7 +3,7 @@ import tempfile
 from .base import *  # noqa
 from .base import REST_FRAMEWORK, MIDDLEWARE, INSTALLED_APPS
 
-from ..utils.get_env import env
+from .utils.get_env import env
 
 
 # -----------------------------------------------------------------------------

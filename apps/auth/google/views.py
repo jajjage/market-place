@@ -1,5 +1,7 @@
 import logging
+from urllib.parse import quote_plus
 
+from django.shortcuts import redirect
 from jsonschema import ValidationError
 from rest_framework import status
 from rest_framework_simplejwt.exceptions import TokenError
@@ -8,12 +10,10 @@ from djoser.social.views import ProviderAuthView
 from apps.core.views import BaseAPIView
 
 from apps.core.utils.cookie_set import CookieSet
-from .schema import google_auth_schema
 
 logger = logging.getLogger(__name__)
 
 
-# @google_auth_schema
 class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
     """
     Custom social provider view to handle authentication with social providers.
@@ -108,11 +108,24 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
+    def get(self, request, provider):
+        redirect_uri = request.GET.get("redirect_uri")
 
-class GoogleAuthView(CustomSocialProviderView):
-    """
-    View to handle Google authentication.
-    This view inherits from CustomSocialProviderView and is specifically for Google OAuth2.
-    """
+        if not redirect_uri:
+            return self.error_response(
+                message="redirect_uri query parameter is required.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
-    pass
+        # Build your Djoser/social-auth-app-django social login URL here
+        # This is the crucial part that generates the initial redirect to Google
+        # For Djoser, this might involve constructing a URL like:
+        # f"/o/{provider}/?redirect_uri={quote_plus(redirect_uri)}"
+        # Or you might be using a backend library that generates this URL for you.
+
+        # Example: if you're directly redirecting to a social-auth-app-django URL
+        # Make sure the redirect_uri passed to the Djoser endpoint is itself encoded
+        djoser_social_auth_url = f"http://localhost:8000/o/{provider}/?redirect_uri={quote_plus(redirect_uri)}"
+
+        # Redirect the user's browser to the Djoser/social-auth URL
+        return redirect(djoser_social_auth_url)

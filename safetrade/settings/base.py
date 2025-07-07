@@ -5,7 +5,7 @@ from pathlib import Path
 from corsheaders.defaults import default_headers
 import os
 
-from ..utils.get_env import env
+from .utils.get_env import env
 
 # # Initialize environment variables with django-environ
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -311,6 +311,9 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "Safe Trade Marketplace API",
     "DESCRIPTION": "API for the Safe Trade Marketplace",
     "VERSION": "1.0.0",
+    "EXTENSIONS": [
+        "apps.core.openapi.spectacular.CookieJWTAuthenticationExtension",
+    ],
     "ENUM_NAME_OVERRIDES": {
         # "TaskResultStatusEnum": "django_celery_results.models.TaskResult.STATUS_CHOICES",
         "EscrowTransactionStatusEnum": "apps.transactions.models.transaction.EscrowTransaction.STATUS_CHOICES",
@@ -357,7 +360,7 @@ CELERY_ENABLE_UTC = True
 CELERY_RESULT_EXTENDED = True
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers.DatabaseScheduler"
 
-from .celery_beat_schedule import get_celery_beat_schedule
+from .celery.celery_beat_schedule import get_celery_beat_schedule
 
 CELERY_BEAT_SCHEDULE = get_celery_beat_schedule()
 
@@ -371,7 +374,7 @@ CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 CELERY_WORKER_LOG_FORMAT = "[%(asctime)s: %(levelname)s/%(processName)s] %(message)s"
 CELERY_WORKER_TASK_LOG_FORMAT = "[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s"
 
-from .celery_workers import get_worker_config
+from .celery.celery_workers import get_worker_config
 
 # Get worker configuration
 WORKER_CONFIG = get_worker_config()
@@ -452,10 +455,10 @@ CELERY_TASK_QUEUES = {
 # -----------------------------------------------------------------------------
 # Import modular settings
 # -----------------------------------------------------------------------------
-from .performance import *  # noqa: F403 F401
-from .logging import *  # noqa: F403 F401
-from .cache_keys import *  # noqa: F403 F401
-from .negotiation import *  # noqa: F403 F401
+from .utils.performance import *  # noqa: F403 F401
+from .utils.logging import *  # noqa: F403 F401
+from .utils.cache_keys import *  # noqa: F403 F401
+from .utils.negotiation import *  # noqa: F403 F401
 
 # -----------------------------------------------------------------------------
 # Channels Configuration

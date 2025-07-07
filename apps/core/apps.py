@@ -6,5 +6,7 @@ class CoreConfig(AppConfig):
     name = "apps.core"
 
     def ready(self):
-        # Import for side effects, such as signal registration or configuration
-        import apps.core.spectacular  # noqa F401
+        try:
+            import apps.core.openapi.spectacular  # noqa: F401
+        except ImportError:
+            pass
