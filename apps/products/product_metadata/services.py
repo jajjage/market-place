@@ -8,7 +8,6 @@ from django.core.exceptions import PermissionDenied
 
 from apps.core.utils.cache_manager import CacheManager
 from apps.products.product_base.models import Product
-from .tasks import generate_seo_keywords_for_product
 from .models import ProductMeta
 from apps.core.utils.cache_key_manager import CacheKeyManager
 
@@ -49,22 +48,22 @@ class ProductMetaService:
         except Exception:
             logger.exception("Failed to get_or_create ProductMeta for %s", product_id)
             raise
+        # We may use this in the future if there is need
+        # with transaction.atomic():
+        #     print("inside the meta")
+        #     pm_locked = ProductMeta.objects.select_for_update().get(
+        #         product_id=product_id
+        #     )
 
-        with transaction.atomic():
-            print("inside the meta")
-            pm_locked = ProductMeta.objects.select_for_update().get(
-                product_id=product_id
-            )
-
-            # only queue if neither keywords nor a queued flag exist
-            logger.info(
-                f"{not pm_locked.seo_keywords} : {not pm_locked.seo_generation_queued}"
-            )
-            if not pm_locked.seo_keywords and not pm_locked.seo_generation_queued:
-                logger.info(f"Queueing SEO generation for product {product_id}")
-                transaction.on_commit(
-                    lambda: generate_seo_keywords_for_product.delay(product_id)
-                )
+        #     # only queue if neither keywords nor a queued flag exist
+        #     logger.info(
+        #         f"{not pm_locked.seo_keywords} : {not pm_locked.seo_generation_queued}"
+        #     )
+        #     if not pm_locked.seo_keywords and not pm_locked.seo_generation_queued:
+        #         logger.info(f"Queueing SEO generation for product {product_id}")
+        #         transaction.on_commit(
+        #             lambda: generate_seo_keywords_for_product.delay(product_id)
+        #         )
 
         if use_cache_buffer:
             # 3) Build cache key

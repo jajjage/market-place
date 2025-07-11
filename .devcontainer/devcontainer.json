@@ -15,16 +15,33 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// This can be used to network with other containers or the host.
 	"forwardPorts": [
-		8000,
-		5432,
-		6379,
-		5000,
-		5555
+		8000, // Django Server
+		5432, // PostgreSQL
+		6379, // Redis
+		5555, // Celery Flower
+		9200, // Elasticsearch
+		5601 // Kibana
 	],
 	"portsAttributes": {
 		"8000": {
 			"label": "Django Server",
-			"onAutoForward": "notify"
+			"onAutoForward": "notify",
+			"protocol": "http"
+		},
+		"5432": {
+			"label": "PostgreSQL Database"
+		},
+		"6379": {
+			"label": "Redis Cache"
+		},
+		"5555": {
+			"label": "Celery Flower"
+		},
+		"9200": {
+			"label": "Elasticsearch"
+		},
+		"5601": {
+			"label": "Kibana Dashboard"
 		}
 	},
 	// Use 'postCreateCommand' to run commands after the container is created.

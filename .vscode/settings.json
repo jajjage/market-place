@@ -42,8 +42,10 @@
     "cSpell.words": [
         "ACKS",
         "activatable",
+        "aggs",
         "ahrefs",
         "aiplatform",
+        "AISEO",
         "appname",
         "asgi",
         "autoretry",
@@ -63,10 +65,12 @@
         "filterset",
         "Flutterwave",
         "gapic",
+        "genai",
         "Gruntfuggly",
         "gunicorn",
         "healthcheck",
         "ipykernel",
+        "isready",
         "Jajjage",
         "keyspace",
         "leakproof",
@@ -75,9 +79,11 @@
         "loglevel",
         "logoutall",
         "longtail",
+        "macbook",
         "Mailgun",
         "makemigrations",
         "Mustapha",
+        "ngram",
         "nostatic",
         "pidfile",
         "productdetail",
@@ -112,16 +118,17 @@
         "whitenoise",
         "wlgjuo",
         "wrongpassword",
-        "wsgi"
+        "wsgi",
+        "xpack"
     ],
     "editor.fontFamily": "'Fira Code', 'Droid Sans Mono', 'monospace', monospace, 'Droid Sans Fallback'",
     "sqltools.connections": [
         {
             "previewLimit": 50,
-            "server": "localhost",
+            "server": "db",
             "port": 5432,
             "driver": "PostgreSQL",
-            "name": "safe trade",
+            "name": "saferade",
             "database": "postgres",
             "username": "postgres"
         }

@@ -1,9 +1,24 @@
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres-data-1:
+  redis-data:
+  es-data:
+
+
 services:
   redis:
     image: redis:alpine
-    network_mode: service:db
     volumes:
       - redis-data:/data
+    networks:
+      - backend
+
+#========================================================
+# Main app container
+#========================================================
 
   app:
     build:
@@ -17,16 +32,61 @@ services:
       - DJANGO_SETTINGS_MODULE=safetrade.settings.dev
       - DJANGO_ENV=development
       - DEBUG=True
-      - REDIS_URL=redis://localhost:6379
-      - CELERY_BROKER_URL=redis://localhost:6379
-      - CELERY_RESULT_BACKEND=redis://localhost:6379
-      - POSTGRES_HOST=db
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      # Fix Redis URL to use service name
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379
+      - CELERY_RESULT_BACKEND=redis://redis:6379
     command: sleep infinity
-    network_mode: service:db
+    depends_on:
+      - db
+      - redis
+      - elasticsearch
+    networks:
+      - backend
+
+#========================================================
+# Dev server container
+#========================================================
+  django_dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspaces:cached
+    working_dir: /workspaces
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=safetrade.settings.dev
+      - DJANGO_ENV=development
+      - DEBUG=True
+      - POSTGRES_HOST=db  # Explicitly set to use service name
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379
+      - CELERY_RESULT_BACKEND=redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+    networks:
+      - backend
+    ports:
+      - "127.0.0.1:8000:8000"  # Bind to IPv4 specifically
+    command: >
+      sh -c "
+        echo 'Running migrations...'
+        poetry run python manage.py migrate
+        echo 'Starting Django server...'
+        poetry run python manage.py runserver 0.0.0.0:8000
+      "
+
+#========================================================
+# Celery Worker container
+#========================================================
 
   celery_worker_default:
     build:
@@ -41,19 +101,21 @@ services:
       - DJANGO_SETTINGS_MODULE=safetrade.settings.dev
       - DJANGO_ENV=development
       - DEBUG=True
-      - REDIS_URL=redis://localhost:6379
-      - CELERY_BROKER_URL=redis://localhost:6379
-      - CELERY_RESULT_BACKEND=redis://localhost:6379
-      - POSTGRES_HOST=db
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379
+      - CELERY_RESULT_BACKEND=redis://redis:6379
     depends_on:
-      - redis
       - db
-    network_mode: service:db
+      - redis
+      - elasticsearch
+    networks:
+      - backend
     command: poetry run worker_default
+
+#========================================================
+# Celery Beat container
+#========================================================
 
   celery_beat:
     build:
@@ -68,19 +130,21 @@ services:
       - DJANGO_SETTINGS_MODULE=safetrade.settings.dev
       - DJANGO_ENV=development
       - DEBUG=True
-      - REDIS_URL=redis://localhost:6379
-      - CELERY_BROKER_URL=redis://localhost:6379
-      - CELERY_RESULT_BACKEND=redis://localhost:6379
-      - POSTGRES_HOST=db
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379
+      - CELERY_RESULT_BACKEND=redis://redis:6379
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/postgres
     depends_on:
-      - redis
       - db
-    network_mode: service:db
+      - redis
+      - elasticsearch
+    networks:
+      - backend
     command: poetry run beat
+
+#========================================================
+# Celery Flower container
+#========================================================
 
   celery_flower:
     build:
@@ -93,19 +157,23 @@ services:
       - DJANGO_SETTINGS_MODULE=safetrade.settings.dev
       - DJANGO_ENV=development
       - DEBUG=True
-      - REDIS_URL=redis://localhost:6379
-      - CELERY_BROKER_URL=redis://localhost:6379
-      - CELERY_RESULT_BACKEND=redis://localhost:6379
-      - POSTGRES_HOST=db
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379
+      - CELERY_RESULT_BACKEND=redis://redis:6379
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
     depends_on:
-      - redis
       - db
-    network_mode: service:db
+      - redis
+      - elasticsearch
+    ports:
+      - "5555:5555"
+    networks:
+      - backend
     command: poetry run flower
+
+#========================================================
+# Database container
+#========================================================
 
   db:
     image: postgres:latest
@@ -118,8 +186,44 @@ services:
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
-      - "8000:8000"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-volumes:
-  postgres-data-1:
-  redis-data:
+#========================================================
+# Elastic Search container
+#========================================================
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - backend
+
+#========================================================
+# Kibana container
+#========================================================
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.4
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    networks:
+      - backend

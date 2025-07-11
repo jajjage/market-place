@@ -39,6 +39,9 @@ google-cloud-aiplatform = "^1.97.0"
 channels = {extras = ["daphne"], version = "^4.2.2"}
 channels-redis = "^4.2.1"
 twisted = {extras = ["http2", "tls"], version = "^25.5.0"}
+elasticsearch-dsl = {extras = ["async"], version = "^8.18.0"}
+django-elasticsearch-dsl = "^8.2"
+google-genai = "^1.24.0"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -42,7 +42,11 @@ class EnvHandler:
 
         # Step 2: Parse the URL string into a dictionary.
         # If the string is empty or invalid, it will raise an error.
-        return dj_database_url.parse(db_url_string)
+        return dj_database_url.parse(
+            db_url_string,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
 
 
 # Create an instance of the handler to use in your application

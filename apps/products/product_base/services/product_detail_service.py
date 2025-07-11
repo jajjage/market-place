@@ -172,7 +172,7 @@ class ProductDetailService:
         if request.user.is_authenticated:
             annotations["user_has_purchased"] = Exists(
                 EscrowTransaction.objects.filter(
-                    product=OuterRef("pk"), user=request.user
+                    product=OuterRef("pk"), seller=request.user
                 )
             )
         else:

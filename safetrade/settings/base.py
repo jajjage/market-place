@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     # 3rd party apps
     "corsheaders",
     "rest_framework",
+    "django_elasticsearch_dsl",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
@@ -77,6 +78,7 @@ INSTALLED_APPS = [
     "apps.auth.google.apps.GoogleAuthConfig",
     "apps.auth.traditional.apps.TraditionalAuthConfig",
     "apps.monitoring.apps.MonitoringConfig",
+    "apps.search.apps.SearchConfig",
     "apps.chat.apps.ChatConfig",
     "apps.products.product_base.apps.ProductBaseConfig",
     "apps.products.product_brand.apps.ProductBrandConfig",
@@ -90,6 +92,7 @@ INSTALLED_APPS = [
     "apps.products.product_rating.apps.ProductRatingConfig",
     "apps.products.product_variant.apps.ProductVariantConfig",
     "apps.products.product_watchlist.apps.ProductWatchlistConfig",
+    "apps.products.product_search.apps.ProductSearchConfig",
 ]
 
 MIDDLEWARE = [
@@ -321,6 +324,8 @@ SPECTACULAR_SETTINGS = {
         "DisputeReasonEnum": "apps.disputes.models.DisputeReason",
         "ProductStatusEnum": "apps.products.product_base.models.Product.ProductsStatus",
         "BrandRequestStatusEnum": "apps.products.product_brand.models.BrandRequest.Status",
+        "ProductDetailStatusEnum": "apps.products.product_detail.models.ProductDetail.DetailType",
+        "ProductDetailTemplateStatusEnum": "apps.products.product_detail.models.ProductDetailTemplate.DetailType",
         "PriceNegotiationStatusEnum": "apps.products.product_negotiation.models.PriceNegotiation.STATUS_CHOICES",
     },
 }
@@ -398,6 +403,14 @@ CELERY_TASK_ROUTES = {
         "queue": "high_priority",
         "routing_key": "high_priority",
     },
+    "apps.products.product_search.tasks.bulk_update_seo_keywords": {
+        "queue": "high_priority",
+        "routing_key": "high_priority",
+    },
+    "apps.products.product_search.tasks.update_popularity_scores": {
+        "queue": "high_priority",
+        "routing_key": "high_priority",
+    },
     # Medium priority tasks
     "apps.transactions.tasks.periodic_migration.validate_timeout_consistency": {
         "queue": "medium_priority",
@@ -459,6 +472,7 @@ from .utils.performance import *  # noqa: F403 F401
 from .utils.logging import *  # noqa: F403 F401
 from .utils.cache_keys import *  # noqa: F403 F401
 from .utils.negotiation import *  # noqa: F403 F401
+from .utils.search_settings import *  # noqa: F403 F401
 
 # -----------------------------------------------------------------------------
 # Channels Configuration
@@ -467,7 +481,7 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [("redis", 6379)],
         },
     },
 }

@@ -1,5 +1,3 @@
-# apps/products/product_meta/views.py
-
 from rest_framework import permissions, status, filters
 from rest_framework.decorators import action
 from django.db.models import Prefetch

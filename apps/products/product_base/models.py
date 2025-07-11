@@ -134,14 +134,14 @@ class Product(BaseModel):
 
     @property
     def average_rating(self):
-        ratings = self.product_ratings.all()
+        ratings = self.ratings.all()
         if ratings:
             return sum(r.rating for r in ratings) / len(ratings)
         return 0.0
 
     @property
     def rating_count(self):
-        return self.product_ratings.count()
+        return self.ratings.count()
 
     @property
     def rating_breakdown(self):

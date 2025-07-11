@@ -19,6 +19,7 @@ MONITORING_LOG_PATH = LOG_DIR / "monitoring.log"
 ERROR_LOG_PATH = LOG_DIR / "error.log"
 INFO_LOG_PATH = LOG_DIR / "info.log"
 THROTTLE_LOG_PATH = LOG_DIR / "throttling.log"
+SEARCH_LOG_PATH = LOG_DIR / "product_search.log"
 print(MONITORING_LOG_PATH)
 # If running locally (not in GitHub Actions), ensure folder exists as well:
 if not os.environ.get("GITHUB_ACTIONS"):
@@ -88,6 +89,12 @@ LOGGING = {
             "backupCount": 3,
             "level": "INFO",
         },
+        "search_file": {
+            "class": "logging.FileHandler",
+            "filename": str(SEARCH_LOG_PATH),
+            "formatter": "verbose",
+            "level": "INFO",
+        },
     },
     "loggers": {
         # root logger
@@ -121,6 +128,11 @@ LOGGING = {
             "handlers": ["monitoring_file"],
             "level": "INFO",
             "propagate": False,
+        },
+        "product_search": {
+            "handlers": ["search_file"],
+            "level": "WARNING",
+            "propagate": True,
         },
     },
 }

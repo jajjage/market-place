@@ -4,7 +4,7 @@
 
 ### Linux ###
 *~
-/safetrade/logs/
+
 # temporary files which can be created if a process still has a handle open of a deleted file
 .fuse_hidden*
 
@@ -14,7 +14,7 @@
 # Linux trash folder which might appear on any partition or disk
 .Trash-*
 /safetrade/products
-/safetrade/settings/logs
+logs/
 /media_root
 # .nfs files are created when an open file is removed but is still being accessed
 .nfs*

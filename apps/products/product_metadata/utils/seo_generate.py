@@ -1,411 +1,283 @@
-import os
-import re
-import requests
-from typing import List, Set
-import json
 import logging
+from typing import List, Optional, Dict, Any
+from google import genai
+import re
 
-logger = logging.getLogger(__name__)
+from safetrade.settings.utils.get_env import env
+
+logger = logging.getLogger("metadata_performance")
 
 
-class LocalSEOKeywordService:
-    def __init__(self):
-        """Initialize the service with keyword templates and modifiers."""
-        self.ahrefs_token = os.environ.get("AHREFS_API_TOKEN")
+class GoogleGenAISEOKeywordService:
+    def __init__(self, api_key: Optional[str] = None):
+        """Initialize the service with Google GenAI."""
+        self.api_key = api_key or env.get("GOOGLE_API_KEY")
 
-        # Common keyword prefixes and suffixes
-        self.prefixes = [
-            "buy",
-            "best",
-            "cheap",
-            "affordable",
-            "quality",
-            "premium",
-            "discount",
-            "top",
-            "good",
-            "great",
-            "excellent",
-            "professional",
-            "durable",
-            "wholesale",
-            "bulk",
-            "custom",
-            "personalized",
-            "branded",
-            "original",
-        ]
-
-        self.suffixes = [
-            "for sale",
-            "online",
-            "store",
-            "shop",
-            "deals",
-            "offers",
-            "price",
-            "reviews",
-            "comparison",
-            "guide",
-            "tips",
-            "benefits",
-            "features",
-            "specifications",
-            "warranty",
-            "delivery",
-            "shipping",
-            "near me",
-        ]
-
-        # Intent-based keywords
-        self.buyer_intent = [
-            "buy {term}",
-            "purchase {term}",
-            "order {term}",
-            "get {term}",
-            "find {term}",
-            "shop {term}",
-            "{term} store",
-            "{term} shop",
-        ]
-
-        self.informational_intent = [
-            "{term} review",
-            "{term} guide",
-            "how to use {term}",
-            "{term} benefits",
-            "{term} features",
-            "what is {term}",
-            "{term} comparison",
-            "{term} vs",
-            "best {term}",
-        ]
-
-        # Category-specific modifiers
-        self.category_modifiers = {
-            "electronics": [
-                "wireless",
-                "bluetooth",
-                "smart",
-                "digital",
-                "portable",
-                "rechargeable",
-            ],
-            "clothing": [
-                "cotton",
-                "comfortable",
-                "stylish",
-                "fashion",
-                "trendy",
-                "casual",
-            ],
-            "home": ["modern", "decorative", "functional", "space-saving", "elegant"],
-            "sports": ["professional", "training", "outdoor", "fitness", "exercise"],
-            "beauty": ["natural", "organic", "anti-aging", "moisturizing", "gentle"],
-            "food": ["fresh", "organic", "healthy", "gourmet", "homemade", "natural"],
-        }
-
-        # Load common words to filter out
-        self.stop_words = {
-            "the",
-            "a",
-            "an",
-            "and",
-            "or",
-            "but",
-            "in",
-            "on",
-            "at",
-            "to",
-            "for",
-            "of",
-            "with",
-            "by",
-            "from",
-            "up",
-            "about",
-            "into",
-            "through",
-            "during",
-        }
-
-    def fetch_from_keyword_api(self, seed_term: str) -> List[str]:
-        """Fetch keywords from external APIs like Ahrefs."""
-        if not self.ahrefs_token:
-            return []
-
-        url = "https://apiv2.ahrefs.com/related_terms"
-        try:
-            resp = requests.get(
-                url,
-                params={
-                    "token": self.ahrefs_token,
-                    "target": seed_term,
-                    "mode": "phrase_match",
-                },
-                timeout=30,
+        if not self.api_key:
+            raise ValueError(
+                "Google API key is required. Set GOOGLE_API_KEY environment variable or pass api_key parameter."
             )
-            resp.raise_for_status()
 
-            data = resp.json().get("related_terms", [])
-            data.sort(key=lambda x: x.get("volume", 0), reverse=True)
-            return [item["keyword"] for item in data[:15]]
+        self.client = genai.Client(api_key=self.api_key)
 
-        except requests.RequestException as e:
-            print(f"Error fetching from Ahrefs API: {e}")
-            return []
+        # Keyword intent categories
+        self.intent_types = {
+            "commercial": "Commercial intent (buy, purchase, order, shop)",
+            "informational": "Informational intent (how to, what is, guide, tips)",
+            "navigational": "Navigational intent (brand searches, specific sites)",
+            "transactional": "Transactional intent (deals, discount, price, compare)",
+            "local": "Local intent (near me, local, in [city])",
+        }
 
-    def fetch_from_free_apis(self, seed_term: str) -> List[str]:
-        """Fetch from free keyword APIs."""
+    def generate_keywords(
+        self,
+        seed_term: str,
+        count: int = 20,
+        intent_filter: Optional[str] = None,
+        include_long_tail: bool = True,
+        target_audience: Optional[str] = None,
+        business_type: Optional[str] = None,
+    ) -> List[str]:
+        """
+        Generate SEO keywords using Google GenAI.
+
+        Args:
+            seed_term: The main keyword/product to generate variations for
+            count: Number of keywords to generate
+            intent_filter: Filter by intent type ('commercial', 'informational', etc.)
+            include_long_tail: Whether to include long-tail keywords
+            target_audience: Target audience description
+            business_type: Type of business (e.g., 'e-commerce', 'service', 'blog')
+
+        Returns:
+            List of generated keywords
+        """
+        try:
+            prompt = self._build_prompt(
+                seed_term,
+                count,
+                intent_filter,
+                include_long_tail,
+                target_audience,
+                business_type,
+            )
+
+            response = self.client.models.generate_content(
+                model="gemini-2.0-flash", contents=prompt
+            )
+
+            keywords = self._parse_response(response.text)
+
+            # Clean and validate keywords
+            cleaned_keywords = self._clean_keywords(keywords, seed_term)
+
+            return cleaned_keywords[:count]
+
+        except Exception as e:
+            logger.error(f"Error generating keywords: {str(e)}")
+            return self._fallback_keywords(seed_term, count)
+
+    def _build_prompt(
+        self,
+        seed_term: str,
+        count: int,
+        intent_filter: Optional[str],
+        include_long_tail: bool,
+        target_audience: Optional[str],
+        business_type: Optional[str],
+    ) -> str:
+        """Build the prompt for Google GenAI."""
+
+        prompt = f"""You are an expert SEO keyword researcher. Generate {count} high-value SEO keywords based on the seed term: "{seed_term}"
+
+        Requirements:
+        - Generate keywords with different search intents
+        - Include variations with different word orders
+        - Focus on keywords that real users would search for
+        - Include both short-tail and long-tail keywords
+        - Consider commercial viability and search volume potential
+
+        """
+
+        if intent_filter and intent_filter in self.intent_types:
+            prompt += f"- Focus primarily on {self.intent_types[intent_filter]}\n"
+
+        if not include_long_tail:
+            prompt += "- Focus on short-tail keywords (1-3 words)\n"
+        else:
+            prompt += "- Include long-tail keywords (4+ words) for better targeting\n"
+
+        if target_audience:
+            prompt += f"- Target audience: {target_audience}\n"
+
+        if business_type:
+            prompt += f"- Business type: {business_type}\n"
+
+        prompt += f"""
+            Include these types of keywords:
+            1. Commercial intent: "buy {seed_term}", "best {seed_term}", "{seed_term} for sale"
+            2. Informational intent: "how to use {seed_term}", "{seed_term} guide", "what is {seed_term}"
+            3. Comparison keywords: "{seed_term} vs", "best {seed_term} brands"
+            4. Local keywords: "{seed_term} near me", "local {seed_term}"
+            5. Problem-solving: "{seed_term} for [problem]", "{seed_term} benefits"
+            6. Modifier combinations: "cheap {seed_term}", "professional {seed_term}", "quality {seed_term}"
+
+            Format your response as a simple list, one keyword per line, without numbering or bullet points.
+            Focus on keywords that would actually be searched by potential customers.
+            """
+
+        return prompt
+
+    def _parse_response(self, response_text: str) -> List[str]:
+        """Parse the GenAI response into a list of keywords."""
         keywords = []
 
-        # Try Google Suggest API (free)
-        try:
-            suggest_url = "http://suggestqueries.google.com/complete/search"
-            params = {"client": "firefox", "q": seed_term}
-            resp = requests.get(suggest_url, params=params, timeout=10)
-            if resp.status_code == 200:
-                suggestions = resp.json()[1]  # Second element contains suggestions
-                keywords.extend([s for s in suggestions if len(s) > len(seed_term)])
-        except Exception:
-            pass
+        # Split by lines and clean
+        lines = response_text.strip().split("\n")
 
-        return keywords[:10]
+        for line in lines:
+            # Remove common prefixes like "1.", "-", "*", etc.
+            cleaned_line = re.sub(r"^[\d\.\-\*\s]+", "", line.strip())
 
-    def generate_template_keywords(self, seed_term: str, count: int = 10) -> List[str]:
-        """Generate keywords using templates and patterns."""
-        keywords = set()
+            if cleaned_line and len(cleaned_line) > 2:
+                keywords.append(cleaned_line)
 
-        # Clean the seed term
-        clean_term = self.clean_term(seed_term)
-        words = clean_term.lower().split()
+        return keywords
 
-        # 1. Prefix + term combinations
-        for prefix in self.prefixes[:8]:
-            keywords.add(f"{prefix} {clean_term}")
+    def _clean_keywords(self, keywords: List[str], seed_term: str) -> List[str]:
+        """Clean and validate the generated keywords."""
+        cleaned = []
+        seen = set()
 
-        # 2. Term + suffix combinations
-        for suffix in self.suffixes[:8]:
-            keywords.add(f"{clean_term} {suffix}")
+        for keyword in keywords:
+            # Basic cleaning
+            keyword = keyword.strip().lower()
+            keyword = re.sub(
+                r"[^\w\s\-]", "", keyword
+            )  # Remove special chars except hyphens
+            keyword = re.sub(r"\s+", " ", keyword)  # Normalize spaces
 
-        # 3. Buyer intent keywords
-        for pattern in self.buyer_intent:
-            keywords.add(pattern.format(term=clean_term))
+            # Skip if too short, too long, or already seen
+            if len(keyword) < 3 or len(keyword) > 100 or keyword in seen:
+                continue
 
-        # 4. Informational intent keywords
-        for pattern in self.informational_intent:
-            keywords.add(pattern.format(term=clean_term))
+            # Skip if identical to seed term
+            if keyword == seed_term.lower():
+                continue
 
-        # 5. Long-tail variations
-        keywords.update(self.generate_longtail_variations(clean_term))
+            seen.add(keyword)
+            cleaned.append(keyword)
 
-        # 6. Category-specific keywords
-        category = self.detect_category(clean_term)
-        if category:
-            modifiers = self.category_modifiers[category]
-            for modifier in modifiers[:5]:
-                keywords.add(f"{modifier} {clean_term}")
-                keywords.add(f"{clean_term} {modifier}")
-
-        # Convert to list and limit
-        return list(keywords)[:count]
-
-    def generate_longtail_variations(self, term: str) -> Set[str]:
-        """Generate long-tail keyword variations."""
-        variations = set()
-
-        # Question-based long-tails
-        question_words = ["what", "how", "where", "when", "why", "which"]
-        for qword in question_words:
-            variations.add(f"{qword} is the best {term}")
-            variations.add(f"{qword} to buy {term}")
-            variations.add(f"{qword} to choose {term}")
-
-        # Location-based
-        variations.add(f"{term} near me")
-        variations.add(f"{term} in my area")
-        variations.add(f"local {term}")
-
-        # Price-related
-        variations.add(f"cheap {term} under $50")
-        variations.add(f"budget {term}")
-        variations.add(f"expensive {term}")
-
-        # Brand/quality related
-        variations.add(f"branded {term}")
-        variations.add(f"high quality {term}")
-        variations.add(f"professional grade {term}")
-
-        return variations
-
-    def detect_category(self, term: str) -> str:
-        """Simple category detection based on keywords."""
-        term_lower = term.lower()
-
-        if any(
-            word in term_lower
-            for word in ["phone", "laptop", "lenovo", "camera", "headphones", "speaker"]
-        ):
-            return "electronics"
-        elif any(
-            word in term_lower
-            for word in ["shirt", "dress", "shoes", "jacket", "pants"]
-        ):
-            return "clothing"
-        elif any(
-            word in term_lower
-            for word in ["chair", "table", "lamp", "decor", "furniture"]
-        ):
-            return "home"
-        elif any(
-            word in term_lower
-            for word in ["ball", "equipment", "fitness", "exercise", "gym"]
-        ):
-            return "sports"
-        elif any(
-            word in term_lower
-            for word in ["cream", "lotion", "makeup", "skincare", "beauty"]
-        ):
-            return "beauty"
-        elif any(
-            word in term_lower
-            for word in ["organic", "food", "snack", "drink", "cooking"]
-        ):
-            return "food"
-
-        return None
-
-    def clean_term(self, term: str) -> str:
-        """Clean and normalize the input term."""
-        # Remove extra spaces and special characters
-        cleaned = re.sub(r"[^\w\s-]", "", term)
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         return cleaned
 
-    def generate_semantic_variations(self, term: str) -> List[str]:
-        """Generate semantic variations using word associations."""
-        variations = []
-        words = term.lower().split()
+    def _fallback_keywords(self, seed_term: str, count: int) -> List[str]:
+        """Generate basic keywords if GenAI fails."""
+        prefixes = ["buy", "best", "cheap", "quality", "professional", "top", "good"]
+        suffixes = ["online", "store", "deals", "reviews", "guide", "tips", "near me"]
 
-        # Simple synonym mapping (you could expand this)
-        synonyms = {
-            "buy": ["purchase", "get", "acquire", "order"],
-            "cheap": ["affordable", "budget", "low-cost", "inexpensive"],
-            "good": ["quality", "excellent", "great", "top"],
-            "fast": ["quick", "rapid", "speedy", "instant"],
-            "new": ["latest", "modern", "recent", "updated"],
-            "small": ["compact", "mini", "portable", "tiny"],
-            "big": ["large", "huge", "massive", "giant"],
-        }
-
-        for word in words:
-            if word in synonyms:
-                for synonym in synonyms[word]:
-                    new_term = term.replace(word, synonym)
-                    variations.append(new_term)
-
-        return variations
-
-    def generate_competitor_based_keywords(self, term: str) -> List[str]:
-        """Generate keywords based on common competitor patterns."""
-        competitors = []
-
-        # Generic competitor patterns
-        patterns = [
-            f"{term} vs competitors",
-            f"best {term} brands",
-            f"top {term} companies",
-            f"{term} alternatives",
-            f"compare {term}",
-            f"{term} comparison chart",
-        ]
-
-        return patterns
-
-    def generate_keywords(self, seed_term: str, count: int = 10) -> List[str]:
-        """Main method to generate keywords using all local methods."""
-        all_keywords = set()
-
-        # 1. Template-based keywords (primary method)
-        template_keywords = self.generate_template_keywords(seed_term, count)
-        all_keywords.update(template_keywords)
-
-        # 2. Semantic variations
-        semantic_keywords = self.generate_semantic_variations(seed_term)
-        all_keywords.update(semantic_keywords)
-
-        # 3. Competitor-based keywords
-        competitor_keywords = self.generate_competitor_based_keywords(seed_term)
-        all_keywords.update(competitor_keywords)
-
-        # 4. Try free APIs
-        try:
-            free_api_keywords = self.fetch_from_free_apis(seed_term)
-            all_keywords.update(free_api_keywords)
-        except Exception as e:
-            logger.error(f"Error fetching free API keywords: {str(e)}")
-            pass
-
-        # # 5. Try paid APIs if available
-        # try:
-        #     api_keywords = self.fetch_from_keyword_api(seed_term)
-        #     all_keywords.update(api_keywords)
-        # except:
-        #     pass
-
-        # Filter and clean results
-        final_keywords = []
-        for keyword in all_keywords:
-            if keyword and len(keyword) > 3 and keyword.lower() != seed_term.lower():
-                final_keywords.append(keyword.strip())
-
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_keywords = []
-        for keyword in final_keywords:
-            if keyword.lower() not in seen:
-                seen.add(keyword.lower())
-                unique_keywords.append(keyword)
-
-        return unique_keywords[:count]
-
-
-# Alternative: File-based keyword generator
-class FileBasedKeywordService:
-    """Generate keywords from local files/databases."""
-
-    def __init__(self, keywords_file_path: str = None):
-        self.keywords_file = keywords_file_path
-        self.keyword_database = self.load_keyword_database()
-
-    def load_keyword_database(self) -> dict:
-        """Load keywords from a local file."""
-        if not self.keywords_file or not os.path.exists(self.keywords_file):
-            # Return a basic database if no file exists
-            return {
-                "modifiers": ["best", "cheap", "quality", "buy", "top", "good"],
-                "suffixes": ["online", "store", "deals", "reviews", "guide"],
-                "categories": {"general": ["product", "item", "goods", "merchandise"]},
-            }
-
-        try:
-            with open(self.keywords_file, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-
-    def generate_keywords(self, seed_term: str, count: int = 10) -> List[str]:
-        """Generate keywords from file-based database."""
         keywords = []
 
-        modifiers = self.keyword_database.get("modifiers", [])
-        suffixes = self.keyword_database.get("suffixes", [])
+        # Generate prefix combinations
+        for prefix in prefixes:
+            keywords.append(f"{prefix} {seed_term}")
 
-        # Generate combinations
-        for modifier in modifiers:
-            keywords.append(f"{modifier} {seed_term}")
-
+        # Generate suffix combinations
         for suffix in suffixes:
             keywords.append(f"{seed_term} {suffix}")
 
+        # Add some long-tail variations
+        keywords.extend(
+            [
+                f"how to choose {seed_term}",
+                f"what is the best {seed_term}",
+                f"where to buy {seed_term}",
+                f"{seed_term} comparison",
+                f"{seed_term} benefits",
+            ]
+        )
+
         return keywords[:count]
+
+    def analyze_keyword_intent(self, keyword: str) -> Dict[str, Any]:
+        """Analyze the search intent of a keyword using GenAI."""
+        prompt = f"""Analyze the search intent for this keyword: "{keyword}"
+
+        Provide analysis in the following format:
+        Intent Type: [commercial/informational/navigational/transactional/local]
+        Search Volume Potential: [high/medium/low]
+        Competition Level: [high/medium/low]
+        Commercial Value: [high/medium/low]
+        User Journey Stage: [awareness/consideration/decision]
+        Brief Explanation: [2-3 sentences about why users would search this]
+        """
+
+        try:
+            response = self.model.generate_content(prompt)
+            return self._parse_intent_analysis(response.text)
+        except Exception as e:
+            logger.error(f"Error analyzing intent: {str(e)}")
+            return {"error": str(e)}
+
+    def _parse_intent_analysis(self, response_text: str) -> Dict[str, Any]:
+        """Parse the intent analysis response."""
+        analysis = {}
+
+        lines = response_text.strip().split("\n")
+        for line in lines:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                analysis[key.strip()] = value.strip()
+
+        return analysis
+
+    def generate_keyword_clusters(
+        self, seed_term: str, num_clusters: int = 5
+    ) -> Dict[str, List[str]]:
+        """Generate keyword clusters organized by topics."""
+        prompt = f"""Create {num_clusters} keyword clusters for the main term: "{seed_term}"
+
+        Each cluster should focus on a specific aspect or subtopic. For each cluster:
+        1. Give it a descriptive name
+        2. List 5-8 related keywords
+
+        Format as:
+        Cluster Name 1:
+        - keyword 1
+        - keyword 2
+        ...
+
+        Cluster Name 2:
+        - keyword 1
+        - keyword 2
+        ...
+        Focus on creating clusters that would be useful for content planning and SEO strategy.
+        """
+
+        try:
+            response = self.model.generate_content(prompt)
+            return self._parse_clusters(response.text)
+        except Exception as e:
+            logger.error(f"Error generating clusters: {str(e)}")
+            return {}
+
+    def _parse_clusters(self, response_text: str) -> Dict[str, List[str]]:
+        """Parse the keyword clusters response."""
+        clusters = {}
+        current_cluster = None
+
+        lines = response_text.strip().split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check if this is a cluster name (doesn't start with -)
+            if not line.startswith("-") and ":" in line:
+                current_cluster = line.replace(":", "").strip()
+                clusters[current_cluster] = []
+            elif line.startswith("-") and current_cluster:
+                keyword = line.replace("-", "").strip()
+                if keyword:
+                    clusters[current_cluster].append(keyword)
+
+        return clusters

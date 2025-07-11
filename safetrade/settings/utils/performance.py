@@ -17,6 +17,7 @@ PERFORMANCE_API_PREFIXES = {
     "/api/v1/products": "products",
     "/api/v1/variants": "variant",
     "/api/v1/disputes": "disputes",
+    "/api/v1/search": "search",
     # …add more as needed…
 }
 

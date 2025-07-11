@@ -20,8 +20,8 @@ ALLOWED_HOSTS = env.get("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1").s
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
-        default="postgres://postgres:postgres@localhost:5432/postgres",
-    )
+        default="postgres://postgres:postgres@db:5432/postgres",
+    ),
 }
 
 # -----------------------------------------------------------------------------
@@ -63,10 +63,8 @@ USER_AGENTS_CACHE = "default"
 # -----------------------------------------------------------------------------
 # Celery - Development
 # -----------------------------------------------------------------------------
-CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", default="redis://localhost:6379")
-CELERY_RESULT_BACKEND = env.get(
-    "CELERY_RESULT_BACKEND", default="redis://localhost:6379"
-)
+CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", default="redis://redis:6379")
+CELERY_RESULT_BACKEND = env.get("CELERY_RESULT_BACKEND", default="redis://redis:6379")
 CELERY_TASK_ALWAYS_EAGER = False  # Keep async for development
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 

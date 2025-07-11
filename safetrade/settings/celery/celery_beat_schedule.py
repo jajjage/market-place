@@ -128,6 +128,21 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
         "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
     },
+    # ============================================
+    # Update product popularity score every hour and Cleanup search logs daily at 3:30 AM
+    # ============================================
+    "update-product-popularity-scores": {
+        "task": "apps.products.product_search.tasks.update_popularity_scores",
+        "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
+    },
+    "update-generate-seo-keywords": {
+        "task": "apps.products.product_search.tasks.bulk_update_seo_keywords",
+        "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
+    },
+    "cleanup-old-search-logs": {
+        "task": "apps.products.product_search.tasks.cleanup_search_logs",
+        "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
+    },
 }
 
 # Additional configuration for development/testing environments
@@ -231,6 +246,18 @@ CELERY_BEAT_SCHEDULE_DEV = {
         "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
         "schedule": crontab(minute=0, hour="*/12"),  # Every 12 hours in dev
     },
+    "update-product-popularity-scores": {
+        "task": "apps.products.product_search.tasks.update_popularity_scores",
+        "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
+    },
+    "update-generate-seo-keywords": {
+        "task": "apps.products.product_search.tasks.bulk_update_seo_keywords",
+        "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
+    },
+    "cleanup-old-search-logs": {
+        "task": "apps.products.product_search.tasks.cleanup_search_logs",
+        "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
+    },
 }
 
 # Testing configuration (even more frequent for testing)
@@ -308,6 +335,14 @@ CELERY_BEAT_SCHEDULE_TEST = {
         "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
         "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours in test
     },
+    # "update-product-popularity-scores": {
+    #     "task": "apps.products.product_search.tasks.update_popularity_scores",
+    #     "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
+    # },
+    # "cleanup-old-search-logs": {
+    #     "task": "apps.products.product_search.tasks.cleanup_search_logs",
+    #     "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
+    # },
 }
 
 
