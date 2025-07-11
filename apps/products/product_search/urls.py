@@ -13,7 +13,7 @@ urlpatterns = [
     path("search/", ProductSearchView.as_view(), name="product-search"),
     # Related products
     path(
-        "search/related/<int:product_id>/",
+        "search/related/<uuid:product_id>/",
         ProductRelatedSearchView.as_view(),
         name="product-related-search",
     ),

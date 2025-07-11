@@ -1,3 +1,4 @@
+import json
 from django_elasticsearch_dsl import Document, fields, Index
 from django_elasticsearch_dsl.registries import registry
 from apps.products.product_base.models import Product
@@ -71,6 +72,10 @@ class ProductDocument(Document):
         analyzer="standard",
         fields={"autocomplete": fields.TextField(analyzer="autocomplete_analyzer")},
     )
+    seo_keywords = fields.TextField(
+        analyzer="standard",  # Standard analyzer will break keywords into individual terms
+        fields={"raw": fields.KeywordField()},  # For exact phrase matching if needed
+    )
 
     # Identifiers and keywords
     slug = fields.KeywordField()
@@ -137,8 +142,34 @@ class ProductDocument(Document):
     class Django:
         model = Product
         # All fields explicitly declared above
+        # Ensure 'seo_keywords' is included in your Django model's attributes
+        # that are mapped to Elasticsearch. You might use 'exclude' or 'fields'
+        # based on your Django-Elasticsearch-DSL setup.
+        # For simplicity, if using 'fields', ensure 'seo_keywords' is there.
+        # If your Django model has a 'seo_keywords' field directly, it will be mapped.
+        # If it's a related model, you'll need a 'prepare_seo_keywords' method.
+
         fields = []
         related_models = ["seller", "category", "brand", "condition"]
+
+    def save(self, **kwargs):
+        # Prepare completion suggester data
+        if hasattr(self, "title") and self.title:
+            self.title.suggest = {
+                "input": [self.title],
+                "weight": getattr(self, "popularity_score", 1),
+            }
+
+        if hasattr(self, "brand_name") and self.brand_name:
+            self.brand_name.suggest = {
+                "input": [self.brand_name],
+                "weight": 10,  # Brands get higher weight
+            }
+
+        if hasattr(self, "category_name") and self.category_name:
+            self.category_name.suggest = {"input": [self.category_name], "weight": 5}
+
+        return super().save(**kwargs)
 
     def get_queryset(self):
         return (
@@ -154,23 +185,19 @@ class ProductDocument(Document):
         """
         search_parts = []
         try:
-            if instance.title:
-                search_parts.append(instance.title)
-            if instance.description:
-                search_parts.append(instance.description)
-            if instance.brand and instance.brand.name:
-                search_parts.append(instance.brand.name)
-            if instance.category and instance.category.name:
-                search_parts.append(instance.category.name)
-            if instance.condition and instance.condition.name:
-                search_parts.append(instance.condition.name)
-            if instance.location:
-                search_parts.append(instance.location)
-            meta = getattr(instance, "meta", None)
-            if meta and getattr(meta, "seo_keywords", None):
-                search_parts.append(meta.seo_keywords)
-        except Exception:
-            pass
+            text_parts = [
+                instance.title,
+                instance.description,
+                getattr(instance.category, "name", None),
+                getattr(instance.brand, "name", None),
+                getattr(instance.condition, "name", None),
+                instance.location,
+                self.prepare_seo_keywords(instance),  # Include prepared seo_keywords
+            ]
+        except Exception as e:
+            print(f"Error preparing search text: {e}")
+            text_parts = []
+        search_parts.extend(filter(None, text_parts))
         return " ".join(search_parts)
 
     def prepare_discount_percentage(self, instance):
@@ -252,3 +279,26 @@ class ProductDocument(Document):
             return round(score, 2)
         except Exception:
             return 0.0
+
+    def prepare_seo_keywords(self, instance):
+        """
+        Custom preparation method to handle seo_keywords from the Django model.
+        This handles both list and string formats.
+        """
+        seo_keywords = getattr(instance, "seo_keywords", None)
+        if seo_keywords:
+            if isinstance(seo_keywords, str):
+                try:
+                    # Attempt to parse as JSON list
+                    parsed_keywords = json.loads(seo_keywords)
+                    if isinstance(parsed_keywords, list):
+                        return " ".join(parsed_keywords)
+                    else:
+                        # If it's a string that's not a JSON list, return as is
+                        return seo_keywords
+                except json.JSONDecodeError:
+                    # Not a JSON string, treat as plain string
+                    return seo_keywords
+            elif isinstance(seo_keywords, list):
+                return " ".join(seo_keywords)
+        return None  # Return None if no keywords

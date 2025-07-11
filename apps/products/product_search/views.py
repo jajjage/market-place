@@ -1,3 +1,5 @@
+from django.db import connections
+from elasticsearch import NotFoundError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -6,7 +8,7 @@ from elasticsearch_dsl import Q
 from .documents import ProductDocument
 from .serializers import (
     ProductSearchListSerializer,
-    ProductSearchSuggestionSerializer,
+    # ProductSearchSuggestionSerializer,
     ProductSearchResponseSerializer,
     ProductSearchFacetSerializer,
 )
@@ -367,82 +369,255 @@ class ElasticsearchDebugView(APIView):
 
 class ProductRelatedSearchView(APIView):
     """
-    Find related/similar products based on a reference product
-    Used for "You might also like" or "Similar products" features
+    Find related/similar products based on a reference product using Elasticsearch.
+    Enhanced version with debugging capabilities.
     """
 
     def get(self, request, product_id):
         try:
-            # Get the reference product first (from your main Product model/API)
-            reference_product = self._get_reference_product(product_id)
+            reference_product_doc = self._get_reference_product_from_es(product_id)
+            if not reference_product_doc:
+                return Response(
+                    {"error": f"Reference product with ID '{product_id}' not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
-            # Build "More Like This" query
+            reference_product_data = reference_product_doc.to_dict()
+
+            # DEBUG: Log reference product data
+            logger.info(f"Reference product data: {reference_product_data}")
+
+            # --- Start building a list of "should" clauses for our main query ---
+            all_should_queries = []
+            debug_info = {"queries_added": []}
+
+            # 1. Add the More Like This (MLT) query with a VERY HIGH boost.
+            mlt_fields = [
+                f
+                for f in [
+                    "title^3",
+                    "description^2",
+                    "seo_keywords^2.5",
+                    "category_name^1.5",
+                    "brand_name^0.8",
+                ]
+                if reference_product_data.get(f.split("^")[0])
+            ]
+
+            if mlt_fields:
+                mlt_like_item = {
+                    "_index": reference_product_doc.meta.index,
+                    "_id": product_id,
+                }
+                mlt_query = Q(
+                    "more_like_this",
+                    fields=mlt_fields,
+                    like=[mlt_like_item],
+                    min_term_freq=1,
+                    min_doc_freq=1,
+                    max_query_terms=25,
+                    minimum_should_match="10%",  # Reduced from 20% to be less strict
+                    boost=4.0,
+                )
+                all_should_queries.append(mlt_query)
+                debug_info["queries_added"].append(
+                    f"MLT query with fields: {mlt_fields}"
+                )
+
+            # 2. Add boosting for shared CATEGORY
+            if category_id := reference_product_data.get("category_id"):
+                all_should_queries.append(
+                    Q("term", category_id={"value": category_id, "boost": 2.5})
+                )
+                debug_info["queries_added"].append(f"Category ID: {category_id}")
+            elif category_name := reference_product_data.get("category_name"):
+                # Fallback to category_name if category_id is not available
+                all_should_queries.append(
+                    Q(
+                        "term",
+                        **{
+                            "category_name.keyword": {
+                                "value": category_name,
+                                "boost": 2.5,
+                            }
+                        },
+                    )
+                )
+                debug_info["queries_added"].append(f"Category Name: {category_name}")
+
+            # 3. Add boosting for shared BRAND
+            if brand_id := reference_product_data.get("brand_id"):
+                all_should_queries.append(
+                    Q("term", brand_id={"value": brand_id, "boost": 2.0})
+                )
+                debug_info["queries_added"].append(f"Brand ID: {brand_id}")
+            elif brand_name := reference_product_data.get("brand_name"):
+                # Fallback to brand_name if brand_id is not available
+                all_should_queries.append(
+                    Q(
+                        "term",
+                        **{"brand_name.keyword": {"value": brand_name, "boost": 2.0}},
+                    )
+                )
+                debug_info["queries_added"].append(f"Brand Name: {brand_name}")
+
+            # 4. Add boosting for shared CONDITION
+            if condition_id := reference_product_data.get("condition_id"):
+                all_should_queries.append(
+                    Q("term", condition_id={"value": condition_id, "boost": 1.5})
+                )
+                debug_info["queries_added"].append(f"Condition ID: {condition_id}")
+            elif condition_name := reference_product_data.get("condition_name"):
+                # Fallback to condition_name if condition_id is not available
+                all_should_queries.append(
+                    Q(
+                        "term",
+                        **{
+                            "condition_name.keyword": {
+                                "value": condition_name,
+                                "boost": 1.5,
+                            }
+                        },
+                    )
+                )
+                debug_info["queries_added"].append(f"Condition Name: {condition_name}")
+
+            # 5. Add exact title match for duplicate titles (like "Babbar Riga")
+            if title := reference_product_data.get("title"):
+                all_should_queries.append(
+                    Q("term", **{"title.keyword": {"value": title, "boost": 3.0}})
+                )
+                debug_info["queries_added"].append(f"Exact Title: {title}")
+
+            # --- Build and Execute the Final Query ---
             search = ProductDocument.search()
             search = search.filter("term", is_active=True)
             search = search.filter("term", status="active")
-            search = search.exclude(
-                "term", _id=product_id
-            )  # Exclude the reference product
+            search = search.exclude("term", _id=product_id)
 
-            # More Like This query based on title, description, and category
-            mlt_query = Q(
-                "more_like_this",
-                fields=["title", "description", "category_name", "brand_name"],
-                like=[{"_index": "products", "_id": product_id}],
-                min_term_freq=1,
-                max_query_terms=12,
-            )
-
-            search = search.query(mlt_query)
-
-            # Boost products from same category and brand
-            search = search.query(
-                Q(
-                    "bool",
-                    should=[
-                        Q("term", category_id=reference_product.get("category_id")),
-                        Q("term", brand_id=reference_product.get("brand_id")),
-                    ],
+            if not all_should_queries:
+                debug_info["error"] = "No should queries generated"
+                return Response(
+                    {
+                        "related_products": [],
+                        "total": 0,
+                        "reference_product_id": product_id,
+                        "debug_info": debug_info,
+                    }
                 )
+
+            # Combine all clauses into a single bool query
+            final_query = Q("bool", should=all_should_queries, minimum_should_match=1)
+            search = search.query(final_query)
+
+            # DEBUG: Log the actual query being executed
+            logger.info(f"Elasticsearch query: {search.to_dict()}")
+            debug_info["elasticsearch_query"] = search.to_dict()
+
+            # --- Sort and Paginate/Limit Results ---
+            search = search.sort(
+                {"_score": {"order": "desc"}}, {"popularity_score": {"order": "desc"}}
             )
+            search = search[:20]  # Increased limit to see more results
 
-            # Sort by relevance and popularity
-            search = search.sort("_score", "-popularity_score")
-            search = search[:12]  # Limit to 12 related products
-
+            # --- Execute Search and Serialize Response ---
             response = search.execute()
-            serializer = ProductSearchListSerializer(response, many=True)
+
+            # DEBUG: Log raw response
+            logger.info(f"Raw ES response - Total hits: {response.hits.total}")
+            for hit in response.hits:
+                logger.info(f"Hit: {hit.title} - Score: {hit.meta.score}")
+
+            serialized_data = ProductSearchListSerializer(response.hits, many=True).data
 
             return Response(
                 {
-                    "related_products": serializer.data,
-                    "total": len(serializer.data),
+                    "related_products": serialized_data,
+                    "total": len(serialized_data),
                     "reference_product_id": product_id,
+                    "debug_info": debug_info,
+                    "elasticsearch_total": (
+                        response.hits.total.value
+                        if hasattr(response.hits.total, "value")
+                        else response.hits.total
+                    ),
                 }
             )
 
+        except NotFoundError as e:
+            logger.error(f"Product ID {product_id} not found: {e}")
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            logger.exception(f"Error fetching related products for ID {product_id}")
             return Response(
-                {"error": "Related products search failed", "details": str(e)},
+                {"error": "Failed to retrieve related products", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def _get_reference_product(self, product_id):
-        """Get basic info about reference product - implement based on your Product model"""
+    def _get_reference_product_from_es(self, product_id):
         try:
-            # This should call your main Product model/API
-            # return Product.objects.get(id=product_id)
-            # For now, get from Elasticsearch
-            product = ProductDocument.get(id=product_id)
-            return product.to_dict()
-        except:
-            raise Exception("Reference product not found")
+            return ProductDocument.get(id=product_id)
+        except connections.get_connection().exceptions.NotFoundError:
+            raise NotFoundError(
+                f"Reference product with ID '{product_id}' not found in Elasticsearch."
+            )
+        except Exception as e:
+            logger.error(
+                f"Error retrieving reference product '{product_id}' from ES: {e}"
+            )
+            raise
+
+    def _debug_check_products_exist(
+        self, request, brand_name=None, category_name=None, title=None
+    ):
+        """
+        Debug endpoint to check if products with specific criteria exist in ES
+        Usage: GET /api/debug-products/?brand_name=HP&category_name=Cloth&title=Babbar Riga
+        """
+        search = ProductDocument.search()
+        search = search.filter("term", is_active=True)
+        search = search.filter("term", status="active")
+
+        if brand_name:
+            search = search.filter("term", **{"brand_name.keyword": brand_name})
+        if category_name:
+            search = search.filter("term", **{"category_name.keyword": category_name})
+        if title:
+            search = search.filter("term", **{"title.keyword": title})
+
+        search = search[:50]  # Get up to 50 results
+        response = search.execute()
+
+        results = []
+        for hit in response.hits:
+            results.append(
+                {
+                    "id": hit.meta.id,
+                    "title": hit.title,
+                    "brand_name": getattr(hit, "brand_name", None),
+                    "category_name": getattr(hit, "category_name", None),
+                    "is_active": getattr(hit, "is_active", None),
+                    "status": getattr(hit, "status", None),
+                }
+            )
+
+        return Response(
+            {
+                "total_found": (
+                    response.hits.total.value
+                    if hasattr(response.hits.total, "value")
+                    else response.hits.total
+                ),
+                "products": results,
+                "query": search.to_dict(),
+            }
+        )
 
 
 class ProductAutocompleteView(APIView):
     """
     Autocomplete endpoint for search suggestions
-    Optimized for fast response times
+    Fixed version that works with basic text fields
     """
 
     def get(self, request):
@@ -451,81 +626,121 @@ class ProductAutocompleteView(APIView):
         if not query or len(query) < 2:
             return Response({"suggestions": []})
 
-        # Use completion suggester for fast autocomplete
-        search = ProductDocument.search()
-
-        # Title suggestions
-        search = search.suggest(
-            "title_suggest", query, completion={"field": "title.suggest", "size": 5}
-        )
-
-        # Brand suggestions
-        search = search.suggest(
-            "brand_suggest",
-            query,
-            completion={"field": "brand_name.suggest", "size": 3},
-        )
-
-        # Also do a quick text search for popular items
-        text_search = ProductDocument.search()
-        text_search = text_search.filter("term", is_active=True)
-        text_search = text_search.query(
-            "multi_match",
-            query=query,
-            fields=["title.autocomplete^2", "brand_name^1"],
-            type="phrase_prefix",
-        )
-        text_search = text_search.sort("-popularity_score")
-        text_search = text_search[:5]
-
         try:
+            # Use regular text search instead of completion suggester
+            search = ProductDocument.search()
+            search = search.filter("term", is_active=True)
+            search = search.filter("term", status="active")
+
+            # Combine phrase_prefix (for autocomplete) and fuzzy (for typos) in bool query
+            phrase_prefix_query = Q(
+                "multi_match",
+                query=query,
+                fields=["title^3", "brand_name^2", "category_name^1"],
+                type="phrase_prefix",
+            )
+
+            # Fuzzy query for typo tolerance (lower boost)
+            fuzzy_query = Q(
+                "multi_match",
+                query=query,
+                fields=["title^1.5", "brand_name^1", "category_name^0.5"],
+                fuzziness="AUTO",
+            )
+
+            # Combine both queries
+            combined_query = Q(
+                "bool",
+                should=[phrase_prefix_query, fuzzy_query],
+                minimum_should_match=1,
+            )
+
+            search = search.query(combined_query)
+
+            # Sort by relevance score and popularity
+            search = search.sort(
+                {"_score": {"order": "desc"}}, {"popularity_score": {"order": "desc"}}
+            )
+            search = search[:10]  # Limit results
+
             response = search.execute()
-            text_response = text_search.execute()
 
-            # Collect all suggestions
-            all_suggestions = []
+            # Collect suggestions
+            suggestions = []
+            seen_titles = set()
+            seen_brands = set()
 
-            # Add completion suggestions
-            for option in response.suggest.title_suggest[0].options:
-                all_suggestions.append(
-                    {"text": option.text, "type": "product", "score": option.score}
-                )
+            for hit in response.hits:
+                # Add product suggestions
+                title = hit.title
+                if title.lower() not in seen_titles:
+                    seen_titles.add(title.lower())
+                    suggestions.append(
+                        {
+                            "text": title,
+                            "type": "product",
+                            "score": hit.meta.score,
+                            "id": hit.meta.id,
+                            "slug": getattr(hit, "slug", ""),
+                            "price": getattr(hit, "price", 0),
+                            "currency": getattr(hit, "currency", "NGN"),
+                            "brand_name": getattr(hit, "brand_name", ""),
+                            "category_name": getattr(hit, "category_name", ""),
+                        }
+                    )
 
-            for option in response.suggest.brand_suggest[0].options:
-                all_suggestions.append(
-                    {"text": option.text, "type": "brand", "score": option.score}
-                )
+                # Add brand suggestions
+                brand_name = getattr(hit, "brand_name", "")
+                if (
+                    brand_name
+                    and brand_name.lower() not in seen_brands
+                    and query.lower() in brand_name.lower()
+                ):
+                    seen_brands.add(brand_name.lower())
+                    suggestions.append(
+                        {
+                            "text": brand_name,
+                            "type": "brand",
+                            "score": hit.meta.score
+                            * 0.8,  # Slightly lower score for brands
+                        }
+                    )
 
-            # Add popular product suggestions with serializer
-            serializer = ProductSearchSuggestionSerializer(text_response, many=True)
-            for item in serializer.data:
-                all_suggestions.append(
-                    {
-                        "text": item["title"],
-                        "type": "popular",
-                        "score": item.get("popularity_score", 0),
-                        "id": item.get("id"),
-                        "slug": item["slug"],
-                        "price": item["price"],
-                        "currency": item["currency"],
-                    }
-                )
+            # Get additional brand suggestions using aggregation
+            brand_search = ProductDocument.search()
+            brand_search = brand_search.filter("term", is_active=True)
+            brand_search = brand_search.filter("term", status="active")
+            brand_search = brand_search.query(
+                "wildcard", **{"brand_name.keyword": f"{query}*"}
+            )
+            brand_search.aggs.bucket(
+                "brands", "terms", field="brand_name.keyword", size=5
+            )
+            brand_search = brand_search[:0]  # We only want aggregation results
 
-            # Remove duplicates and sort by score
-            seen = set()
-            unique_suggestions = []
-            for suggestion in all_suggestions:
-                text_lower = suggestion["text"].lower()
-                if text_lower not in seen:
-                    seen.add(text_lower)
-                    unique_suggestions.append(suggestion)
+            try:
+                brand_response = brand_search.execute()
+                for bucket in brand_response.aggregations.brands.buckets:
+                    brand_name = bucket.key
+                    if brand_name.lower() not in seen_brands:
+                        seen_brands.add(brand_name.lower())
+                        suggestions.append(
+                            {
+                                "text": brand_name,
+                                "type": "brand",
+                                "score": bucket.doc_count,  # Use document count as score
+                            }
+                        )
+            except Exception as e:
+                logger.warning(f"Brand aggregation failed: {e}")
 
             # Sort by score and limit
-            unique_suggestions.sort(key=lambda x: x.get("score", 0), reverse=True)
+            suggestions.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-            return Response({"suggestions": unique_suggestions[:10]})
+            return Response({"suggestions": suggestions[:10]})
 
         except Exception as e:
+            logger.error(f"Autocomplete search failed: {str(e)}", exc_info=True)
             return Response({"suggestions": []})
 
 
@@ -547,16 +762,29 @@ class ProductSEOSearchView(APIView):
 
         # Apply SEO filters
         if category_slug:
-            search = search.filter("term", category_slug=category_slug)
+            # Check if your mapping has category_slug field, otherwise use category_name
+            search = search.filter(
+                "term",
+                **{"category_name.keyword": category_slug.replace("-", " ").title()},
+            )
 
         if brand_slug:
-            search = search.filter("term", brand_name__raw=brand_slug)
+            # Fix: Use brand_name.keyword instead of brand_name__raw
+            search = search.filter(
+                "term", **{"brand_name.keyword": brand_slug.replace("-", " ").title()}
+            )
 
         if location:
-            search = search.filter("match", location=location)
+            search = search.filter("term", **{"location.keyword": location})
 
-        # Sort by popularity for SEO
-        search = search.sort("-popularity_score", "-views_count")
+        # Sort by available fields only (choose one of these options)
+
+        search = search.sort(
+            "-is_featured",  # Featured products first
+            "-popularity_score",  # Then by popularity
+            "-average_rating",  # Then by rating
+            "-created_at",  # Finally by recency
+        )
 
         # Limit results for SEO pages
         search = search[:50]
@@ -565,12 +793,16 @@ class ProductSEOSearchView(APIView):
             response = search.execute()
 
             # Use serializer for consistent data format
-            serializer = ProductSearchListSerializer(response, many=True)
+            serializer = ProductSearchListSerializer(response.hits, many=True)
 
             return Response(
                 {
                     "results": serializer.data,
-                    "total": response.hits.total.value,
+                    "total": (
+                        response.hits.total.value
+                        if hasattr(response.hits.total, "value")
+                        else response.hits.total
+                    ),
                     "seo_data": {
                         "category": category_slug,
                         "brand": brand_slug,
@@ -588,6 +820,7 @@ class ProductSEOSearchView(APIView):
             )
 
         except Exception as e:
+            logger.error(f"SEO search failed: {str(e)}", exc_info=True)
             return Response(
                 {"error": "SEO search failed", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -633,30 +866,113 @@ class ProductSearchStatsView(APIView):
             search = ProductDocument.search()
             search = search.filter("term", is_active=True)
 
-            # Add aggregations for stats
-            search.aggs.bucket("total_products", "value_count", field="_id")
+            # Add comprehensive aggregations
             search.aggs.bucket("avg_price", "avg", field="price")
-            search.aggs.bucket("categories_count", "cardinality", field="category_id")
-            search.aggs.bucket("brands_count", "cardinality", field="brand_id")
+            search.aggs.bucket("price_stats", "stats", field="price")
+
+            # Check if these fields exist in your mapping
+            if hasattr(ProductDocument, "category_id"):
+                search.aggs.bucket(
+                    "categories_count", "cardinality", field="category_id"
+                )
+            else:
+                search.aggs.bucket(
+                    "categories_count", "cardinality", field="category_name.keyword"
+                )
+
+            if hasattr(ProductDocument, "brand_id"):
+                search.aggs.bucket("brands_count", "cardinality", field="brand_id")
+            else:
+                search.aggs.bucket(
+                    "brands_count", "cardinality", field="brand_name.keyword"
+                )
+
             search.aggs.bucket(
                 "featured_count", "filter", filter={"term": {"is_featured": True}}
+            )
+
+            # Location stats
+            search.aggs.bucket("locations", "terms", field="location.keyword", size=10)
+
+            # Condition stats
+            search.aggs.bucket(
+                "conditions", "terms", field="condition_name.keyword", size=10
+            )
+
+            # Price ranges
+            search.aggs.bucket(
+                "price_ranges",
+                "range",
+                field="price",
+                ranges=[
+                    {"to": 100, "key": "under_100"},
+                    {"from": 100, "to": 500, "key": "100_to_500"},
+                    {"from": 500, "to": 1000, "key": "500_to_1000"},
+                    {"from": 1000, "to": 5000, "key": "1000_to_5000"},
+                    {"from": 5000, "key": "above_5000"},
+                ],
+            )
+
+            # Top categories
+            search.aggs.bucket(
+                "top_categories", "terms", field="category_name.keyword", size=10
+            )
+
+            # Top brands
+            search.aggs.bucket(
+                "top_brands", "terms", field="brand_name.keyword", size=10
             )
 
             # Execute with no results, only aggregations
             search = search[:0]
             response = search.execute()
 
+            # Get total count from the search response
+            total_products = (
+                response.hits.total.value
+                if hasattr(response.hits.total, "value")
+                else response.hits.total
+            )
+
             stats = {
-                "total_products": response.aggregations.total_products.value,
+                "total_products": total_products,
                 "average_price": round(response.aggregations.avg_price.value or 0, 2),
                 "total_categories": response.aggregations.categories_count.value,
                 "total_brands": response.aggregations.brands_count.value,
                 "featured_products": response.aggregations.featured_count.doc_count,
+                "price_stats": {
+                    "min": response.aggregations.price_stats.min,
+                    "max": response.aggregations.price_stats.max,
+                    "avg": round(response.aggregations.price_stats.avg or 0, 2),
+                    "sum": response.aggregations.price_stats.sum,
+                    "count": response.aggregations.price_stats.count,
+                },
+                "price_ranges": {
+                    bucket.key: bucket.doc_count
+                    for bucket in response.aggregations.price_ranges.buckets
+                },
+                "top_categories": [
+                    {"name": bucket.key, "count": bucket.doc_count}
+                    for bucket in response.aggregations.top_categories.buckets
+                ],
+                "top_brands": [
+                    {"name": bucket.key, "count": bucket.doc_count}
+                    for bucket in response.aggregations.top_brands.buckets
+                ],
+                "top_locations": [
+                    {"name": bucket.key, "count": bucket.doc_count}
+                    for bucket in response.aggregations.locations.buckets
+                ],
+                "conditions": [
+                    {"name": bucket.key, "count": bucket.doc_count}
+                    for bucket in response.aggregations.conditions.buckets
+                ],
             }
 
             return Response(stats)
 
         except Exception as e:
+            logger.error(f"Stats retrieval failed: {str(e)}", exc_info=True)
             return Response(
                 {"error": "Stats retrieval failed", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
