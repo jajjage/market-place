@@ -3,12 +3,12 @@ from django.db.models import Sum
 from apps.comments.api.serializers import RatingListSerializer
 from apps.core.serializers import TimestampedModelSerializer, get_timestamp_fields
 from apps.disputes.api.serializers import DisputeListSerializer
-from apps.store.serializers import UserStoreSerializer
-from apps.users.models import CustomUser, UserProfile
+from apps.users.models import UserProfile
 from apps.users.models.user_address import UserAddress
 from apps.transactions.api.serializers import (
     TransactionHistorySerializer,
 )
+from apps.users.utils.total_sales import get_seller_sales_summary
 
 
 class SellerReviewsSerializer(serializers.Serializer):
@@ -46,7 +46,18 @@ class UserAddressSerializer(TimestampedModelSerializer):
 
 
 class UserProfileSerializer(TimestampedModelSerializer):
-    reviews = SellerReviewsSerializer(source="*", read_only=True)
+    # reviews = SellerReviewsSerializer(source="*", read_only=True)
+    addresses = UserAddressSerializer(many=True, required=False)
+    received_ratings = RatingListSerializer(
+        many=True, read_only=True
+    )  # Always read-only for security
+
+    disputes = DisputeListSerializer(
+        many=True, read_only=True, source="opened_disputes"
+    )
+    transaction_history = TransactionHistorySerializer(
+        many=True, read_only=True, source="created_transaction_history"
+    )
     memberSince = serializers.SerializerMethodField()
     transactions_completed = serializers.SerializerMethodField(read_only=True)
     total_sales = serializers.SerializerMethodField(read_only=True)
@@ -65,12 +76,20 @@ class UserProfileSerializer(TimestampedModelSerializer):
             "phone_number",
             "country",
             "city",
+            "location",
+            "avatar_url",
+            "disputes",
+            "transaction_history",
+            "addresses",
+            "response_rate",
+            "response_time",
+            "received_ratings",
             "positive_percentage",
             "memberSince",
             "location",
             "response_rate",
             "response_time",
-            "reviews",
+            # "reviews",
             "is_verified",
             "last_active",
             "transactions_completed",
@@ -94,12 +113,10 @@ class UserProfileSerializer(TimestampedModelSerializer):
     def get_transactions_completed(self, obj) -> int:
         """Get total completed transactions (as buyer + seller)"""
         # Try to get from annotations first (if available)
-        if hasattr(obj.user, "completed_sales_count") and hasattr(
-            obj.user, "completed_purchases_count"
-        ):
-            return obj.user.completed_sales_count + obj.user.completed_purchases_count
+        if hasattr(obj, "completed_as_seller") and hasattr(obj, "completed_as_buyer"):
+            return obj.completed_as_seller + obj.completed_as_buyer
 
-        # Fallback to database queries
+        # # Fallback to database queries
         seller_completed = obj.user.seller_transactions.filter(
             status="completed"
         ).count()
@@ -109,27 +126,35 @@ class UserProfileSerializer(TimestampedModelSerializer):
     def get_total_sales(self, obj) -> int:
         """Get total sales amount from completed transactions"""
         # Try to get from annotations first
-        if hasattr(obj.user, "total_sales_amount"):
-            return obj.user.total_sales_amount or 0
+        sales_data = get_seller_sales_summary(obj.user)
 
-        # Fallback to database query
-        return (
-            obj.user.seller_transactions.filter(status="completed").aggregate(
-                total=Sum("amount")
-            )["total"]
-            or 0
-        )
+        # Format the output
+        if not sales_data:
+            # Fallback to database query
+            return (
+                obj.user.seller_transactions.filter(status="completed").aggregate(
+                    total=Sum("total_amount")
+                )["total"]
+                or 0
+            )
+        return {
+            "withdrawable_funds": f"{sales_data['withdrawable_funds'] or 0:,.2f}",
+            "current_month_active_sales": f"{sales_data['current_month_active_sales'] or 0:,.2f}",
+            "all_time_active_sales": f"{sales_data['all_time_active_sales'] or 0:,.2f}",
+            "percentage_change": sales_data["percentage_change"],
+            "is_increase": sales_data["is_increase"],
+        }
 
     def get_total_purchases(self, obj) -> int:
         """Get total purchase amount from completed transactions"""
         # Try to get from annotations first
-        if hasattr(obj.user, "total_purchases_amount"):
-            return obj.user.total_purchases_amount or 0
+        if hasattr(obj, "completed_as_buyer"):
+            return obj.completed_as_buyer or 0
 
         # Fallback to database query
         return (
             obj.user.buyer_transactions.filter(status="completed").aggregate(
-                total=Sum("amount")
+                total=Sum("total_amount")
             )["total"]
             or 0
         )
@@ -140,105 +165,11 @@ class UserProfileSerializer(TimestampedModelSerializer):
     def get_verified_status(self, obj) -> bool:
         return getattr(obj, "verified_status", False)
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        # Rename fields to match desired format
-        data["isVerified"] = data.pop("is_verified")
-        data["totalSales"] = data.pop("total_sales")
-        data["positivePercentage"] = data.pop("positive_percentage")
-        data["responseRate"] = data.pop("response_rate")
-        data["responseTime"] = data.pop("response_time")
-        return data
-
-
-class UserSerializer(TimestampedModelSerializer):
-    profile = UserProfileSerializer(required=False)
-    store = UserStoreSerializer(required=False)
-    addresses = UserAddressSerializer(many=True, required=False)
-    received_ratings = RatingListSerializer(
-        many=True, read_only=True
-    )  # Always read-only for security
-
-    disputes = DisputeListSerializer(
-        many=True, read_only=True, source="opened_disputes"
-    )
-    transaction_history = TransactionHistorySerializer(
-        many=True, read_only=True, source="created_transaction_history"
-    )
-
-    class Meta:
-        model = CustomUser
-        fields = [
-            "id",
-            "email",
-            "first_name",
-            "last_name",
-            "profile",
-            "store",
-            "addresses",
-            "received_ratings",
-            "disputes",
-            "transaction_history",
-        ] + get_timestamp_fields(CustomUser)
-        read_only_fields = ["id", "verification_status"] + get_timestamp_fields(
-            CustomUser
-        )
-
-    def update(self, instance, validated_data):
-        # Handle nested updates only if user is owner
-
-        profile_data = validated_data.pop("profile", None)
-        store_data = validated_data.pop("store", None)
-        addresses_data = validated_data.pop("addresses", None)
-
-        # Update main user fields
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-
-        # Update profile
-        if profile_data and hasattr(instance, "profile"):
-            profile_serializer = UserProfileSerializer(
-                instance.profile, data=profile_data, partial=True
-            )
-            if profile_serializer.is_valid(raise_exception=True):
-                profile_serializer.save()
-
-        # Update store
-        if store_data and hasattr(instance, "store"):
-            store_serializer = UserStoreSerializer(
-                instance.store, data=store_data, partial=True
-            )
-            if store_serializer.is_valid(raise_exception=True):
-                store_serializer.save()
-
-        # Update addresses
-        if addresses_data is not None:  # Allow empty list to clear addresses
-            # Clear existing addresses and create new ones
-            instance.addresses.all().delete()
-            for address_data in addresses_data:
-                UserAddress.objects.create(user=instance, **address_data)
-
-        instance.save()
-        return instance
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        try:
-            if hasattr(instance, "profile") and instance.profile.avatar_url:
-                data["avatar_url"] = instance.profile.avatar_url
-            else:
-                data["avatar_url"] = None
-        except (ValueError, AttributeError):
-            data["avatar_url"] = None
-        return data
-
 
 class PublicUserProfileSerializer(serializers.ModelSerializer):
     # keep the computed fields you’re happy sharing
-    reviews = SellerReviewsSerializer(source="*", read_only=True)
+    # reviews = SellerReviewsSerializer(source="*", read_only=True)
     memberSince = serializers.SerializerMethodField()
-    transactions_completed = serializers.SerializerMethodField(read_only=True)
-    total_sales = serializers.SerializerMethodField(read_only=True)
     full_name = serializers.SerializerMethodField()
     verified_status = serializers.SerializerMethodField(read_only=True)
 
@@ -251,9 +182,8 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             "avatar_url",
             "is_verified",
             "bio",
-            "reviews",
+            # "reviews",
             "verified_status",
-            "transactions_completed",
             "country",
             "city",
             "positive_percentage",
@@ -262,41 +192,11 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             "response_time",
             "memberSince",
             "average_rating",
-            "total_sales",
         ]
         read_only_fields = fields
 
     def get_full_name(self, obj) -> str:
         return obj.user.get_full_name()
-
-    def get_transactions_completed(self, obj) -> int:
-        """Get total completed transactions (as buyer + seller)"""
-        # Try to get from annotations first (if available)
-        if hasattr(obj.user, "completed_sales_count") and hasattr(
-            obj.user, "completed_purchases_count"
-        ):
-            return obj.user.completed_sales_count + obj.user.completed_purchases_count
-
-        # Fallback to database queries
-        seller_completed = obj.user.seller_transactions.filter(
-            status="completed"
-        ).count()
-        buyer_completed = obj.user.buyer_transactions.filter(status="completed").count()
-        return seller_completed + buyer_completed
-
-    def get_total_sales(self, obj) -> int:
-        """Get total sales amount from completed transactions"""
-        # Try to get from annotations first
-        if hasattr(obj.user, "total_sales_amount"):
-            return obj.user.total_sales_amount or 0
-
-        # Fallback to database query
-        return (
-            obj.user.seller_transactions.filter(status="completed").aggregate(
-                total=Sum("amount")
-            )["total"]
-            or 0
-        )
 
     def get_memberSince(self, obj) -> str:
         return obj.member_since.strftime("%b %Y")
@@ -315,27 +215,3 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             data["avatar_url"] = None
 
         return data
-
-
-class PublicUserSerializer(serializers.ModelSerializer):
-    """Only the fields you’re okay exposing to others."""
-
-    full_name = serializers.SerializerMethodField()
-
-    def get_full_name(self, obj) -> str:
-        if hasattr(obj, "get_full_name"):
-            return obj.get_full_name()
-        if (
-            hasattr(obj, "profile")
-            and hasattr(obj.profile, "user")
-            and hasattr(obj.profile.user, "get_full_name")
-        ):
-            return obj.profile.user.get_full_name()
-        return ""
-
-    profile = PublicUserProfileSerializer(read_only=True)
-
-    class Meta:
-        model = CustomUser
-        fields = ["id", "first_name", "last_name", "full_name", "profile"]
-        # no email, no addresses, no private store, no ratings…

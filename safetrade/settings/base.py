@@ -201,10 +201,6 @@ DJOSER = {
             "http://127.0.0.1:3000/auth/google/",
         ],
     ).split(","),
-    "SERIALIZERS": {
-        "user": "apps.users.serializers.UserSerializer",
-        "current_user": "apps.users.serializers.UserSerializer",
-    },
     "PERMISSIONS": {
         "user": ["rest_framework.permissions.IsAuthenticated"],
         "user_list": ["rest_framework.permissions.IsAuthenticated"],

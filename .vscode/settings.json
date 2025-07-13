@@ -58,6 +58,7 @@
         "createsuperuser",
         "creds",
         "dedupe",
+        "deliv",
         "devcontainers",
         "djangorestframework",
         "DJOSER",

@@ -81,7 +81,3 @@ class UserProfile(BaseModel):
         elif self.email_verified:
             return "Email Verified"
         return "Unverified"
-
-    @property
-    def total_purchases(self):
-        return self.user.purchases.count()
