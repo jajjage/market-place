@@ -6,7 +6,6 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse
 from apps.categories.api.serializers import (
     CategoryTreeSerializer,
     CategoryListSerializer,
-    CategoryBreadcrumbSerializer,
     # Add other serializers as needed
 )
 
@@ -71,16 +70,6 @@ category_viewset_schema = {
             200: OpenApiResponse(
                 response=CategoryListSerializer(many=True),
                 description="List of subcategories",
-            )
-        },
-    },
-    "breadcrumb": {
-        "summary": "Get Category Breadcrumb",
-        "description": "Get the breadcrumb path for a specific category.",
-        "responses": {
-            200: OpenApiResponse(
-                response=CategoryBreadcrumbSerializer(many=True),
-                description="Breadcrumb path for the category",
             )
         },
     },

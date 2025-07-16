@@ -7,14 +7,13 @@ from ..models import Category
 
 
 class CategoryListSerializer(TimestampedModelSerializer):
-    """Simple serializer for listing categories."""
+    """Basic category info without nested subcategories"""
 
-    subcategories_count = serializers.IntegerField(
-        source="subcategories.count",
-        max_value=1000,  # Use int for integer fields
-        min_value=1,
-        read_only=True,
+    parent_name = serializers.CharField(
+        source="parent.name", read_only=True, allow_null=True
     )
+    product_count = serializers.IntegerField(read_only=True)
+    children_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Category
@@ -23,21 +22,11 @@ class CategoryListSerializer(TimestampedModelSerializer):
             "name",
             "description",
             "parent",
-            "subcategories_count",
+            "parent_name",
+            "product_count",
+            "children_count",
             "is_active",
-            "created_at",
         ]
-
-
-class RecursiveField(serializers.Serializer):
-    """
-    A serializer field that can recursively serialize nested objects.
-    Used for category hierarchies.
-    """
-
-    def to_representation(self, value):
-        serializer = self.parent.parent.__class__(value, context=self.context)
-        return serializer.data
 
 
 class CategorySummarySerializer(serializers.Serializer):
@@ -47,24 +36,18 @@ class CategorySummarySerializer(serializers.Serializer):
     parent_name = serializers.CharField(
         source="parent.name", read_only=True, allow_null=True
     )
-    subcategories = RecursiveField(many=True, read_only=True)
-
-    def get_products_count(self, obj) -> int:
-        """Get count of products in this category."""
-        return obj.products.count()
 
 
-class CategoryDetailSerializer(TimestampedModelSerializer):
-    """
-    Detailed category serializer with parent info and recursive subcategories.
-    """
+class CategoryDetailDepthSerializer(TimestampedModelSerializer):
+    """Category serializer with controlled recursion depth"""
 
     breadcrumbs = serializers.SerializerMethodField()
     parent_name = serializers.CharField(
         source="parent.name", read_only=True, allow_null=True
     )
-    subcategories = RecursiveField(many=True, read_only=True)
-    products_count = serializers.SerializerMethodField()
+    subcategories = serializers.SerializerMethodField()
+    product_count = serializers.IntegerField(read_only=True)
+    children_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Category
@@ -76,15 +59,69 @@ class CategoryDetailSerializer(TimestampedModelSerializer):
             "parent_name",
             "subcategories",
             "breadcrumbs",
-            "products_count",
+            "product_count",
+            "children_count",
             "is_active",
             "created_at",
             "updated_at",
         ]
 
-    def get_products_count(self, obj) -> int:
-        """Get count of products in this category."""
-        return obj.products.count()
+    def get_subcategories(self, obj):
+        """Get subcategories with depth control"""
+        # Get depth from context, default to 1
+        depth = self.context.get("depth", 1)
+
+        # If we've reached max depth, return empty
+        if depth <= 0:
+            return []
+
+        # Get prefetched subcategories
+        if (
+            hasattr(obj, "_prefetched_objects_cache")
+            and "subcategories" in obj._prefetched_objects_cache
+        ):
+            subcategories = obj.subcategories.all()
+        else:
+            # This should not happen with proper prefetch
+            subcategories = obj.subcategories.all()
+
+        # Create new context with reduced depth
+        new_context = self.context.copy()
+        new_context["depth"] = depth - 1
+
+        return CategoryDetailSerializer(
+            subcategories, many=True, context=new_context
+        ).data
+
+
+class CategoryDetailSerializer(TimestampedModelSerializer):
+    """Detailed category with ONE level of subcategories only"""
+
+    breadcrumbs = serializers.SerializerMethodField()
+    parent_name = serializers.CharField(
+        source="parent.name", read_only=True, allow_null=True
+    )
+    # Use the simpler serializer for subcategories to avoid infinite recursion
+    subcategories = CategoryListSerializer(many=True, read_only=True)
+    product_count = serializers.IntegerField(read_only=True)
+    children_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Category
+        fields = [
+            "id",
+            "name",
+            "description",
+            "parent",
+            "parent_name",
+            "subcategories",
+            "breadcrumbs",
+            "product_count",
+            "children_count",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
 
     def get_breadcrumbs(self, obj) -> list:
         service = BreadcrumbService()
@@ -123,28 +160,6 @@ class CategoryWriteSerializer(TimestampedModelSerializer):
                 parent = parent.parent
 
         return value
-
-
-class CategoryBreadcrumbSerializer(TimestampedModelSerializer):
-    """Serializer for category breadcrumb navigation."""
-
-    path = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Category
-        fields = ["id", "name", "path"]
-
-    def get_path(self, obj) -> list:
-        """Build breadcrumb path from root to current category."""
-        breadcrumbs = []
-        category = obj
-
-        # Build path from current category up to root
-        while category:
-            breadcrumbs.insert(0, {"id": category.id, "name": category.name})
-            category = category.parent
-
-        return breadcrumbs
 
 
 class CategoryTreeSerializer(TimestampedModelSerializer):

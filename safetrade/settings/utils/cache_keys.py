@@ -121,7 +121,7 @@ CACHE_KEY_TEMPLATES = {
     },
     "category": {
         "detail": "category:detail:{id}",
-        "list": "category:list",
+        "list": "category:list:include_inactive:{include_inactive}",
         "tree": "category:tree:{max_depth}:{include_inactive}",
         "subcategory_ids": "category:subcategory_ids:{category_id}",
         "popular_categories": "category:popular_categories:{limit}",
@@ -185,3 +185,100 @@ CACHE_KEY_TEMPLATES = {
     },
     # …add new resources here as needed…
 }
+
+
+#   // Automotive Children
+#   {"name": "Car Parts", "parent_name": "Automotive", "description": "Automotive parts and components"},
+#   {"name": "Car Accessories", "parent_name": "Automotive", "description": "Car accessories and gadgets"},
+#   {"name": "Motorcycle", "parent_name": "Automotive", "description": "Motorcycle parts and accessories"},
+#   {"name": "Car Care", "parent_name": "Automotive", "description": "Car cleaning and maintenance products"},
+#   {"name": "Tires & Wheels", "parent_name": "Automotive", "description": "Tires, wheels, and related accessories"},
+
+#   // Toys & Games Children
+#   {"name": "Action Figures", "parent_name": "Toys & Games", "description": "Action figures and collectibles"},
+#   {"name": "Board Games", "parent_name": "Toys & Games", "description": "Board games and card games"},
+#   {"name": "Educational Toys", "parent_name": "Toys & Games", "description": "Educational and learning toys"},
+#   {"name": "Dolls & Stuffed Animals", "parent_name": "Toys & Games", "description": "Dolls and plush toys"},
+#   {"name": "Building Sets", "parent_name": "Toys & Games", "description": "LEGO and building block sets"},
+#   {"name": "Outdoor Play", "parent_name": "Toys & Games", "description": "Outdoor toys and playground equipment"},
+
+#   // Business & Industrial Children
+#   {"name": "Office Equipment", "parent_name": "Business & Industrial", "description": "Professional office equipment"},
+#   {"name": "Industrial Tools", "parent_name": "Business & Industrial", "description": "Industrial machinery and tools"},
+#   {"name": "Safety Equipment", "parent_name": "Business & Industrial", "description": "Safety and protective equipment"},
+#   {"name": "Packaging Supplies", "parent_name": "Business & Industrial", "description": "Packaging and shipping materials"},
+#   {"name": "Laboratory Equipment", "parent_name": "Business & Industrial", "description": "Scientific and lab equipment"},
+
+#   // Services Children
+#   {"name": "Professional Services", "parent_name": "Services", "description": "Legal, accounting, consulting"},
+#   {"name": "Home Services", "parent_name": "Services", "description": "Cleaning, repair, maintenance"},
+#   {"name": "Personal Services", "parent_name": "Services", "description": "Beauty, wellness, personal care"},
+#   {"name": "Digital Services", "parent_name": "Services", "description": "Web design, marketing, IT services"},
+#   {"name": "Event Services", "parent_name": "Services", "description": "Event planning and catering"},
+
+#   // Real Estate Children
+#   {"name": "Residential", "parent_name": "Real Estate", "description": "Houses and apartments"},
+#   {"name": "Commercial", "parent_name": "Real Estate", "description": "Commercial properties and offices"},
+#   {"name": "Land", "parent_name": "Real Estate", "description": "Land and vacant lots"},
+#   {"name": "Rentals", "parent_name": "Real Estate", "description": "Rental properties and listings"},
+
+#   // Travel & Tourism Children
+#   {"name": "Hotels & Accommodation", "parent_name": "Travel & Tourism", "description": "Hotels and lodging", "is_active": tru},
+#   {"name": "Flights", "parent_name": "Travel & Tourism", "description": "Flight bookings and airlines", "is_active": tru},
+#   {"name": "Car Rentals", "parent_name": "Travel & Tourism", "description": "Vehicle rental services", "is_active": tru},
+#   {"name": "Tours & Activities", "parent_name": "Travel & Tourism", "description": "Tours and tourist activities", "is_active": true}"},
+#   {"name": "Travel Accessories", "parent_name": "Travel & Tourism", "description": "Luggage and travel gear", "is_active": true},
+
+#   // Education Children
+#   {"name": "Online Courses", "parent_name": "Education", "description": "Online learning and courses", "is_active": true},
+#   {"name": "Textbooks", "parent_name": "Education", "description": "Educational books and materials", "is_active": true},
+#   {"name": "School Supplies", "parent_name": "Education", "description": "School and educational supplies", "is_active": true},
+#   {"name": "Tutoring", "parent_name": "Education", "description": "Private tutoring services", "is_active": true},
+
+#   // Art & Crafts Children
+#   {"name": "Art Supplies", "parent_name": "Art & Crafts", "description": "Painting, drawing, and art materials"},
+#   {"name": "Craft Supplies", "parent_name": "Art & Crafts", "description": "Crafting materials and tools"},
+#   {"name": "Sewing & Knitting", "parent_name": "Art & Crafts", "description": "Sewing and knitting supplies"},
+#   {"name": "Scrapbooking", "parent_name": "Art & Crafts", "description": "Scrapbooking and memory keeping"},
+
+#   // Pet Supplies Children
+#   {"name": "Dog Supplies", "parent_name": "Pet Supplies", "description": "Dog food, toys, and accessories"},
+#   {"name": "Cat Supplies", "parent_name": "Pet Supplies", "description": "Cat food, litter, and accessories"},
+#   {"name": "Fish & Aquarium", "parent_name": "Pet Supplies", "description": "Aquarium supplies and fish care"},
+#   {"name": "Bird Supplies", "parent_name": "Pet Supplies", "description": "Bird food and cage accessories"},
+#   {"name": "Small Animals", "parent_name": "Pet Supplies", "description": "Supplies for rabbits, hamsters, etc."},
+
+#   // Baby & Kids Children
+#   {"name": "Baby Clothing", "parent_name": "Baby & Kids", "description": "Infant and toddler clothing"},
+#   {"name": "Baby Gear", "parent_name": "Baby & Kids", "description": "Strollers, car seats, and baby equipment"},
+#   {"name": "Baby Food", "parent_name": "Baby & Kids", "description": "Baby food and feeding supplies"},
+#   {"name": "Diapers & Care", "parent_name": "Baby & Kids", "description": "Diapers and baby care products"},
+#   {"name": "Kids Clothing", "parent_name": "Baby & Kids", "description": "Children's clothing and shoes"},
+
+#   // Office Supplies Children
+#   {"name": "Stationery", "parent_name": "Office Supplies", "description": "Pens, paper, and writing supplies"},
+#   {"name": "Office Furniture", "parent_name": "Office Supplies", "description": "Desks, chairs, and office furniture"},
+#   {"name": "Printers & Scanners", "parent_name": "Office Supplies", "description": "Printing and scanning equipment"},
+#   {"name": "Filing & Storage", "parent_name": "Office Supplies", "description": "Filing cabinets and storage solutions"},
+
+#   // Musical Instruments Children
+#   {"name": "Guitars", "parent_name": "Musical Instruments", "description": "Acoustic and electric guitars"},
+#   {"name": "Keyboards & Pianos", "parent_name": "Musical Instruments", "description": "Keyboards, pianos, and accessories"},
+#   {"name": "Drums", "parent_name": "Musical Instruments", "description": "Drum sets and percussion instruments"},
+#   {"name": "Wind Instruments", "parent_name": "Musical Instruments", "description": "Flutes, saxophones, and wind instruments"},
+#   {"name": "String Instruments", "parent_name": "Musical Instruments", "description": "Violins, cellos, and string instruments"},
+
+#   // Collectibles Children
+#   {"name": "Coins & Currency", "parent_name": "Collectibles", "description": "Collectible coins and currency"},
+#   {"name": "Stamps", "parent_name": "Collectibles", "description": "Collectible stamps and postal items"},
+#   {"name": "Sports Memorabilia", "parent_name": "Collectibles", "description": "Sports cards and memorabilia"},
+#   {"name": "Vintage Items", "parent_name": "Collectibles", "description": "Antiques and vintage collectibles"},
+#   {"name": "Trading Cards", "parent_name": "Collectibles", "description": "Trading cards and card games"} "Flutes, saxophones, and wind instruments"},
+#   {"name": "String Instruments", "parent": 19, "description": "Violins, cellos, and string instruments"},
+
+#   // Collectibles Children (assuming parent_id = 20)
+#   {"name": "Coins & Currency", "parent": 20, "description": "Collectible coins and currency"},
+#   {"name": "Stamps", "parent": 20, "description": "Collectible stamps and postal items"},
+#   {"name": "Sports Memorabilia", "parent": 20, "description": "Sports cards and memorabilia"},
+#   {"name": "Vintage Items", "parent": 20, "description": "Antiques and vintage collectibles"},
+#   {"name": "Trading Cards", "parent": 20, "description": "Trading cards and card games"}

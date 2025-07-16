@@ -25,13 +25,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name="product",
-            name="",
-            field=models.DecimalField(
-                blank=True, decimal_places=2, max_digits=10, null=True
-            ),
-        ),
-        migrations.AddField(
-            model_name="product",
             name="negotiation_deadline",
             field=models.DateTimeField(blank=True, null=True),
         ),
