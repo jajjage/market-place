@@ -222,6 +222,43 @@ class ProductConditionService:
             return product_price
 
     @classmethod
+    def bulk_create_conditions(
+        cls, conditions_data: List[Dict[str, Any]], user=None
+    ) -> List[ProductCondition]:
+        """
+        Bulk create multiple conditions at once.
+
+        Args:
+            conditions_data (List[Dict[str, Any]]): List of condition data dictionaries
+            user: Optional user who is creating the conditions
+
+        Returns:
+            List[ProductCondition]: List of created conditions
+        """
+        with transaction.atomic():
+            conditions_to_create = []
+            for data in conditions_data:
+                # Auto-generate slug if not provided
+                if "slug" not in data and "name" in data:
+                    from django.utils.text import slugify
+
+                    data["slug"] = slugify(data["name"])
+
+                # Set creator for each condition
+                if user:
+                    data["created_by"] = user
+
+                condition = ProductCondition(**data)
+                conditions_to_create.append(condition)
+
+            created_conditions = ProductCondition.objects.bulk_create(
+                conditions_to_create
+            )
+            cls._clear_condition_caches()
+
+            return created_conditions
+
+    @classmethod
     def _apply_product_filters(cls, queryset, filters: Dict[str, Any]):
         """Apply filters to product queryset."""
         if "category" in filters:

@@ -19,6 +19,7 @@ from .serializers import (
     ProductConditionWriteSerializer,
     ProductConditionAnalyticsSerializer,
     ConditionBulkOrderSerializer,
+    ProductConditionBulkCreateSerializer,
 )
 
 
@@ -43,6 +44,7 @@ class ProductConditionViewSet(BaseViewSet):
             "partial_update": ProductConditionWriteSerializer,
             "analytics": ProductConditionAnalyticsSerializer,
             "bulk_order": ConditionBulkOrderSerializer,
+            "bulk_create": ProductConditionBulkCreateSerializer,
         }
         return serializer_map.get(self.action, ProductConditionDetailSerializer)
 
@@ -87,7 +89,6 @@ class ProductConditionViewSet(BaseViewSet):
         # you'd move the get_or_create logic directly into the view's `create` method
         # instead of `perform_create`.
 
-    @method_decorator(cache_page(CACHE_TTL))  # Cache for 30 minutes
     @action(detail=False, methods=["get"])
     def active(self, request):
         """Get only active product conditions."""
@@ -97,7 +98,6 @@ class ProductConditionViewSet(BaseViewSet):
         )
         return Response(serializer.data)
 
-    @method_decorator(cache_page(CACHE_TTL))  # Cache for 15 minutes
     @action(detail=False, methods=["get"])
     def popular(self, request):
         """Get most popular conditions."""
@@ -109,22 +109,6 @@ class ProductConditionViewSet(BaseViewSet):
         )
         return Response(serializer.data)
 
-    @extend_schema(
-        parameters=[
-            OpenApiParameter(
-                name="category", description="Filter by category slug", type=str
-            ),
-            OpenApiParameter(name="price_min", description="Minimum price", type=float),
-            OpenApiParameter(name="price_max", description="Maximum price", type=float),
-            OpenApiParameter(name="brand", description="Brand slug", type=str),
-            OpenApiParameter(
-                name="in_stock", description="Only in-stock products", type=bool
-            ),
-            OpenApiParameter(
-                name="rating_min", description="Minimum rating", type=float
-            ),
-        ]
-    )
     @action(detail=True, methods=["get"])
     def products(self, request, pk=None):
         """Get products with this condition."""
@@ -188,16 +172,6 @@ class ProductConditionViewSet(BaseViewSet):
         serializer = ProductConditionAnalyticsSerializer(analytics)
         return Response(serializer.data)
 
-    @extend_schema(
-        parameters=[
-            OpenApiParameter(
-                name="min_score", description="Minimum quality score", type=int
-            ),
-            OpenApiParameter(
-                name="max_score", description="Maximum quality score", type=int
-            ),
-        ]
-    )
     @action(detail=False, methods=["get"])
     def by_quality(self, request):
         """Get conditions by quality score range."""
@@ -230,6 +204,22 @@ class ProductConditionViewSet(BaseViewSet):
                 {"error": "Failed to update display order"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+    @action(detail=False, methods=["post"])
+    def bulk_create(self, request):
+        """Bulk create multiple conditions at once."""
+        serializer = ProductConditionBulkCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        conditions = ProductConditionService.bulk_create_conditions(
+            serializer.validated_data["conditions"],
+            user=self.request.user,
+        )
+
+        response_serializer = ProductConditionListSerializer(
+            conditions, many=True, context={"request": request}
+        )
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["post"])
     def suggest_price(self, request):

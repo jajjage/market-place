@@ -82,6 +82,13 @@ class ProductConditionDetailSerializer(TimestampedModelSerializer):
 class ProductConditionWriteSerializer(TimestampedModelSerializer):
     """Serializer for creating/updating conditions."""
 
+    price_factor = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        min_value=Decimal("0.1"),
+        max_value=Decimal("2.0"),
+    )
+
     class Meta:
         model = ProductCondition
         fields = [
@@ -116,7 +123,12 @@ class ProductConditionWriteSerializer(TimestampedModelSerializer):
 
     def validate_price_factor(self, value):
         """Validate price factor range."""
-        if not 0.1 <= value <= 2.0:
+        # Convert to Decimal for precise comparison
+        value = Decimal(str(value))
+        min_value = Decimal("0.1")
+        max_value = Decimal("2.0")
+
+        if not min_value <= value <= max_value:
             raise serializers.ValidationError(
                 "Price factor must be between 0.1 and 2.0."
             )
@@ -184,3 +196,26 @@ class ConditionBulkOrderSerializer(serializers.Serializer):
                 )
 
         return value
+
+
+class ProductConditionBulkCreateSerializer(serializers.Serializer):
+    """Serializer for bulk creating product conditions."""
+
+    conditions = serializers.ListField(
+        child=serializers.DictField(
+            child=serializers.CharField(),
+            allow_empty=False,
+        ),
+        min_length=1,
+        max_length=100,  # Limit the number of conditions that can be created at once
+    )
+
+    def validate_conditions(self, conditions):
+        """Validate each condition in the list."""
+        validated_conditions = []
+        for condition in conditions:
+            # Use the write serializer to validate each condition
+            serializer = ProductConditionWriteSerializer(data=condition)
+            serializer.is_valid(raise_exception=True)
+            validated_conditions.append(serializer.validated_data)
+        return validated_conditions
