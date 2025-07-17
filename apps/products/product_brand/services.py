@@ -26,7 +26,89 @@ logger = logging.getLogger("brands_performance")
 
 
 class BrandService:
+
     """Service layer for brand operations"""
+
+    @staticmethod
+    @transaction.atomic
+    def bulk_create_brands(brands_data: List[Dict]) -> List[Brand]:
+        """
+        Bulk create brands and trigger variant generation for each brand.
+        Args:
+            brands_data: List of dicts with brand fields (see Brand model)
+        Returns:
+            List of created Brand instances
+        Raises:
+            ValueError: If any brand with duplicate name or slug exists
+        """
+        required_fields = [
+            "name",
+            "slug",
+            "description",
+            "website",
+            "founded_year",
+            "country_of_origin",
+            "meta_description",
+            "is_verified",
+            "is_featured",
+            "contact_email",
+            "contact_phone",
+            "social_media",
+            "is_active",
+        ]
+        # Check for duplicates in DB
+        names = [b["name"] for b in brands_data]
+        slugs = [b["slug"] for b in brands_data]
+        existing = Brand.objects.filter(
+            models.Q(name__in=names) | models.Q(slug__in=slugs)
+        ).values_list("name", "slug")
+        if existing:
+            raise ValueError(
+                f"Brand(s) with these names or slugs already exist: {list(existing)}"
+            )
+
+        # Validate required fields
+        for b in brands_data:
+            for field in required_fields:
+                if field not in b:
+                    raise ValueError(
+                        f"Missing required field '{field}' in brand data: {b}"
+                    )
+
+        # Prepare Brand instances
+        brand_objs = []
+        for b in brands_data:
+            brand_objs.append(
+                Brand(
+                    name=b["name"],
+                    slug=b["slug"],
+                    description=b["description"],
+                    logo=b.get("logo", None),
+                    website=b["website"],
+                    founded_year=b["founded_year"],
+                    country_of_origin=b["country_of_origin"],
+                    meta_description=b["meta_description"],
+                    is_verified=b["is_verified"],
+                    is_featured=b["is_featured"],
+                    contact_email=b["contact_email"],
+                    contact_phone=b["contact_phone"],
+                    social_media=b["social_media"],
+                    is_active=b["is_active"],
+                )
+            )
+
+        created = Brand.objects.bulk_create(brand_objs)
+
+        # Invalidate brand cache after bulk create
+        CacheManager.invalidate("brand")
+
+        # Trigger variant generation for the new brands
+        from .tasks import bulk_generate_variants_for_brands
+
+        brand_ids = [brand.id for brand in created]
+        bulk_generate_variants_for_brands.delay(brand_ids)
+
+        return created
 
     @staticmethod
     def get_featured_brands(limit: int = 10) -> List[Brand]:
@@ -347,8 +429,24 @@ class BrandVariantService:
     def get_variant_for_locale(
         brand_id: int, language_code: str, region_code: str = ""
     ) -> BrandVariant:
-        """Get the best variant for a specific locale"""
+        """
+        Get the best variant for a specific locale
+
+        Args:
+            brand_id: ID of the brand to get variant for
+            language_code: 2-letter language code (e.g., 'en')
+            region_code: Optional 2-letter region code (e.g., 'US')
+
+        Returns:
+            BrandVariant instance if found, None otherwise
+
+        Raises:
+            Brand.DoesNotExist: If brand_id doesn't exist
+        """
+        # First check if brand exists
         brand = Brand.objects.get(id=brand_id)
+        if not brand.is_active:
+            return None
 
         # Try exact match first
         variant = BrandVariant.objects.filter(
@@ -369,17 +467,29 @@ class BrandVariantService:
         if variant:
             return variant
 
-        # Auto-generate if templates exist
-        variants = BrandVariantService.auto_generate_variants(brand_id)
-        for variant in variants:
-            if (
-                variant.language_code == language_code
-                and variant.region_code == region_code
-            ):
-                return variant
+        # Auto-generate if no variant exists
+        from .tasks import auto_generate_brand_variants
 
-        # Return None if no suitable variant found
-        return None
+        result = auto_generate_brand_variants.delay(brand_id)
+        result.get()  # Wait for task to complete
+
+        # Try to find the variant again after generation
+        variant = (
+            BrandVariant.objects.filter(
+                brand=brand,
+                language_code=language_code,
+                region_code=region_code,
+                is_active=True,
+            ).first()
+            or BrandVariant.objects.filter(
+                brand=brand,
+                language_code=language_code,
+                region_code="",
+                is_active=True,
+            ).first()
+        )
+
+        return variant
 
 
 class BrandVariantTemplateService:

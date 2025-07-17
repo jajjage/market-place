@@ -4,6 +4,9 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
+import logging
+
+logger = logging.getLogger(__name__)
 
 from apps.core.views import BaseViewSet
 from apps.products.product_brand.documents import BrandDocument
@@ -35,6 +38,7 @@ from .utils.filters import BrandFilter
 
 
 class BrandViewSet(BaseViewSet):
+
     """
     Brand ViewSet with optimized queries and caching
 
@@ -107,6 +111,46 @@ class BrandViewSet(BaseViewSet):
             return queryset.prefetch_related("variants", "products")
 
         return queryset
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAdminUser])
+    def bulk_create(self, request):
+        """Bulk create brands (admin only)"""
+        brands_data = request.data
+        if not isinstance(brands_data, list):
+            return self.error_response(
+                message="Expected a list of brand objects",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate each brand using BrandCreateSerializer
+        errors = []
+        valid_data = []
+        for idx, brand in enumerate(brands_data):
+            serializer = BrandCreateSerializer(data=brand)
+            if serializer.is_valid():
+                valid_data.append(serializer.validated_data)
+            else:
+                errors.append({"index": idx, "errors": serializer.errors})
+
+        if errors:
+            return self.error_response(
+                message="Validation errors",
+                data=errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Use BrandService.bulk_create_brands
+        try:
+            created = BrandService.bulk_create_brands([dict(b) for b in valid_data])
+        except ValueError as e:
+            return self.error_response(
+                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = BrandListSerializer(created, many=True)
+        return self.success_response(
+            data=serializer.data, status_code=status.HTTP_201_CREATED
+        )
 
     @action(detail=False, methods=["GET"])
     def featured(self, request):
@@ -230,22 +274,41 @@ class BrandVariantViewSet(BaseViewSet):
     @action(detail=False, methods=["GET"])
     def for_locale(self, request, brand_pk=None):
         """Get variant for specific locale"""
-        language_code = request.query_params.get("lang", "en")
-        region_code = request.query_params.get("region", "")
+        try:
+            if not brand_pk:
+                return self.error_response(
+                    message="Brand ID is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
 
-        variant = BrandVariantService.get_variant_for_locale(
-            brand_pk, language_code, region_code
-        )
+            language_code = request.query_params.get("lang", "en")
+            region_code = request.query_params.get("region", "")
 
-        if variant:
-            serializer = BrandVariantSerializer(variant)
-            return self.success_response(
-                data=serializer.data, status_code=status.HTTP_200_OK
+            variant = BrandVariantService.get_variant_for_locale(
+                brand_pk, language_code, region_code
             )
-        else:
+
+            if variant:
+                serializer = BrandVariantSerializer(variant)
+                return self.success_response(
+                    data=serializer.data, status_code=status.HTTP_200_OK
+                )
+            else:
+                return self.error_response(
+                    message=f"No variant found for brand {brand_pk} with locale {language_code}-{region_code}",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+
+        except Brand.DoesNotExist:
             return self.error_response(
-                message="No variant found for this locale",
+                message=f"Brand with ID {brand_pk} does not exist",
                 status_code=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            logger.error(f"Error getting variant for brand {brand_pk}: {str(e)}")
+            return self.error_response(
+                message="An error occurred while getting the brand variant",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 

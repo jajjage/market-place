@@ -249,3 +249,119 @@ def bulk_generate_variants_for_template(
         error_msg = f"Unexpected error in bulk_generate_variants_for_template: {str(e)}"
         logger.error(error_msg)
         return {"error": error_msg}
+
+
+@shared_task(bind=True, base=BaseTaskWithRetry)
+def bulk_generate_variants_for_brands(self, brand_ids: List[int]) -> Dict[str, Any]:
+    """
+    Generate variants for multiple brands using all active templates
+
+    Args:
+        brand_ids: List of brand IDs to generate variants for
+
+    Returns:
+        Dict with generation results per brand and template
+    """
+    try:
+        results = {"total_brands": len(brand_ids), "brands_processed": [], "errors": []}
+
+        # Get all active templates first without lock
+        templates = list(BrandVariantTemplate.objects.filter(is_active=True))
+
+        if not templates:
+            return {"message": "No active templates found", "brands": brand_ids}
+
+        # Process each brand
+        for brand_id in brand_ids:
+            try:
+                with transaction.atomic():
+                    # Get template and brand with lock inside transaction
+                    brand = Brand.objects.select_for_update().get(
+                        id=brand_id, is_active=True
+                    )
+                    template_ids = [t.id for t in templates]
+                    locked_templates = BrandVariantTemplate.objects.filter(
+                        id__in=template_ids, is_active=True
+                    ).select_for_update()
+
+                    brand_results = {
+                        "brand_id": brand_id,
+                        "brand_name": brand.name,
+                        "variants_created": [],
+                        "variants_skipped": [],
+                    }
+
+                    # For each template, try to create a variant
+                    for template in locked_templates:
+                        try:
+                            if not brand_meets_criteria(brand, template.brand_criteria):
+                                brand_results["variants_skipped"].append(
+                                    {
+                                        "template_id": template.id,
+                                        "template_name": template.name,
+                                        "reason": "Brand does not meet criteria",
+                                    }
+                                )
+                                continue
+
+                            # Check for existing variant
+                            existing = BrandVariant.objects.filter(
+                                brand=brand,
+                                language_code=template.language_code,
+                                region_code=template.region_code,
+                            ).first()
+
+                            if existing:
+                                brand_results["variants_skipped"].append(
+                                    {
+                                        "template_id": template.id,
+                                        "template_name": template.name,
+                                        "reason": "Variant already exists",
+                                    }
+                                )
+                                continue
+
+                            # Create new variant
+                            variant = create_variant_from_template(brand, template)
+                            brand_results["variants_created"].append(
+                                {
+                                    "variant_id": variant.id,
+                                    "template_id": template.id,
+                                    "template_name": template.name,
+                                    "locale": f"{variant.language_code}-{variant.region_code}",
+                                }
+                            )
+
+                        except Exception as e:
+                            error_msg = f"Error creating variant for brand {brand.name} with template {template.name}: {str(e)}"
+                            logger.error(error_msg)
+                            brand_results["variants_skipped"].append(
+                                {
+                                    "template_id": template.id,
+                                    "template_name": template.name,
+                                    "reason": error_msg,
+                                }
+                            )
+
+                    results["brands_processed"].append(brand_results)
+
+            except Brand.DoesNotExist:
+                error_msg = f"Brand with id {brand_id} not found"
+                logger.error(error_msg)
+                results["errors"].append(error_msg)
+            except Exception as e:
+                error_msg = f"Error processing brand {brand_id}: {str(e)}"
+                logger.error(error_msg)
+                results["errors"].append(error_msg)
+
+        return results
+
+    except Exception as e:
+        error_msg = f"Unexpected error in bulk_generate_variants_for_brands: {str(e)}"
+        logger.error(error_msg)
+
+        # Retry with exponential backoff
+        if self.request.retries < self.max_retries:
+            raise self.retry(countdown=60 * (2**self.request.retries))
+
+        return {"error": error_msg}
