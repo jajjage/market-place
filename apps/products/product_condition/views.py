@@ -1,17 +1,12 @@
 from rest_framework import status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-
 from apps.core.views import BaseViewSet
 
 from .utils.rate_limiting import ProductConditionRateThrottle
 from .models import ProductCondition
 from .services import (
     ProductConditionService,
-    CACHE_TTL,
 )
 from .serializers import (
     ProductConditionListSerializer,
