@@ -2,7 +2,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from apps.core.serializers import TimestampedModelSerializer
-from .models import Brand, BrandRequest, BrandVariant
+from .models import Brand, BrandRequest, BrandVariant, BrandVariantTemplate
 
 
 class BrandListSerializer(TimestampedModelSerializer):
@@ -132,3 +132,42 @@ class BrandSearchSerializer(serializers.Serializer):
             "description": getattr(instance, "description", ""),
             "product_count": getattr(instance, "cached_product_count", 0),
         }
+
+
+class BrandVariantTemplateSerializer(serializers.ModelSerializer):
+    """Serializer for BrandVariantTemplate model"""
+
+    class Meta:
+        model = BrandVariantTemplate
+        fields = [
+            "id",
+            "name",
+            "language_code",
+            "region_code",
+            "name_translations",
+            "default_settings",
+            "auto_generate_for_brands",
+            "brand_criteria",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_name_translations(self, value):
+        """Validate that name_translations is a dictionary"""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("name_translations must be a dictionary")
+        return value
+
+    def validate_default_settings(self, value):
+        """Validate that default_settings is a dictionary"""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("default_settings must be a dictionary")
+        return value
+
+    def validate_brand_criteria(self, value):
+        """Validate that brand_criteria is a dictionary"""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("brand_criteria must be a dictionary")
+        return value

@@ -64,19 +64,6 @@ class Brand(BaseModel):
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
 
-    def get_breadcrumb_data(self):
-        """Get brand breadcrumb data"""
-        return {
-            "id": str(self.id),
-            "name": self.name,
-            "href": f"/explore?brand={self.slug}",  # Adjust URL as needed
-            "order": None,  # Will be set dynamically
-        }
-
-    @property
-    def cache_key(self):
-        return f"brand:{self.id}"
-
     def get_stats(self, use_cache=True):
         """Get brand statistics with caching"""
         if not use_cache:
@@ -177,6 +164,14 @@ class BrandVariant(BaseModel):
     """
 
     brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name="variants")
+    template = models.ForeignKey(
+        "BrandVariantTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="variants",
+        help_text="Template used to generate this variant",
+    )
     name = models.CharField(max_length=100)  # Localized name
     language_code = models.CharField(max_length=10)  # ISO 639-1
     region_code = models.CharField(max_length=10, blank=True)  # ISO 3166-1

@@ -7,11 +7,15 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.core.views import BaseViewSet
 from apps.products.product_brand.documents import BrandDocument
+from apps.products.product_brand.tasks import (
+    auto_generate_brand_variants,
+    bulk_generate_variants_for_template,
+)
 from apps.products.product_brand.utils.rate_limiting import (
     BrandCreateThrottle,
     BrandSearchThrottle,
 )
-from .models import Brand, BrandRequest, BrandVariant
+from .models import Brand, BrandRequest, BrandVariant, BrandVariantTemplate
 from .serializers import (
     BrandListSerializer,
     BrandDetailSerializer,
@@ -19,8 +23,14 @@ from .serializers import (
     BrandRequestSerializer,
     BrandSearchSerializer,
     BrandVariantSerializer,
+    BrandVariantTemplateSerializer,
 )
-from .services import BrandService, BrandRequestService, BrandVariantService
+from .services import (
+    BrandService,
+    BrandRequestService,
+    BrandVariantService,
+    BrandVariantTemplateService,
+)
 from .utils.filters import BrandFilter
 
 
@@ -208,8 +218,7 @@ class BrandVariantViewSet(BaseViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        brand_id = self.kwargs.get("brand_pk")
-        return BrandVariant.objects.filter(brand_id=brand_id, is_active=True)
+        return BrandVariant.objects.filter(is_active=True)
 
     def get_permissions(self):
         if self.action in ["create", "update", "partial_update", "destroy"]:
@@ -217,26 +226,6 @@ class BrandVariantViewSet(BaseViewSet):
         else:
             permission_classes = []
         return [permission() for permission in permission_classes]
-
-    def perform_create(self, serializer):
-        brand_id = self.kwargs.get("brand_pk")
-        variant = BrandVariantService.create_variant(
-            brand_id=brand_id,
-            variant_data=serializer.validated_data,
-            created_by=(
-                self.request.user if self.request.user.is_authenticated else None
-            ),
-        )
-        serializer.instance = variant
-
-    @action(detail=False, methods=["POST"], permission_classes=[IsAdminUser])
-    def auto_generate(self, request, brand_pk=None):
-        """Auto-generate variants for a brand"""
-        variants = BrandVariantService.auto_generate_variants(brand_pk)
-        serializer = BrandVariantSerializer(variants, many=True)
-        return self.success_response(
-            data={"variants": serializer.data, "created_count": len(variants)}
-        )
 
     @action(detail=False, methods=["GET"])
     def for_locale(self, request, brand_pk=None):
@@ -258,6 +247,121 @@ class BrandVariantViewSet(BaseViewSet):
                 message="No variant found for this locale",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
+
+
+class BrandVariantTemplateViewSet(BaseViewSet):
+    """Enhanced Brand Variant Template management with auto-generation"""
+
+    serializer_class = BrandVariantTemplateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Get all active templates"""
+        return BrandVariantTemplate.objects.filter(is_active=True)
+
+    def get_permissions(self):
+        """Set permissions based on action"""
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            permission_classes = [IsAdminUser]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAdminUser])
+    def generate_variants(self, request, pk=None):
+        """Generate variants using this template"""
+        template = self.get_object()
+        brand_ids = request.data.get("brand_ids", [])
+        force = request.data.get("force", False)
+
+        if not brand_ids:
+            # Generate for all eligible brands
+            task_result = bulk_generate_variants_for_template.delay(template.id)
+            return self.success_response(
+                data={
+                    "template_id": template.id,
+                    "task_id": task_result.id,
+                    "message": "Bulk generation task started",
+                },
+                status_code=status.HTTP_202_ACCEPTED,
+            )
+        else:
+            # Generate for specific brands
+            task_result = bulk_generate_variants_for_template.delay(
+                template.id, brand_ids
+            )
+            return self.success_response(
+                data={
+                    "template_id": template.id,
+                    "task_id": task_result.id,
+                    "brand_ids": brand_ids,
+                    "message": "Generation task started",
+                },
+                status_code=status.HTTP_202_ACCEPTED,
+            )
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAdminUser])
+    def regenerate_variants(self, request, pk=None):
+        """Regenerate all variants for this template"""
+        template = self.get_object()
+        force = request.data.get("force", False)
+
+        result = BrandVariantTemplateService.regenerate_variants_from_template(
+            template.id, force=force
+        )
+
+        if "error" in result:
+            return self.error_response(
+                message=result["error"], status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        return self.success_response(data=result, status_code=status.HTTP_202_ACCEPTED)
+
+    @action(detail=False, methods=["POST"], permission_classes=[IsAdminUser])
+    def manual_generate_for_brand(self, request):
+        """Manually generate variants for a specific brand"""
+        brand_id = request.data.get("brand_id")
+        template_ids = request.data.get("template_ids", [])
+
+        if not brand_id:
+            return self.error_response(
+                message="brand_id is required", status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Use Celery task for async processing
+        task_result = auto_generate_brand_variants.delay(brand_id)
+
+        return self.success_response(
+            data={
+                "brand_id": brand_id,
+                "task_id": task_result.id,
+                "message": "Variant generation task started",
+            },
+            status_code=status.HTTP_202_ACCEPTED,
+        )
+
+    @action(detail=False, methods=["GET"])
+    def generation_status(self, request):
+        """Check the status of variant generation tasks"""
+        task_id = request.query_params.get("task_id")
+
+        if not task_id:
+            return self.error_response(
+                message="task_id is required", status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check Celery task status
+        from celery.result import AsyncResult
+
+        task_result = AsyncResult(task_id)
+
+        response_data = {
+            "task_id": task_id,
+            "status": task_result.status,
+            "result": task_result.result if task_result.ready() else None,
+        }
+
+        return self.success_response(data=response_data, status_code=status.HTTP_200_OK)
 
 
 class BrandSearchView(APIView):

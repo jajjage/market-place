@@ -8,3 +8,4 @@ class ProductBrandConfig(AppConfig):
     def ready(self):
         # ensures that `products.documents` is imported
         import apps.products.product_brand.documents  # noqa: F401  # imported for side effects
+        import apps.products.product_brand.signals  # noqa: F401  # imported for side effects

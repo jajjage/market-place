@@ -10,12 +10,17 @@ from apps.products.product_brand.models import (
     BrandVariant,
     BrandVariantTemplate,
 )
+from .tasks import bulk_generate_variants_for_template
 from apps.notifications.services.notification_service import NotificationService
 from apps.products.product_brand.tasks import (
     update_brand_stats,
 )
 from apps.core.utils.cache_manager import CacheManager
 from apps.core.utils.cache_key_manager import CacheKeyManager
+from apps.products.product_brand.utils.brand_variants import (
+    brand_meets_criteria,
+    create_variant_from_template,
+)
 
 logger = logging.getLogger("brands_performance")
 
@@ -242,35 +247,79 @@ class BrandVariantService:
     """Service for managing brand variants"""
 
     @staticmethod
-    def create_variant(
-        brand_id: int, variant_data: dict, created_by=None
-    ) -> BrandVariant:
-        """Create a new brand variant"""
-        brand = Brand.objects.get(id=brand_id)
+    @transaction.atomic
+    def manual_generate_variants(
+        brand_id: int, template_ids: List[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Manually trigger variant generation for a specific brand
 
-        # Check if variant already exists
-        existing = BrandVariant.objects.filter(
-            brand=brand,
-            language_code=variant_data["language_code"],
-            region_code=variant_data.get("region_code", ""),
-        ).exists()
+        Args:
+            brand_id: ID of the brand
+            template_ids: List of template IDs to use (if None, uses all eligible templates)
 
-        if existing:
-            raise ValueError("Variant for this locale already exists")
+        Returns:
+            Dict with generation results
+        """
+        try:
+            brand = Brand.objects.get(id=brand_id, is_active=True)
 
-        # Apply translations if available
-        variant_data = BrandVariantService._apply_translations(brand, variant_data)
+            if template_ids:
+                templates = BrandVariantTemplate.objects.filter(
+                    id__in=template_ids, is_active=True
+                )
+            else:
+                templates = BrandVariantTemplate.objects.filter(
+                    is_active=True, auto_generate_for_brands=True
+                )
 
-        variant = BrandVariant.objects.create(
-            brand=brand, created_by=created_by, **variant_data
-        )
+            results = {
+                "brand_id": brand_id,
+                "brand_name": brand.name,
+                "variants_created": [],
+                "variants_skipped": [],
+                "errors": [],
+            }
 
-        # Fixed: Proper cache invalidation for brand variants
-        CacheManager.invalidate_pattern("brand_variant", "all", brand_id=brand_id)
-        # Also invalidate parent brand caches that might be affected
-        BrandService.invalidate_brand_cache(brand_id)
+            for template in templates:
+                try:
+                    if brand_meets_criteria(brand, template.brand_criteria):
+                        existing_variant = BrandVariant.objects.filter(
+                            brand=brand,
+                            language_code=template.language_code,
+                            region_code=template.region_code,
+                        ).first()
 
-        return variant
+                        if existing_variant:
+                            results["variants_skipped"].append(
+                                {
+                                    "template_id": template.id,
+                                    "reason": "Variant already exists",
+                                }
+                            )
+                            continue
+
+                        variant = create_variant_from_template(brand, template)
+                        results["variants_created"].append(
+                            {
+                                "variant_id": variant.id,
+                                "template_id": template.id,
+                                "variant_name": variant.name,
+                            }
+                        )
+
+                except Exception as e:
+                    results["errors"].append(
+                        f"Error with template {template.name}: {str(e)}"
+                    )
+            CacheManager.invalidate_pattern("brand_variant", "all", brand_id=brand_id)
+
+            return results
+
+        except Brand.DoesNotExist:
+            return {"error": f"Brand with id {brand_id} not found"}
+        except Exception as e:
+            return {"error": f"Unexpected error: {str(e)}"}
 
     @staticmethod
     def _apply_translations(brand: Brand, variant_data: dict) -> dict:
@@ -293,62 +342,6 @@ class BrandVariantService:
                 variant_data.setdefault("name", brand.name)
 
         return variant_data
-
-    @staticmethod
-    def auto_generate_variants(brand_id: int) -> List[BrandVariant]:
-        """Auto-generate variants based on templates and brand criteria"""
-        brand = Brand.objects.get(id=brand_id)
-        created_variants = []
-
-        # Get applicable templates
-        templates = BrandVariantTemplate.objects.filter(
-            auto_generate_for_brands=True, is_active=True
-        )
-
-        for template in templates:
-            # Check if brand meets criteria
-            if BrandVariantService._meets_criteria(brand, template.brand_criteria):
-                # Check if variant doesn't already exist
-                exists = BrandVariant.objects.filter(
-                    brand=brand,
-                    language_code=template.language_code,
-                    region_code=template.region_code,
-                ).exists()
-
-                if not exists:
-                    variant_data = {
-                        "language_code": template.language_code,
-                        "region_code": template.region_code,
-                        "name": brand.name,  # Will be translated by _apply_translations
-                        "description": brand.description,
-                        "is_auto_generated": True,
-                        **template.default_settings,
-                    }
-
-                    variant = BrandVariantService.create_variant(brand_id, variant_data)
-                    created_variants.append(variant)
-
-        return created_variants
-
-    @staticmethod
-    def _meets_criteria(brand: Brand, criteria: dict) -> bool:
-        """Check if brand meets template criteria"""
-        if not criteria:
-            return True
-
-        if "min_products" in criteria:
-            if brand.cached_product_count < criteria["min_products"]:
-                return False
-
-        if "min_rating" in criteria:
-            if brand.cached_average_rating < criteria["min_rating"]:
-                return False
-
-        if "countries" in criteria:
-            if brand.country_of_origin not in criteria["countries"]:
-                return False
-
-        return True
 
     @staticmethod
     def get_variant_for_locale(
@@ -387,3 +380,61 @@ class BrandVariantService:
 
         # Return None if no suitable variant found
         return None
+
+
+class BrandVariantTemplateService:
+    """Service class for BrandVariantTemplate business logic"""
+
+    @staticmethod
+    def create_template(template_data, created_by=None):
+        """Create a new template with validation"""
+        template = BrandVariantTemplate.objects.create(**template_data)
+        return template
+
+    @staticmethod
+    def regenerate_variants_from_template(
+        template_id: int, force: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Regenerate all variants for a specific template
+
+        Args:
+            template_id: ID of the template
+            force: If True, recreate existing variants
+
+        Returns:
+            Dict with regeneration results
+        """
+        try:
+            template = BrandVariantTemplate.objects.get(id=template_id, is_active=True)
+
+            if force:
+                # Delete existing variants created by this template
+                BrandVariant.objects.filter(
+                    template=template, is_auto_generated=True
+                ).delete()
+
+            # Get all brands that meet criteria
+            brands = Brand.objects.filter(is_active=True)
+            eligible_brands = [
+                brand
+                for brand in brands
+                if brand_meets_criteria(brand, template.brand_criteria)
+            ]
+
+            # Use Celery task for bulk generation
+            task_result = bulk_generate_variants_for_template.delay(
+                template_id, [brand.id for brand in eligible_brands]
+            )
+
+            return {
+                "template_id": template_id,
+                "task_id": task_result.id,
+                "eligible_brands_count": len(eligible_brands),
+                "message": "Regeneration task started",
+            }
+
+        except BrandVariantTemplate.DoesNotExist:
+            return {"error": f"Template with id {template_id} not found"}
+        except Exception as e:
+            return {"error": f"Unexpected error: {str(e)}"}
