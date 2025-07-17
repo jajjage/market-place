@@ -1,9 +1,12 @@
 from rest_framework import status, filters
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.core.views import BaseViewSet
+from apps.products.product_brand.documents import BrandDocument
 from apps.products.product_brand.utils.rate_limiting import (
     BrandCreateThrottle,
     BrandSearchThrottle,
@@ -14,6 +17,7 @@ from .serializers import (
     BrandDetailSerializer,
     BrandCreateSerializer,
     BrandRequestSerializer,
+    BrandSearchSerializer,
     BrandVariantSerializer,
 )
 from .services import BrandService, BrandRequestService, BrandVariantService
@@ -71,7 +75,7 @@ class BrandViewSet(BaseViewSet):
         ]:
             permission_classes = [IsAdminUser]
         else:
-            permission_classes = []
+            permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
 
     def get_throttles(self):
@@ -102,71 +106,6 @@ class BrandViewSet(BaseViewSet):
         serializer = BrandListSerializer(brands, many=True)
         return self.success_response(
             data=serializer.data, status_code=status.HTTP_200_OK
-        )
-
-    @action(detail=False, methods=["get"], url_path="search")
-    def search(self, request):
-        """Advanced brand search with multiple filters."""
-        # 1) Pull & clean the q param (strip surrounding quotes if present)
-        raw_q = request.query_params.get("q", "").strip()
-        if len(raw_q) >= 2 and (
-            (raw_q[0] == raw_q[-1] == '"') or (raw_q[0] == raw_q[-1] == "'")
-        ):
-            q = raw_q[1:-1]
-        else:
-            q = raw_q
-
-        if len(q) < 2:
-            return self.error_response(
-                message="Search query must be at least 2 characters",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        country = request.query_params.get("country")
-        verified_only = request.query_params.get("verified") == "true"
-        min_products = request.query_params.get("min_products")
-        min_rating = request.query_params.get("min_rating")
-
-        # 2) Build base queryset
-        qs = Brand.objects.filter(name__icontains=q)
-
-        if country:
-            qs = qs.filter(country_of_origin__iexact=country)
-
-        if verified_only:
-            qs = qs.filter(is_verified=True)
-
-        # 3) If you have “cached_…” fields, filter on them directly:
-        if min_products is not None:
-            try:
-                min_prod_int = int(min_products)
-            except ValueError:
-                return self.error_response(
-                    message="`min_products` must be an integer",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-            qs = qs.filter(cached_product_count__gte=min_prod_int)
-
-        if min_rating is not None:
-            try:
-                min_rating_dec = float(min_rating)
-            except ValueError:
-                return self.error_response(
-                    message="`min_rating` must be a number (e.g. 4.5)",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-            qs = qs.filter(cached_average_rating__gte=min_rating_dec)
-
-        # 4) Paginate & serialize exactly like in “list”
-        page = self.paginate_queryset(qs)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(qs, many=True)
-        return self.success_response(
-            data=serializer.data,
-            message=f"Search results for '{q}'",
         )
 
     @action(detail=True, methods=["GET"], permission_classes=[IsAdminUser])
@@ -319,3 +258,56 @@ class BrandVariantViewSet(BaseViewSet):
                 message="No variant found for this locale",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
+
+
+class BrandSearchView(APIView):
+    """
+    A simple search view for listing and finding brands.
+    Supports full-text search, filtering by featured status, sorting, and pagination.
+    """
+
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 50)), 200)
+        sort_by = request.query_params.get("sort", "name")  # 'name' or 'product_count'
+
+        # Start with the base search on the BrandDocument
+        search = BrandDocument.search()
+
+        # Apply text query if provided
+        if query:
+            search = search.query("match", name={"query": query, "fuzziness": "AUTO"})
+
+        # Optional filter for featured brands
+        if request.query_params.get("is_featured") == "true":
+            search = search.filter("term", is_featured=True)
+
+        # Apply sorting
+        if sort_by == "product_count":
+            search = search.sort({"cached_product_count": {"order": "desc"}})
+        else:  # Default sort by name
+            search = search.sort({"name.raw": {"order": "asc"}})
+
+        # Apply pagination
+        start = (page - 1) * page_size
+        end = start + page_size
+        search = search[start:end]
+
+        # Execute the search
+        response = search.execute()
+
+        # Serialize the results
+        serializer = BrandSearchSerializer(response.hits, many=True)
+
+        total_hits = response.hits.total.value
+        total_pages = (total_hits + page_size - 1) // page_size
+
+        return Response(
+            {
+                "results": serializer.data,
+                "total_count": total_hits,
+                "page": page,
+                "total_pages": total_pages,
+            }
+        )

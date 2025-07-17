@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from elasticsearch_dsl import Q
+from elasticsearch.dsl import Q
 from .documents import ProductDocument
 from .serializers import (
     ProductSearchListSerializer,

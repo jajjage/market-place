@@ -110,3 +110,25 @@ class BrandVariantSerializer(TimestampedModelSerializer):
             )
 
         return data
+
+
+class BrandSearchSerializer(serializers.Serializer):
+    """Serializer for brand search results from Elasticsearch."""
+
+    id = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    slug = serializers.SlugField(read_only=True)
+    logo_url = serializers.URLField(read_only=True)
+    description = serializers.CharField(read_only=True)
+    product_count = serializers.IntegerField(source="cached_product_count")
+
+    def to_representation(self, instance):
+        # 'instance' here is a Hit object from elasticsearch-dsl
+        return {
+            "id": instance.meta.id,
+            "name": instance.name,
+            "slug": instance.slug,
+            "logo_url": getattr(instance, "logo_url", None),
+            "description": getattr(instance, "description", ""),
+            "product_count": getattr(instance, "cached_product_count", 0),
+        }

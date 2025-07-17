@@ -1,7 +1,13 @@
-from django.http import Http404, JsonResponse
-from drf_spectacular.utils import extend_schema
-from rest_framework.decorators import api_view, throttle_classes
-from rest_framework.throttling import AnonRateThrottle
+from django.http import Http404
+
+# from elasticsearch.dsl.connections import get_connection
+# from elasticsearch.dsl import Q
+
+# Import all your documents
+from apps.products.product_search.documents import ProductDocument
+from apps.products.product_brand.documents import BrandDocument
+from apps.categories.documents import CategoryDocument  # Adjust path if needed
+
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -249,45 +255,55 @@ class BaseAPIView(APIView):
         return Response(response_data, status=status_code)
 
 
-class PingRateThrottle(AnonRateThrottle):
-    rate = "10/minute"
-
-
-from .tasks import test_task
-
-
-@extend_schema(
-    description="Handles a ping request to check if the server is responsive.",
-    responses={
-        200: {
-            "type": "object",
-            "properties": {"ping": {"type": "string"}},
-            "example": {"ping": "pong"},
-        },
-        405: {
-            "type": "object",
-            "properties": {"detail": {"type": "string"}},
-            "example": {"detail": 'Method "POST" not allowed.'},
-        },
-    },
-)
-@api_view(["GET"])
-@throttle_classes([PingRateThrottle])
-def ping(request):
-    logger.info("Ping request received from %s", request.META.get("REMOTE_ADDR"))
-    return JsonResponse({"ping": "pong"})
-
-
-def fire_task(request):
+class UnifiedAutocompleteView(APIView):
     """
-    TODO 🚫 After testing the view, remove it with the task and the route.
-
-    Handles a request to fire a test Celery task. The task will be retried
-    up to 3 times and after 5 seconds if it fails (by default). The retry
-    time will be increased exponentially.
+    A powerful autocomplete that uses the edge_ngram analyzer
+    for fast, partial-word matching across all relevant documents.
     """
-    if request.method == "GET":
-        test_task.delay()
-        return JsonResponse({"task": "Task fired"})
 
-    return JsonResponse({"error": "Method Not Allowed"}, status=405)
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+        if not query or len(query) < 2:
+            return Response({"suggestions": []})
+
+        suggestions = []
+
+        # A helper to prevent duplicate suggestions
+        seen = set()
+
+        # 1. Search Brands using the 'name.autocomplete' field
+        brand_search = BrandDocument.search().query(
+            "match", **{"name.autocomplete": query}
+        )[:3]
+        for hit in brand_search.execute():
+            if hit.name not in seen:
+                suggestions.append(
+                    {"text": hit.name, "type": "brand", "slug": hit.slug}
+                )
+                seen.add(hit.name)
+
+        # 2. Search Categories using the 'name.autocomplete' field
+        category_search = CategoryDocument.search().query(
+            "match", **{"name.autocomplete": query}
+        )[:3]
+        for hit in category_search.execute():
+            if hit.name not in seen:
+                suggestions.append(
+                    {"text": hit.name, "type": "category", "slug": hit.slug}
+                )
+                seen.add(hit.name)
+
+        # 3. Search Products using its autocomplete fields
+        product_search = ProductDocument.search().query(
+            "multi_match",
+            query=query,
+            fields=["title.autocomplete^2", "search_text.autocomplete"],
+        )[:5]
+        for hit in product_search.execute():
+            if hit.title not in seen:
+                suggestions.append(
+                    {"text": hit.title, "type": "product", "slug": hit.slug}
+                )
+                seen.add(hit.title)
+
+        return Response({"suggestions": suggestions})

@@ -26,36 +26,6 @@ class CategoryService:
     CACHE_TIMEOUT = getattr(settings, "CATEGORY_CACHE_TIMEOUT", 3600)  # 1 hour
 
     @classmethod
-    def get_categories(
-        cls, base_queryset, include_inactive: bool = False
-    ) -> List[Dict]:
-        """
-        Get category list with optimized queries and caching.
-        """
-        if CacheManager.cache_exists(
-            "category", "list", include_inactive=include_inactive
-        ):
-            cache_key = CacheKeyManager.make_key(
-                "category",
-                "list",
-                include_inactive=include_inactive,
-            )
-            cached_result = cache.get(cache_key)
-            return cached_result
-
-        if not include_inactive:
-            base_queryset = base_queryset.filter(is_active=True)
-
-        # Get root categories with all descendants in one query
-        root_categories = base_queryset.prefetch_related("subcategories")
-        cache_key = CacheKeyManager.make_key(
-            "category", "list", include_inactive=include_inactive
-        )
-        cache.set(cache_key, root_categories, cls.CACHE_TIMEOUT)
-        logger.info(f"categories: {root_categories}")
-        return root_categories
-
-    @classmethod
     def get_category_tree(
         cls, max_depth: int = 3, include_inactive: bool = False
     ) -> List[Dict]:

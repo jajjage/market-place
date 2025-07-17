@@ -8,6 +8,7 @@ from drf_spectacular.utils import extend_schema
 
 from rest_framework.exceptions import ValidationError
 
+from apps.categories.documents import CategoryDocument
 from apps.core.views import BaseResponseMixin, BaseViewSet
 
 
@@ -23,10 +24,11 @@ from .serializers import (
     CategoryTreeSerializer,
 )
 from .schema import category_viewset_schema
-
+from elasticsearch.dsl import Q
 from django.db.models import Count, Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 
@@ -389,3 +391,36 @@ class CategoryAdminViewSet(BaseViewSet):
                 message="Failed to create categories",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class CategorySearchView(APIView):
+    """
+    A view for listing and finding categories.
+    Can filter by parent_id to build hierarchies.
+    """
+
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+        parent_id = request.query_params.get("parent_id")
+
+        # Start with the base search
+        search = CategoryDocument.search()
+
+        if query:
+            search = search.query("match", name={"query": query, "fuzziness": "AUTO"})
+
+        # Filter by parent category
+        if parent_id:
+            if parent_id.lower() == "null":  # Requesting top-level categories
+                search = search.filter(
+                    "bool", must_not=[Q("exists", field="parent_id")]
+                )
+            else:
+                search = search.filter("term", parent_id=parent_id)
+
+        # Execute and serialize
+        # Note: We are not paginating here for simplicity, but you could add it.
+        response = search.execute()
+        serializer = CategoryListSerializer(response.hits, many=True)
+
+        return Response({"results": serializer.data})
