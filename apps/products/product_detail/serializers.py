@@ -28,8 +28,7 @@ class ProductDetailTemplateSerializer(TimestampedModelSerializer):
             "validation_regex",
             "display_order",
             "usage_count",
-            "created_at",
-            "updated_at",
+            "applies_to_subcategories",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -173,6 +172,7 @@ class ProductDetailTemplateCreateSerializer(TimestampedModelSerializer):
             "placeholder_text",
             "validation_regex",
             "display_order",
+            "applies_to_subcategories",
         ]
 
     def validate_label(self, value):
@@ -208,6 +208,7 @@ class ProductDetailTemplateUpdateSerializer(TimestampedModelSerializer):
             "placeholder_text",
             "validation_regex",
             "display_order",
+            "applies_to_subcategories",
         ]
 
     def validate_label(self, value):
@@ -272,6 +273,8 @@ class ProductDetailTemplateSummarySerializer(TimestampedModelSerializer):
             "category",
             "category_name",
             "display_order",
+            "placeholder_text",
+            "applies_to_subcategories",
         ]
 
 

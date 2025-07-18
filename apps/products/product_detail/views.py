@@ -326,6 +326,11 @@ class ProductDetailTemplateViewSet(BaseViewSet):
     def for_category(self, request):
         """Get templates available for a specific category"""
         category_id = request.query_params.get("category_id")
+        if not category_id:
+            return self.error_response(
+                message="category_id is required",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
         templates = ProductDetailService.get_templates_for_category(
             category_id=category_id if category_id else None

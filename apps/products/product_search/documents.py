@@ -1,7 +1,14 @@
 import json
 from django_elasticsearch_dsl import Document, fields, Index
 from django_elasticsearch_dsl.registries import registry
+from django.contrib.auth import get_user_model
+from apps.categories.models import Category
 from apps.products.product_base.models import Product
+from apps.products.product_brand.models import Brand
+from apps.products.product_condition.models import ProductCondition
+from apps.products.product_detail.models import ProductDetail
+
+User = get_user_model()
 
 # Elasticsearch index definition with custom analyzers and tokenizers
 products_index = Index("products")
@@ -75,6 +82,19 @@ class ProductDocument(Document):
     seo_keywords = fields.TextField(
         analyzer="standard",  # Standard analyzer will break keywords into individual terms
         fields={"raw": fields.KeywordField()},  # For exact phrase matching if needed
+    )
+    category_name = fields.KeywordField()
+
+    details = fields.NestedField(
+        properties={
+            "label": fields.KeywordField(),  # Use Keyword for exact matching on labels like "RAM"
+            "value": fields.TextField(  # Use TextField for full-text search on values
+                fields={
+                    "raw": fields.KeywordField()
+                }  # And Keyword for exact matching/aggregations
+            ),
+            "unit": fields.KeywordField(),
+        }
     )
 
     # Identifiers and keywords
@@ -150,7 +170,13 @@ class ProductDocument(Document):
         # If it's a related model, you'll need a 'prepare_seo_keywords' method.
 
         fields = []
-        related_models = ["seller", "category", "brand", "condition"]
+        related_models = [
+            User,
+            Category,
+            Brand,
+            ProductCondition,
+            ProductDetail,
+        ]
 
     def save(self, **kwargs):
         # Prepare completion suggester data
@@ -302,3 +328,45 @@ class ProductDocument(Document):
             elif isinstance(seo_keywords, list):
                 return " ".join(seo_keywords)
         return None  # Return None if no keywords
+
+    def prepare_category_name(self, instance):
+        """Return the category's name."""
+        if instance.category:
+            return instance.category.name
+        return None
+
+    def prepare_details(self, instance):
+        """
+        Prepare the data for the 'details' NestedField.
+        This method is called for each product instance being indexed.
+        """
+        # We query the database here, at INDEX time.
+        details_queryset = instance.product_details.filter(is_active=True)
+        return [
+            {
+                "label": detail.label,
+                "value": detail.value,
+                "unit": detail.unit,
+            }
+            for detail in details_queryset
+        ]
+
+    def get_instances_from_related(self, related_instance):
+        """
+        If a ProductDetail is saved or deleted, this finds the parent
+        Product and tells Django-ES-DSL to re-index it.
+        """
+        if isinstance(related_instance, ProductDetail):
+            return related_instance.product
+
+        if isinstance(related_instance, User):
+            return related_instance.products.all()
+
+        if isinstance(related_instance, Category):
+            return related_instance.products.all()
+
+        if isinstance(related_instance, ProductCondition):
+            return related_instance.products.all()
+
+        if isinstance(related_instance, Brand):
+            return related_instance.products.all()
