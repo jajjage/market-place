@@ -64,7 +64,10 @@ class ProductVariantOption(BaseModel):
         max_length=100, blank=True, help_text="Display name if different from value"
     )
     color_code = models.CharField(
-        max_length=7, blank=True, help_text="Hex color code for color swatches"
+        max_length=7,
+        blank=True,
+        null=True,
+        help_text="Hex color code for color swatches",
     )
     image = models.ImageField(upload_to="variant_options/", blank=True, null=True)
     price_adjustment = models.DecimalField(

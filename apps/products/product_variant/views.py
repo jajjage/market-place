@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from django.db import models
+from django.db.models import Prefetch
 
 
 from apps.core.views import BaseViewSet
@@ -19,6 +21,8 @@ from .serializers import (
     ProductVariantCombinationGeneratorSerializer,
     ProductVariantMatrixSerializer,
     ProductVariantStatsSerializer,
+    ProductVariantTypeBulkCreateSerializer,
+    ProductVariantOptionBulkCreateSerializer,
 )
 from .services import ProductVariantService, CACHE_TTL
 
@@ -30,20 +34,71 @@ class ProductVariantTypeViewSet(BaseViewSet):
     serializer_class = ProductVariantTypeSerializer
 
     def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy"]:
+        if self.action in [
+            "create",
+            "update",
+            "partial_update",
+            "destroy",
+            "bulk_create",
+        ]:
             return [IsAdminUser()]
         return [IsAuthenticated()]
 
+    def get_serializer_class(self):
+        if self.action == "bulk_create":
+            return ProductVariantTypeBulkCreateSerializer
+        return ProductVariantTypeSerializer
+
+    def get_queryset(self):
+        """Optimize queryset with annotations"""
+        queryset = super().get_queryset()
+        if self.action == "list":
+            queryset = queryset.annotate(
+                option_count=models.Count(
+                    "options", filter=models.Q(options__is_active=True), distinct=True
+                )
+            ).prefetch_related(
+                models.Prefetch(
+                    "options",
+                    queryset=ProductVariantOption.objects.filter(
+                        is_active=True
+                    ).select_related("variant_type"),
+                )
+            )
+        return queryset
+
+    @action(detail=False, methods=["post"])
+    def bulk_create(self, request):
+        """Bulk create variant types"""
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return self.error_response(
+                message=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            created_types = ProductVariantService.bulk_create_variant_types(
+                serializer.validated_data["types"]
+            )
+            response_serializer = ProductVariantTypeSerializer(created_types, many=True)
+            return self.success_response(
+                data=response_serializer.data,
+                message=f"Successfully created {len(created_types)} variant types",
+                status_code=status.HTTP_201_CREATED,
+            )
+        except Exception as e:
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @method_decorator(cache_page(CACHE_TTL))
     def list(self, request, *args, **kwargs):
         """Get all variant types with options"""
         try:
-            with_options = (
-                request.query_params.get("with_options", "true").lower() == "true"
-            )
-            variant_types = ProductVariantService.get_variant_types(
-                active_only=True, with_options=with_options
-            )
-            serializer = self.get_serializer(variant_types, many=True)
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
             return self.success_response(
                 data=serializer.data,
                 message="Product variant types retrieved successfully",
@@ -64,8 +119,7 @@ class ProductVariantTypeViewSet(BaseViewSet):
                 status_code=status.HTTP_201_CREATED,
             )
         return self.error_response(
-            message="Validation failed",
-            errors=serializer.errors,
+            message=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -77,17 +131,108 @@ class ProductVariantOptionViewSet(BaseViewSet):
     serializer_class = ProductVariantOptionSerializer
 
     def get_queryset(self):
-        """Filter options by variant type if provided"""
+        """Filter options by variant type if provided with optimized queries"""
         queryset = super().get_queryset()
-        variant_type_id = self.request.query_params.get("variant_type")
-        if variant_type_id:
-            queryset = queryset.filter(variant_type_id=variant_type_id)
-        return queryset.select_related("variant_type").order_by("sort_order")
+
+        # Always apply select_related for variant_type to avoid N+1 queries
+        queryset = queryset.select_related("variant_type")
+
+        # For list action, optimize further with field selection and caching
+        if self.action == "list":
+            # Cache key based on variant_type_id if provided
+            variant_type_id = self.request.query_params.get("variant_type")
+            if variant_type_id:
+                queryset = queryset.filter(variant_type_id=variant_type_id)
+
+            # Optimize field selection
+            queryset = queryset.only(
+                "id",
+                "value",
+                "slug",
+                "sort_order",
+                "display_value",
+                "color_code",
+                "price_adjustment",
+                "is_active",
+                "variant_type__id",
+                "variant_type__name",
+            ).order_by("sort_order")
+
+            # Use prefetch_related for any potential reverse relationships
+            queryset = queryset.prefetch_related(
+                models.Prefetch(
+                    "variant_type__options",
+                    queryset=ProductVariantOption.objects.filter(is_active=True),
+                    to_attr="active_options",
+                )
+            )
+
+        return queryset
 
     def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy"]:
+        if self.action in [
+            "create",
+            "update",
+            "partial_update",
+            "destroy",
+            "bulk_create",
+        ]:
             return [IsAdminUser()]
         return [IsAuthenticated()]
+
+    def get_serializer_class(self):
+        if self.action == "bulk_create":
+            return ProductVariantOptionBulkCreateSerializer
+        return ProductVariantOptionSerializer
+
+    @method_decorator(cache_page(CACHE_TTL))
+    def list(self, request, *args, **kwargs):
+        """Get all options with caching"""
+        variant_type_id = request.query_params.get("variant_type")
+
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["post"])
+    def bulk_create(self, request):
+        """Bulk create variant options"""
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return self.error_response(
+                message=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            created_options = ProductVariantService.bulk_create_variant_options(
+                variant_type_id=serializer.validated_data["variant_type_id"],
+                options_data=serializer.validated_data["options"],
+            )
+            response_serializer = ProductVariantOptionSerializer(
+                created_options, many=True
+            )
+            return self.success_response(
+                data=response_serializer.data,
+                message=f"Successfully created {len(created_options)} variant options",
+                status_code=status.HTTP_201_CREATED,
+            )
+        except ProductVariantType.DoesNotExist:
+            return self.error_response(
+                message="Variant type not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return self.error_response(
+                message=str(e),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class ProductVariantViewSet(BaseViewSet):
@@ -97,8 +242,40 @@ class ProductVariantViewSet(BaseViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        """Get variants with various filtering options"""
+        """Get variants with various filtering options and optimized queries"""
         product_id = self.request.query_params.get("product_id")
+        if not product_id:
+            return ProductVariant.objects.none()
+
+        # Determine which fields to fetch based on action
+        fields_subset = {
+            "id",
+            "sku",
+            "price",
+            "stock_quantity",
+            "reserved_quantity",
+            "low_stock_threshold",
+            "is_active",
+        }
+
+        if self.action == "list":
+            # Add fields needed for list view
+            fields_subset.update({"total_inventory", "in_escrow_inventory"})
+        elif self.action in ["retrieve", "update"]:
+            # Add additional fields for detail view
+            fields_subset.update(
+                {
+                    "cost_price",
+                    "weight",
+                    "dimensions_length",
+                    "dimensions_width",
+                    "dimensions_height",
+                    "is_digital",
+                    "is_backorderable",
+                    "expected_restock_date",
+                }
+            )
+
         active_only = (
             self.request.query_params.get("active_only", "true").lower() == "true"
         )
@@ -106,15 +283,14 @@ class ProductVariantViewSet(BaseViewSet):
             self.request.query_params.get("in_stock_only", "false").lower() == "true"
         )
 
-        if product_id:
-            return ProductVariantService.get_product_variants(
-                product_id=product_id,
-                active_only=active_only,
-                in_stock_only=in_stock_only,
-                with_options=True,
-                with_images=False,
-            )
-        return ProductVariant.objects.none()
+        return ProductVariantService.get_product_variants(
+            product_id=product_id,
+            active_only=active_only,
+            in_stock_only=in_stock_only,
+            with_options=True,
+            with_images=self.action in ["retrieve", "update"],
+            fields_subset=fields_subset,
+        )
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
@@ -189,7 +365,7 @@ class ProductVariantViewSet(BaseViewSet):
     @action(detail=False, methods=["get"])
     @method_decorator(cache_page(CACHE_TTL))
     def matrix(self, request):
-        """Get variant matrix for a product with enhanced data"""
+        """Get variant matrix for a product with enhanced data and optimized queries"""
         product_id = request.query_params.get("product_id")
         if not product_id:
             return self.error_response(
@@ -198,21 +374,39 @@ class ProductVariantViewSet(BaseViewSet):
             )
 
         try:
+            # Get variant matrix and types in parallel using asyncio or Promise.all
             matrix = ProductVariantService.get_variant_matrix(int(product_id))
-            variant_types = ProductVariantService.get_variant_types(with_options=True)
 
-            # Filter variant types to only those used by this product
-            used_type_ids = set()
-            for variant_data in matrix.values():
-                for option in variant_data.get("options", []):
-                    used_type_ids.add(option["type_id"])
+            # Get only the variant types that are actually used in the matrix
+            used_type_ids = {
+                option["type_id"]
+                for variant_data in matrix.values()
+                for option in variant_data.get("options", [])
+            }
 
-            relevant_variant_types = [
-                vt for vt in variant_types if vt.id in used_type_ids
-            ]
+            # Fetch only the relevant variant types with optimized query
+            variant_types = (
+                ProductVariantType.objects.filter(id__in=used_type_ids, is_active=True)
+                .prefetch_related(
+                    Prefetch(
+                        "options",
+                        queryset=ProductVariantOption.objects.filter(is_active=True)
+                        .only(
+                            "id",
+                            "value",
+                            "display_value",
+                            "slug",
+                            "sort_order",
+                            "variant_type_id",
+                        )
+                        .order_by("sort_order"),
+                    )
+                )
+                .order_by("sort_order")
+            )
 
             serializer = ProductVariantMatrixSerializer(
-                {"variant_types": relevant_variant_types, "variants": matrix}
+                {"variant_types": variant_types, "variants": matrix}
             )
 
             return Response(serializer.data)

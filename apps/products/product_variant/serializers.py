@@ -1,6 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 from django.core.exceptions import ValidationError
+from django.db import models
 
 from apps.core.serializers import TimestampedModelSerializer
 from apps.products.product_base.models import Product
@@ -13,11 +14,65 @@ from .models import (
 from .services import ProductVariantService
 
 
+class ProductVariantTypeBulkCreateSerializer(serializers.Serializer):
+    """Serializer for bulk creating variant types"""
+
+    class VariantTypeSerializer(serializers.Serializer):
+        name = serializers.CharField(required=True)
+        slug = serializers.CharField(required=True)
+        sort_order = serializers.IntegerField(required=False, default=0)
+        is_active = serializers.BooleanField(required=False, default=True)
+        is_required = serializers.BooleanField(required=False, default=False)
+        affects_price = serializers.BooleanField(required=False, default=False)
+        affects_inventory = serializers.BooleanField(required=False, default=False)
+
+    types = serializers.ListField(child=VariantTypeSerializer(), min_length=1)
+
+
+class ProductVariantOptionBulkCreateSerializer(serializers.Serializer):
+    """Serializer for bulk creating variant options"""
+
+    class OptionSerializer(serializers.Serializer):
+        value = serializers.CharField(required=True)
+        slug = serializers.CharField(required=True)
+        display_value = serializers.CharField(
+            required=False, allow_null=True, allow_blank=True
+        )
+        color_code = serializers.CharField(
+            required=False, allow_null=True, allow_blank=True
+        )
+        price_adjustment = serializers.DecimalField(
+            max_digits=10, decimal_places=2, required=False, default=Decimal("0.00")
+        )
+        sort_order = serializers.IntegerField(required=False, default=0)
+        is_active = serializers.BooleanField(required=False, default=True)
+        variant_type_slug = serializers.CharField(required=False, write_only=True)
+
+    options = serializers.ListField(child=OptionSerializer(), min_length=1)
+    variant_type_id = serializers.UUIDField(required=True)
+
+
+class ProductVariantOptionListSerializer(serializers.ListSerializer):
+    """List serializer for bulk operations on variant options"""
+
+    def to_representation(self, data):
+        """Optimize the list representation to avoid N+1 queries"""
+        # Prefetch all related data in a single query
+        iterable = (
+            data.prefetch_related("variant_type").all()
+            if isinstance(data, models.Manager)
+            else data
+        )
+        return [self.child.to_representation(item) for item in iterable]
+
+
 class ProductVariantOptionSerializer(TimestampedModelSerializer):
     """Enhanced serializer for product variant options"""
 
-    display_name = serializers.SerializerMethodField()
-    image_url = serializers.SerializerMethodField()
+    display_name = serializers.CharField(source="display_value", read_only=True)
+    variant_type_name = serializers.CharField(
+        source="variant_type.name", read_only=True
+    )
     variant_type = serializers.UUIDField(
         write_only=True, required=True, help_text="UUID of the variant type"
     )
@@ -34,23 +89,18 @@ class ProductVariantOptionSerializer(TimestampedModelSerializer):
             "price_adjustment",
             "is_active",
             "display_name",
-            "image_url",
             "variant_type",
+            "variant_type_name",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "variant_type_name"]
+        list_serializer_class = ProductVariantOptionListSerializer
 
-    def get_display_name(self, obj) -> str:
-        """Get display name or fallback to value"""
-        return obj.display_value or obj.value
-
-    def get_image_url(self, obj) -> str | None:
-        """Get image URL if available"""
-        if obj.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
+    def to_representation(self, instance):
+        """Optimize single instance representation"""
+        ret = super().to_representation(instance)
+        # Use display_value if available, otherwise fall back to value
+        ret["display_name"] = instance.display_value or instance.value
+        return ret
 
     def create(self, validated_data) -> ProductVariantOption:
         variant_type_uuid = validated_data.pop("variant_type")
@@ -68,7 +118,7 @@ class ProductVariantTypeSerializer(TimestampedModelSerializer):
     """Enhanced serializer for product variant types"""
 
     options = ProductVariantOptionSerializer(many=True, read_only=True)
-    option_count = serializers.SerializerMethodField()
+    option_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = ProductVariantType
@@ -86,10 +136,6 @@ class ProductVariantTypeSerializer(TimestampedModelSerializer):
             "option_count",
         ]
         read_only_fields = ["id", "option_count"]
-
-    def get_option_count(self, obj) -> int:
-        """Get count of active options"""
-        return obj.options.filter(is_active=True).count()
 
 
 class ProductVariantImageSerializer(TimestampedModelSerializer):
@@ -111,19 +157,27 @@ class ProductVariantImageSerializer(TimestampedModelSerializer):
         return None
 
 
+class ProductVariantListSerializer(serializers.ListSerializer):
+    """Optimized list serializer for bulk variant operations"""
+
+    def to_representation(self, data):
+        """Optimize list representation to avoid N+1 queries"""
+        iterable = data.all() if isinstance(data, models.Manager) else data
+        return [self.child.to_representation(item) for item in iterable]
+
+
 class ProductVariantSerializer(TimestampedModelSerializer):
-    """Enhanced serializer for product variants (read operations)"""
+    """Enhanced serializer for product variants with optimized queries"""
 
     options = ProductVariantOptionSerializer(many=True, read_only=True)
     images = ProductVariantImageSerializer(many=True, read_only=True)
-
-    # Computed fields
-    final_price = serializers.SerializerMethodField()
-    available_quantity = serializers.SerializerMethodField()
-    is_in_stock = serializers.SerializerMethodField()
-    is_low_stock = serializers.SerializerMethodField()
-    option_summary = serializers.SerializerMethodField()
-    dimensions = serializers.SerializerMethodField()
+    final_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+    available_quantity = serializers.IntegerField(read_only=True)
+    is_in_stock = serializers.BooleanField(read_only=True)
+    is_low_stock = serializers.BooleanField(read_only=True)
+    option_summary = serializers.CharField(read_only=True)
 
     class Meta:
         model = ProductVariant
@@ -131,24 +185,43 @@ class ProductVariantSerializer(TimestampedModelSerializer):
             "id",
             "sku",
             "price",
-            "cost_price",
             "final_price",
             "total_inventory",
-            "in_escrow_inventory",
             "available_quantity",
-            "low_stock_threshold",
             "is_active",
             "is_in_stock",
             "is_low_stock",
-            "weight",
-            "dimensions",
-            "is_digital",
-            "is_backorderable",
-            "expected_restock_date",
             "options",
             "images",
             "option_summary",
         ]
+        list_serializer_class = ProductVariantListSerializer
+
+    def to_representation(self, instance):
+        """Optimize single instance representation"""
+        ret = super().to_representation(instance)
+
+        # Calculate final_price only if price exists
+        if instance.price is not None:
+            price_adjustments = sum(
+                opt.price_adjustment
+                for opt in instance.options.all()
+                if opt.variant_type.affects_price
+            )
+            ret["final_price"] = float(instance.price + price_adjustments)
+
+        # Calculate availability
+        ret["available_quantity"] = instance.stock_quantity - instance.reserved_quantity
+        ret["is_in_stock"] = ret["available_quantity"] > 0
+        ret["is_low_stock"] = instance.stock_quantity <= instance.low_stock_threshold
+
+        # Generate option summary
+        ret["option_summary"] = " - ".join(
+            f"{opt.variant_type.name}: {opt.display_value or opt.value}"
+            for opt in instance.options.all()[:3]
+        )
+
+        return ret
 
     def get_final_price(self, obj) -> str | None:
         """Get final price including option adjustments"""

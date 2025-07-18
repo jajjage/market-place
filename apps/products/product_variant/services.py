@@ -32,6 +32,66 @@ class ProductVariantService:
     CACHE_TIMEOUT = CACHE_TTL
     DETAIL_KEYS_SET = "safetrade:product_variant:detail:keys"
 
+    @staticmethod
+    @transaction.atomic
+    def bulk_create_variant_types(types_data: List[Dict]) -> List[ProductVariantType]:
+        """Bulk create variant types with validation.
+
+        Args:
+            types_data (List[Dict]): List of dictionaries containing variant type data
+
+        Returns:
+            List[ProductVariantType]: List of created variant types
+        """
+        created_types = []
+        for type_data in types_data:
+            # Create the variant type
+            variant_type = ProductVariantType.objects.create(
+                name=type_data.get("name"),
+                slug=type_data.get("slug"),
+                sort_order=type_data.get("sort_order", 0),
+                is_active=type_data.get("is_active", True),
+            )
+            created_types.append(variant_type)
+
+        # Clear cache after bulk creation
+        cache.delete_pattern("product_variant:types:*")
+        return created_types
+
+    @staticmethod
+    @transaction.atomic
+    def bulk_create_variant_options(
+        variant_type_id: int, options_data: List[Dict]
+    ) -> List[ProductVariantOption]:
+        """Bulk create variant options for a specific variant type.
+
+        Args:
+            variant_type_id (int): ID of the variant type
+            options_data (List[Dict]): List of dictionaries containing option data
+
+        Returns:
+            List[ProductVariantOption]: List of created variant options
+        """
+        variant_type = ProductVariantType.objects.get(id=variant_type_id)
+        created_options = []
+
+        for option_data in options_data:
+            option = ProductVariantOption.objects.create(
+                variant_type=variant_type,
+                value=option_data.get("value"),
+                slug=option_data.get("slug"),
+                display_value=option_data.get("display_value"),
+                color_code=option_data.get("color_code"),
+                price_adjustment=option_data.get("price_adjustment", Decimal("0.00")),
+                sort_order=option_data.get("sort_order", 0),
+                is_active=option_data.get("is_active", True),
+            )
+            created_options.append(option)
+
+        # Clear cache after bulk creation
+        cache.delete_pattern("product_variant:types:*")
+        return created_options
+
     # ==========================================
     # CORE RETRIEVAL METHODS
     # ==========================================
@@ -75,16 +135,17 @@ class ProductVariantService:
         in_stock_only: bool = False,
         with_options: bool = True,
         with_images: bool = False,
+        fields_subset: set = None,
     ):
-        """Enhanced variant retrieval with flexible filtering."""
+        """Enhanced variant retrieval with flexible filtering and field selection."""
         cache_key = ProductVariantService._generate_detail_cache_key(
             product_id,
             active_only=active_only,
             in_stock_only=in_stock_only,
             with_options=with_options,
+            fields=",".join(sorted(fields_subset)) if fields_subset else "all",
         )
 
-        print(cache_key)
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
@@ -97,24 +158,46 @@ class ProductVariantService:
         if in_stock_only:
             qs = qs.filter(stock_quantity__gt=F("reserved_quantity"))
 
-        # Always select related product for efficiency
-        qs = qs.select_related("product")
+        # Optimize field selection if subset specified
+        if fields_subset:
+            required_fields = {"id", "product_id"} | fields_subset
+            qs = qs.only(*required_fields)
+
+        # Always select related product for efficiency, but only needed fields
+        qs = qs.select_related("product").only(
+            "product__id", "product__requires_shipping", "product__price"
+        )
 
         if with_options:
+            # Optimize option fields
+            option_fields = {
+                "id",
+                "value",
+                "slug",
+                "display_value",
+                "price_adjustment",
+                "variant_type__id",
+                "variant_type__name",
+                "variant_type__slug",
+            }
             qs = qs.prefetch_related(
                 Prefetch(
                     "options",
-                    queryset=ProductVariantOption.objects.select_related(
-                        "variant_type"
-                    ).order_by("variant_type__sort_order", "sort_order"),
+                    queryset=ProductVariantOption.objects.select_related("variant_type")
+                    .only(*option_fields)
+                    .order_by("variant_type__sort_order", "sort_order"),
                 )
             )
 
         if with_images:
+            # Optimize image fields
+            image_fields = {"id", "image", "sort_order", "is_primary"}
             qs = qs.prefetch_related(
                 Prefetch(
                     "images",
-                    queryset=ProductVariantImage.objects.order_by("sort_order"),
+                    queryset=ProductVariantImage.objects.only(*image_fields).order_by(
+                        "sort_order"
+                    ),
                 )
             )
 
