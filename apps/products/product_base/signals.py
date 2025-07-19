@@ -6,6 +6,7 @@ from django.dispatch import receiver
 from apps.products.product_base.services.product_detail_service import (
     ProductDetailService,
 )
+from apps.products.product_metadata.tasks import generate_seo_keywords_for_product
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,11 @@ def invalidate_product_cache_on_save(sender, instance, created, **kwargs):
     def invalidate_caches():
         logger.info("=== CACHE INVALIDATION TRIGGERED ===")
         logger.info(f"Product: {instance.short_code}, Created: {created}")
+        if created:
+            result = generate_seo_keywords_for_product.delay(instance.id)
+
+            if result.successful:
+                logger.info(f"SEO generation task for product: {instance.title}")
 
         if not created:
             # Import here to avoid circular imports

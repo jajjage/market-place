@@ -309,25 +309,22 @@ class ProductDocument(Document):
     def prepare_seo_keywords(self, instance):
         """
         Custom preparation method to handle seo_keywords from the Django model.
-        This handles both list and string formats.
         """
         seo_keywords = getattr(instance, "seo_keywords", None)
         if seo_keywords:
-            if isinstance(seo_keywords, str):
+            if isinstance(seo_keywords, list):
+                return " ".join(seo_keywords)
+            elif isinstance(seo_keywords, str):
                 try:
-                    # Attempt to parse as JSON list
+                    # Handle legacy string format
                     parsed_keywords = json.loads(seo_keywords)
                     if isinstance(parsed_keywords, list):
                         return " ".join(parsed_keywords)
                     else:
-                        # If it's a string that's not a JSON list, return as is
                         return seo_keywords
                 except json.JSONDecodeError:
-                    # Not a JSON string, treat as plain string
                     return seo_keywords
-            elif isinstance(seo_keywords, list):
-                return " ".join(seo_keywords)
-        return None  # Return None if no keywords
+        return None
 
     def prepare_category_name(self, instance):
         """Return the category's name."""

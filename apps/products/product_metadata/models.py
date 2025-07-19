@@ -11,8 +11,8 @@ class ProductMeta(BaseModel):
         "product_base.Product", on_delete=models.CASCADE, related_name="meta"
     )
     views_count = models.PositiveIntegerField(default=0)
-    seo_keywords = models.TextField(
-        blank=True, null=True, help_text="SEO keywords for the product"
+    seo_keywords = models.JSONField(
+        default=list, blank=True, null=True, help_text="SEO keywords for the product"
     )
     seo_generation_queued = models.BooleanField(default=False)
 

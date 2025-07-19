@@ -1,5 +1,5 @@
 import logging
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from celery import shared_task
 from apps.core.tasks import BaseTaskWithRetry
 from .utils.keywords_context import (
@@ -24,9 +24,9 @@ def generate_seo_keywords_for_product(self, product_id):
 
         # Get the product
         try:
-            product = Product.objects.get(pk=product_id).select_related(
+            product = Product.objects.select_related(
                 "brand", "category", "condition"
-            )
+            ).get(pk=product_id)
         except Product.DoesNotExist:
             logger.error(f"Product with ID {product_id} not found")
             return {"error": f"Product {product_id} not found"}
@@ -76,13 +76,24 @@ def generate_seo_keywords_for_product(self, product_id):
 
         # Save to database
         with transaction.atomic():
-            pm = ProductMeta.objects.select_for_update().get(product_id=product_id)
-            pm.seo_keywords = ", ".join(keywords[:50])  # Limit to 50 keywords
-            pm.seo_generation_queued = True
-            pm.save(update_fields=["seo_keywords", "seo_generation_queued"])
+            try:
+                # Try to create first since it's the common case
+                pm = ProductMeta.objects.create(
+                    product_id=product_id,
+                    seo_keywords=", ".join(keywords[:50]),
+                    seo_generation_queued=True,
+                )
+                action = "created"
+            except IntegrityError:
+                # Handle the rare case where it already exists
+                pm = ProductMeta.objects.select_for_update().get(product_id=product_id)
+                pm.seo_keywords = ", ".join(keywords[:50])
+                pm.seo_generation_queued = True
+                pm.save(update_fields=["seo_keywords", "seo_generation_queued"])
+                action = "updated"
 
             logger.info(
-                f"SEO keywords generated for product {product_id}: {len(keywords)} keywords"
+                f"SEO keywords {action} for product {product_id}: {len(keywords)} keywords"
             )
 
         return {
