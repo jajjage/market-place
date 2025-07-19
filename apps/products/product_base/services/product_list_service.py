@@ -5,150 +5,69 @@ from django.core.cache import cache
 import logging
 import hashlib
 import json
-from django.utils import timezone
+
 
 from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.utils.cache_manager import CacheManager
 
 # from apps.products.product_breadcrumb.models import Breadcrumb
-from django_redis import get_redis_connection
 
+from apps.products.product_base.utils.cache_service import ProductCacheVersionManager
 from apps.products.product_image.models import ProductImage
 from apps.products.product_rating.models import ProductRating
 
-logger = logging.getLogger("products_performance")
+logger = logging.getLogger(__name__)
 
 
 class ProductListService:
     CACHE_TTL = 60 * 15  # 15 minutes cache TTL
-    LIST_KEYS_SET = "safetrade:product_base:list:keys"
+    LIST_KEYS_SET = "'safetrade:product_base:list:keys"
+    CATEGORY_CACHE_MAPPING = "product_cache_categories"  # Maps cache keys to categories
+
+    # @classmethod
+    # def get_cached_product_list(cls, viewset, base_queryset):
+    #     """
+    #     Updated method that integrates with your existing ViewSet structure.
+    #     Returns either cached data or a QuerySet depending on the action.
+    #     """
+    #     if viewset.action != "list":
+    #         return cls.get_product_queryset(base_queryset)
+
+    #     # Generate cache key with category tracking
+    #     cache_key, involved_categories = cls._generate_list_cache_key_with_categories(
+    #         viewset.request
+    #     )
+    #     logger.info(f"cache key: {cache_key}")
+    #     # # Try to get cached serialized data
+    #     cached_data = cache.get(cache_key)
+    #     if cached_data:
+    #         logger.info(f"Cache HIT for product list: {cache_key}")
+    #         # For list action, we'll handle this in the viewset's list() method
+    #         # Store cached data in viewset for later use
+    #         viewset._cached_data = cached_data
+    #         viewset._using_cached_data = True
+    #         # Return a dummy queryset that won't be used
+    #         return base_queryset.none()
+
+    #     logger.info(f"Cache MISS for product list: {cache_key}")
+
+    #     # Store cache info for later use after serialization
+    #     viewset._cache_key = cache_key
+    #     viewset._involved_categories = involved_categories
+    #     viewset._using_cached_data = False
+
+    #     # Return optimized queryset
+    #     return cls.get_optimized_product_queryset(base_queryset)
 
     @staticmethod
-    def get_cached_product_list(viewset, queryset):
+    def generate_cache_key(request):
         """
-        Get cached product list for ModelViewSet.
-        This method works with DRF's pagination and filtering.
-
-        Args:
-            viewset: The ModelViewSet instance
-            queryset: Base queryset from get_queryset()
-
-        Returns:
-            Cached or optimized queryset
+        Generate cache key incorporating the current version.
+        When version changes, all old cache keys become inaccessible.
         """
-        # Only cache for list action
-        if viewset.action != "list":
-            return ProductListService.get_product_queryset(queryset)
+        # Get current cache version
+        version = ProductCacheVersionManager.get_current_version()
 
-        # Generate cache key based on request parameters
-        cache_key = ProductListService._generate_list_cache_key(viewset.request)
-        logger.info(f"Generated cache key for product list: {cache_key}")
-        # Check if we have cached data
-        if cache.get(cache_key):
-            logger.info(f"Cache HIT for product list: {cache_key}")
-            # Return the cached queryset IDs and reconstruct
-            cached_data = cache.get(cache_key)
-            if cached_data and "product_ids" in cached_data:
-                # Reconstruct queryset from cached IDs while preserving order
-                preserved_order = {
-                    pk: i for i, pk in enumerate(cached_data["product_ids"])
-                }
-                cached_queryset = ProductListService.get_product_queryset(
-                    queryset
-                ).filter(id__in=cached_data["product_ids"])
-                # Maintain the original order
-                return sorted(
-                    cached_queryset, key=lambda x: preserved_order.get(x.id, 0)
-                )
-
-        logger.info(f"Cache MISS for product list: {cache_key}")
-
-        # Get optimized queryset
-        optimized_queryset = ProductListService.get_product_queryset(queryset)
-
-        # Apply viewset's filtering, searching, and ordering
-        filtered_queryset = ProductListService._apply_viewset_filters(
-            viewset, optimized_queryset
-        )
-
-        # Cache the product IDs (not the full objects to save memory)
-        try:
-            # Limit the evaluation to avoid memory issues
-            product_ids = list(filtered_queryset.values_list("id", flat=True)[:1000])
-            cache_data = {
-                "product_ids": product_ids,
-                "timestamp": json.dumps(str(timezone.now()), default=str),
-            }
-            cache.set(cache_key, cache_data, ProductListService.CACHE_TTL)
-            logger.info(
-                f"Cached product list with {len(product_ids)} items: {cache_key}"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to cache product list: {str(e)}")
-
-        return filtered_queryset
-
-    @staticmethod
-    def get_product_queryset(queryset):
-        """
-        Get optimized product queryset with related fields and annotations.
-        This method is used to ensure efficient data retrieval for product details.
-
-        Args:
-            base_queryset: Base Product queryset
-
-        Returns:
-            Optimized queryset with select_related and prefetch_related
-        """
-
-        base_queryset = queryset.select_related(
-            "brand",
-            "category",
-            "condition",
-            "seller",
-            "seller__profile",  # if seller→profile is 1:1
-        )
-
-        approved_ratings_prefetch = Prefetch(
-            "ratings",
-            queryset=ProductRating.objects.filter(is_approved=True).select_related(
-                "user"
-            ),
-            to_attr="approved_ratings",
-        )
-
-        # If you only ever show the primary image, you can do a filtered Prefetch:
-        primary_images_prefetch = Prefetch(
-            "images",
-            queryset=ProductImage.objects.filter(is_active=True, is_primary=True),
-            to_attr="primary_images",
-        )
-
-        optimized_qs = base_queryset.prefetch_related(
-            primary_images_prefetch,
-            "variants",  # if you list variants
-            # "watchers",        # you probably don’t need this if you only use watchers_count
-            approved_ratings_prefetch,
-            # "meta",           # if meta is OneToOneField you can select_related it instead
-        ).annotate(
-            avg_rating_db=Avg("ratings__rating", filter=Q(ratings__is_approved=True)),
-            ratings_count_db=Count("ratings", filter=Q(ratings__is_approved=True)),
-            verified_ratings_count=Count(
-                "ratings",
-                filter=Q(ratings__is_approved=True, ratings__is_verified_purchase=True),
-            ),
-            watchers_count=Count("watchers", distinct=True),
-            total_views=F("meta__views_count"),  # if meta is 1:1
-        )
-
-        return optimized_qs
-
-    @staticmethod
-    def _generate_list_cache_key(request, version="v1"):
-        """
-        Generate cache key based on request parameters.
-        Enhanced to support versioning and better structure.
-        """
         # Get all query parameters that affect the list
         params = {
             "page": request.GET.get("page", "1"),
@@ -174,28 +93,142 @@ class ProductListService:
             if request.GET.get(param):
                 params[param] = request.GET.get(param)
 
+        # Create hash from parameters
         params_str = json.dumps(params, sort_keys=True)
         params_hash = hashlib.md5(params_str.encode()).hexdigest()[:12]
 
-        key = CacheKeyManager.make_key("product_base", "list", params=params_hash)
-        redis_conn = get_redis_connection("default")
-        redis_conn.sadd(ProductListService.LIST_KEYS_SET, key)
-        logger.info(f"Generated cache key: {key} with params: {params}")
-        return key
+        # Include version in the cache key
+        cache_key = f"safetrade:product_list:v{version}:{params_hash}"
+
+        logger.debug(f"Generated cache key: {cache_key}")
+        return cache_key
+
+    @classmethod
+    def get_cached_list(cls, request, cache_timeout=300):
+        """
+        Get cached product list or return None if not found.
+        """
+        cache_key = cls.generate_cache_key(request)
+        cached_data = cache.get(cache_key)
+
+        if cached_data:
+            logger.info(f"Cache HIT for key: {cache_key}")
+            return cached_data
+
+        logger.info(f"Cache MISS for key: {cache_key}")
+        return None
+
+    @classmethod
+    def set_cached_list(cls, request, data, cache_timeout=300):
+        """
+        Cache the product list data.
+        """
+        cache_key = cls.generate_cache_key(request)
+        cache.set(cache_key, data, cache_timeout)
+        logger.info(f"Cached data with key: {cache_key}")
 
     @staticmethod
-    def invalidate_product_list_caches():
-        redis_conn = get_redis_connection("default")
-        # django-redis strips KEY_PREFIX for you
-        # cache.delete("safetrade:product_base:list:main")
-        logger.info("Deleting list caches with pattern")
-        raw_keys = redis_conn.smembers(ProductListService.LIST_KEYS_SET)
-        decoded_keys = [k.decode("utf-8") for k in raw_keys]
-        print(decoded_keys)
-        for key in decoded_keys:
-            logger.info(f"Deleted single key: {key}")
-            cache.delete(key)
-            logger.info(f"✅ Deleted {key} list cache keys")
+    def get_optimized_product_queryset(queryset):
+        """
+        Your existing get_product_queryset method - enhanced for caching.
+        This now ONLY handles QuerySet optimization, no caching logic.
+        """
+        # Select related for direct foreign keys
+        base_queryset = queryset.select_related(
+            "brand",
+            "category",
+            "condition",
+            "seller",
+            "seller__profile",
+            "meta",
+        ).only(
+            # Product fields
+            "id",
+            "title",
+            "price",
+            "original_price",
+            "currency",
+            "slug",
+            "short_code",
+            "is_active",
+            "is_featured",
+            "status",
+            "description",
+            "location",
+            "escrow_fee",
+            "requires_inspection",
+            # Related model fields (to prevent additional queries)
+            "brand__id",
+            "brand__name",
+            "category__id",
+            "category__name",
+            "condition__id",
+            "condition__name",
+            "seller__id",
+            "seller__first_name",
+            "seller__last_name",
+            "seller__email",
+            "seller__profile__id",
+            "seller__profile__avatar_url",
+            "meta__id",
+            "meta__views_count",
+        )
+
+        # Optimized prefetches with custom to_attr names
+        primary_images_prefetch = Prefetch(
+            "images",
+            queryset=ProductImage.objects.filter(is_active=True, is_primary=True).only(
+                "id", "product_id", "image_url", "is_primary", "display_order"
+            ),
+            to_attr="cached_primary_images",
+        )
+
+        all_images_prefetch = Prefetch(
+            "images",
+            queryset=ProductImage.objects.filter(is_active=True)
+            .only("id", "product_id", "image_url", "is_primary", "display_order")
+            .order_by("display_order"),
+            to_attr="cached_all_images",
+        )
+
+        ratings_prefetch = Prefetch(
+            "ratings",
+            queryset=ProductRating.objects.filter(is_approved=True)
+            .select_related("user")
+            .only("id", "rating", "user_id", "is_verified_purchase", "is_approved"),
+            to_attr="cached_ratings",
+        )
+
+        return base_queryset.prefetch_related(
+            primary_images_prefetch,
+            all_images_prefetch,
+            ratings_prefetch,
+            "variants",  # Add if needed
+        ).annotate(
+            avg_rating_db=Avg("ratings__rating", filter=Q(ratings__is_approved=True)),
+            ratings_count_db=Count("ratings", filter=Q(ratings__is_approved=True)),
+            verified_ratings_count=Count(
+                "ratings",
+                filter=Q(ratings__is_approved=True, ratings__is_verified_purchase=True),
+            ),
+            watchers_count=Count("watchers", distinct=True),
+            total_views=F("meta__views_count"),
+        )
+
+    @classmethod
+    def cache_serialized_data(cls, viewset, serialized_data):
+        """
+        Cache the serialized data after it's been created.
+        Call this from the viewset after serialization.
+        """
+        if hasattr(viewset, "_cache_key") and not viewset._using_cached_data:
+            try:
+                cache.set(viewset._cache_key, serialized_data, cls.CACHE_TTL)
+                logger.info(
+                    f"Cached serialized product data: {len(serialized_data)} items"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to cache product list: {str(e)}")
 
     @staticmethod
     def _apply_viewset_filters(viewset, queryset):
@@ -311,6 +344,29 @@ class ProductListService:
         logger.info(f"Cached product stats: {cache_key}")
 
         return stats
+
+
+class ProductCacheInvalidationService:
+    """
+    Simple invalidation service using version bumping.
+    """
+
+    @classmethod
+    def invalidate_all_product_caches(cls):
+        """
+        Invalidate ALL product list caches instantly.
+        This is now a single, atomic operation.
+        """
+        ProductCacheVersionManager.bump_version()
+        logger.info("Invalidated all product list caches via version bump")
+
+    @classmethod
+    def invalidate_all_product_caches_async(cls):
+        """
+        Async version for high-traffic scenarios.
+        """
+        ProductCacheVersionManager.bump_version_async()
+        logger.info("Invalidated all product list caches asynchronously")
 
 
 class CacheUsageExamples:

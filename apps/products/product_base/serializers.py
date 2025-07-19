@@ -3,7 +3,6 @@ from rest_framework import serializers
 from django.utils.text import slugify
 from apps.categories.models import Category
 from apps.categories.api.serializers import (
-    # CategoryDetailSerializer,
     CategorySummarySerializer,
 )
 from apps.core.serializers import (
@@ -14,7 +13,6 @@ from apps.core.serializers import (
 from apps.core.utils.breadcrumbs import BreadcrumbService
 from apps.products.product_brand.models import Brand
 from apps.products.product_condition.models import ProductCondition
-from apps.products.product_image.services import ProductImageService
 from .models import Product
 
 from apps.products.product_condition.serializers import ProductConditionDetailSerializer
@@ -116,13 +114,16 @@ class ProductUpdateSerializer(TimestampedModelSerializer):
         return super().update(instance, validated_data)
 
 
-class ProductListSerializer(TimestampedModelSerializer):
+class ProductListSerializer(serializers.ModelSerializer):
     """
-    Serializer for listing products with essential information.
-    Optimized for displaying products in listings.
+    Optimized serializer that works with prefetched data to prevent N+1 queries.
     """
 
-    brand_name = serializers.SerializerMethodField(read_only=True)
+    # Direct field access to prevent additional queries
+    brand_name = serializers.CharField(source="brand.name", read_only=True)
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    condition_name = serializers.CharField(source="condition.name", read_only=True)
+
     originalPrice = serializers.DecimalField(
         source="original_price",
         max_digits=10,
@@ -138,14 +139,11 @@ class ProductListSerializer(TimestampedModelSerializer):
         min_value=Decimal("0.00"),
     )
 
-    seller = serializers.SerializerMethodField()
-    # Use direct annotation fields instead of nested serializer for better performance
-    ratings = serializers.SerializerMethodField()
-
-    category_name = serializers.CharField(source="category.name", read_only=True)
-    condition_name = serializers.CharField(source="condition.name", read_only=True)
+    # Use method fields for computed data that depends on relationships
     image_url = serializers.SerializerMethodField()
     discount_percent = serializers.SerializerMethodField()
+    ratings = serializers.SerializerMethodField()
+    seller = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -168,48 +166,66 @@ class ProductListSerializer(TimestampedModelSerializer):
             "escrowFee",
             "location",
             "description",
-            "image_url",
             "discount_percent",
             "brand_name",
+            "image_url",
         ]
 
-    def get_brand_name(self, obj) -> str | None:
-        return obj.brand.name
-
-    def get_seller(self, obj) -> dict | None:
-        profile_obj = obj.seller
-        return UserShortSerializer(profile_obj, context=self.context).data
-
-    def get_image_url(self, obj) -> str | None:
-        # 1) Did we already prefetch primary_images?
-        imgs = getattr(obj, "primary_images", None)
-        if imgs is not None:
-            img = imgs[0] if imgs else None
-        else:
-            # 2) fallback to the old service method (one extra query)
-            img = ProductImageService.get_primary_image(obj.id)
-
-        if img and img.image_url:
-            request = self.context.get("request")
+    def get_image_url(self, obj):
+        """
+        Use prefetched images to avoid additional queries.
+        Uses the custom to_attr names from prefetch.
+        """
+        if hasattr(obj, "cached_primary_images") and obj.cached_primary_images:
             return (
-                request.build_absolute_uri(img.image_url) if request else img.image_url
+                obj.cached_primary_images[0].image.url
+                if obj.cached_primary_images[0].image
+                else None
             )
-
+        elif hasattr(obj, "cached_all_images") and obj.cached_all_images:
+            return (
+                obj.cached_all_images[0].image.url
+                if obj.cached_all_images[0].image
+                else None
+            )
         return None
 
-    def get_discount_percent(self, obj) -> float:
+    def get_discount_percent(self, obj):
+        """Calculate discount using prefetched data."""
         if obj.original_price and obj.price < obj.original_price:
-            discount = ((obj.original_price - obj.price) / obj.original_price) * 100
-            return round(discount, 1)
+            return round(
+                ((obj.original_price - obj.price) / obj.original_price) * 100, 1
+            )
         return 0
 
-    def get_ratings(self, obj) -> dict:
-        """Get ratings from annotated fields"""
+    def get_ratings(self, obj):
+        """
+        Use annotated fields to avoid queries.
+        Falls back to prefetched data if needed.
+        """
         return {
-            "average": getattr(obj, "avg_rating_db", 0),
-            "total": getattr(obj, "ratings_count_db", 0),
-            "verified_count": getattr(obj, "verified_ratings_count", 0),
+            "average": float(obj.avg_rating_db) if obj.avg_rating_db else 0.0,
+            "count": obj.ratings_count_db or 0,
+            "verified_count": obj.verified_ratings_count or 0,
         }
+
+    def get_seller(self, obj):
+        """
+        Use prefetched seller data to avoid additional queries.
+        """
+        if obj.seller:
+            return {
+                "id": obj.seller.id,
+                "name": f"{obj.seller.first_name} {obj.seller.last_name}".strip()
+                or obj.seller.email,
+                "email": obj.seller.email,
+                "avatar_url": (
+                    obj.seller.profile.avatar_url
+                    if obj.seller.profile and obj.seller.profile.avatar_url
+                    else None
+                ),
+            }
+        return None
 
 
 class ProductDetailSerializer(TimestampedModelSerializer):

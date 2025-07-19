@@ -210,10 +210,22 @@ class ProductImageService:
             return False
 
     @staticmethod
-    def get_primary_image(product_id: uuid) -> Optional["ProductImage"]:
+    def get_primary_image(product_id: uuid, product=None) -> Optional["ProductImage"]:
         """Get primary image with fallback to first image"""
+        # If product instance is provided, use prefetched data
+        if product and hasattr(product, "primary_images"):
+            # Use prefetched primary images
+            primary_images = getattr(product, "primary_images", [])
+            if primary_images:
+                return primary_images[0]
+
+            # Fallback to all active images if they're prefetched
+            all_images = getattr(product, "all_active_images", [])
+            if all_images:
+                return all_images[0]
+
+        # If no prefetched data or no product instance, use cache
         if CacheManager.cache_exists("product_image", "primary", product_id=product_id):
-            # Check cache first
             cache_key = CacheKeyManager.make_key(
                 "product_image", "primary", product_id=product_id
             )
@@ -226,6 +238,7 @@ class ProductImageService:
                 logger.warning(
                     f"Cache retrieval failed for primary image of product {product_id}: {str(e)}"
                 )
+
         cache_key = CacheKeyManager.make_key(
             "product_image", "primary", product_id=product_id
         )
@@ -233,12 +246,12 @@ class ProductImageService:
         logger.info(f"Fetching primary image for product {product_id} from database")
 
         try:
-            # Try to get primary image first
+            # Try to get primary image first with minimal fields
             image = (
                 ProductImage.objects.filter(
                     product_id=product_id, is_primary=True, is_active=True
                 )
-                .select_related("product")
+                .only("id", "product_id", "is_primary", "display_order")
                 .first()
             )
 
@@ -246,7 +259,7 @@ class ProductImageService:
             if not image:
                 image = (
                     ProductImage.objects.filter(product_id=product_id, is_active=True)
-                    .select_related("product")
+                    .only("id", "product_id", "is_primary", "display_order")
                     .order_by("display_order")
                     .first()
                 )
@@ -258,16 +271,37 @@ class ProductImageService:
             return None
 
     @staticmethod
-    def bulk_get_primary_images(product_ids: List[int]) -> Dict[int, "ProductImage"]:
+    def bulk_get_primary_images(
+        product_ids: List[int], products=None
+    ) -> Dict[int, "ProductImage"]:
         """Efficiently get primary images for multiple products"""
+        start_time = time.time()
+        # If products with prefetched data are provided, use them
+        if products:
+            result = {}
+            for product in products:
+                if hasattr(product, "primary_images") and product.primary_images:
+                    result[product.id] = product.primary_images[0]
+                elif (
+                    hasattr(product, "all_active_images") and product.all_active_images
+                ):
+                    result[product.id] = product.all_active_images[0]
+
+            # Only process uncached products that weren't in prefetched data
+            uncached_product_ids = [pid for pid in product_ids if pid not in result]
+            if not uncached_product_ids:
+                return result
+        else:
+            result = {}
+            uncached_product_ids = product_ids
+
+        # For products without prefetched data, use cache
         cache_keys = {
             pid: CacheKeyManager.make_key("product_image", "primary", product_id=pid)
-            for pid in product_ids
+            for pid in uncached_product_ids
         }
 
         cached_results = cache.get_many(cache_keys.values())
-        result = {}
-        uncached_product_ids = []
 
         # Process cached results
         for product_id, cache_key in cache_keys.items():
@@ -276,14 +310,16 @@ class ProductImageService:
             else:
                 uncached_product_ids.append(product_id)
 
-        # Fetch uncached images
+        # Fetch uncached images with minimal fields
         if uncached_product_ids:
-            start_time = time.time()
-
             # Optimized query for primary images
-            primary_images = ProductImage.objects.filter(
-                product_id__in=uncached_product_ids, is_primary=True, is_active=True
-            ).select_related("product")
+            primary_images = (
+                ProductImage.objects.filter(
+                    product_id__in=uncached_product_ids, is_primary=True, is_active=True
+                )
+                .only("id", "image", "product_id", "is_primary", "display_order")
+                .select_related("product")
+            )
 
             primary_dict = {img.product_id: img for img in primary_images}
 
@@ -296,6 +332,7 @@ class ProductImageService:
                     ProductImage.objects.filter(
                         product_id__in=missing_primary, is_active=True
                     )
+                    .only("id", "image", "product_id", "is_primary", "display_order")
                     .select_related("product")
                     .order_by("product_id", "display_order")
                     .distinct("product_id")

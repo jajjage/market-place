@@ -128,10 +128,10 @@
     "sqltools.connections": [
         {
             "previewLimit": 50,
-            "server": "db",
+            "server": "postgres",
             "port": 5432,
             "driver": "PostgreSQL",
-            "name": "saferade",
+            "name": "safetrade",
             "database": "postgres",
             "username": "postgres"
         }

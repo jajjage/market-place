@@ -109,6 +109,18 @@ def generate_seo_description_for_product(self, product_id, description_type="det
         return {"error": str(exc)}
 
 
+@shared_task(bind=True, base=BaseTaskWithRetry)
+def bump_product_cache_version(self):
+    """
+    Celery task to bump cache version asynchronously.
+    """
+    from apps.products.product_base.utils.cache_service import (
+        ProductCacheVersionManager,
+    )
+
+    ProductCacheVersionManager.bump_version()
+
+
 # @shared_task(bind=True, base=BaseTaskWithRetry)
 # def generate_multiple_seo_descriptions_for_product(
 #     self, product_id, description_types=None

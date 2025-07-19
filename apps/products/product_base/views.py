@@ -26,12 +26,12 @@ from apps.products.product_metadata.serializers import (
     ProductMetaDetailSerializer,
     ProductMetaWriteSerializer,
 )
+from apps.products.product_base.tasks import generate_seo_description_for_product
 from apps.products.product_metadata.services import ProductMetaService
 from .models import (
     Product,
 )
 from .serializers import (
-    ManageMetadataSerializer,
     ProductCreateSerializer,
     ProductUpdateSerializer,
     ProductListSerializer,
@@ -45,9 +45,8 @@ from apps.products.product_base.utils.rate_limiting import (
     ProductFeaturedRateThrottle,
 )
 
-from drf_spectacular.utils import extend_schema, OpenApiResponse
 
-logger = logging.getLogger("products_performance")
+logger = logging.getLogger(__name__)
 
 
 class ProductViewSet(BaseViewSet):
@@ -91,36 +90,6 @@ class ProductViewSet(BaseViewSet):
         context["request"] = self.request
         return context
 
-    def get_queryset(self):
-        """
-        Get optimized and cached queryset.
-        """
-        # Start with the base queryset (this should always be a QuerySet)
-        base_queryset = super().get_queryset()
-
-        # Apply permission-based filtering FIRST (while it's still a QuerySet)
-        if self.action == "list" and not self.request.user.is_staff:
-            base_queryset = base_queryset.filter(is_active=True)
-        elif self.action in ["retrieve", "update", "partial_update", "destroy"]:
-            if not self.request.user.is_staff:
-                base_queryset = base_queryset.filter(seller=self.request.user)
-        # request = self.request
-        # Then apply caching and optimization (ensure this returns a QuerySet)
-        optimized_queryset = ProductListService.get_cached_product_list(
-            self, base_queryset
-        )
-
-        # Ensure we're returning a QuerySet
-        if not hasattr(optimized_queryset, "filter"):
-            # If somehow we got a list, convert back to QuerySet
-            if isinstance(optimized_queryset, (list, tuple)) and optimized_queryset:
-                product_ids = [item.id for item in optimized_queryset]
-                return base_queryset.filter(id__in=product_ids)
-            else:
-                return base_queryset
-
-        return optimized_queryset
-
     def get_serializer_class(self):
         """
         Return different serializers based on the action.
@@ -140,7 +109,81 @@ class ProductViewSet(BaseViewSet):
             return ProductStatsSerializer
         return ProductDetailSerializer
 
-    @method_decorator(vary_on_cookie)
+    def get_queryset(self):
+        """
+        CLEAN VERSION: Only handle QuerySet logic, no caching.
+        Always returns a proper QuerySet for DRF to work with.
+        """
+        # Start with the base queryset
+        base_queryset = super().get_queryset()
+
+        # Apply permission-based filtering
+        if self.action == "list" and not self.request.user.is_staff:
+            base_queryset = base_queryset.filter(is_active=True)
+        elif self.action in ["retrieve", "update", "partial_update", "destroy"]:
+            if not self.request.user.is_staff:
+                base_queryset = base_queryset.filter(seller=self.request.user)
+
+        # For list action, return optimized queryset
+        if self.action == "list":
+            return ProductListService.get_optimized_product_queryset(base_queryset)
+
+        # For other actions, use your existing service
+        return base_queryset
+
+    def list(self, request, *args, **kwargs):
+        """
+        Handle caching ONLY in the list method using version-based caching.
+        This is cleaner and doesn't interfere with DRF's QuerySet expectations.
+        """
+        # Try cache first using the new version-based approach
+        cached_data = ProductListService.get_cached_list(request)
+        if cached_data:
+            logger.info("Cache HIT for product list")
+
+            # Handle pagination for cached data
+            page = self.paginate_queryset(cached_data)
+            if page is not None:
+                return self.get_paginated_response(page)
+
+            return self.success_response(data=cached_data)
+
+        # Cache miss - proceed with normal DRF flow
+        logger.info("Cache MISS for product list")
+
+        # Get the optimized queryset (this will use get_queryset())
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Handle pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            serialized_data = serializer.data
+
+            # Cache the serialized data using version-based caching
+            try:
+                ProductListService.set_cached_list(request, serialized_data)
+                logger.info(
+                    f"Cached serialized product data: {len(serialized_data)} items"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to cache product list: {str(e)}")
+
+            return self.get_paginated_response(serialized_data)
+
+        # Non-paginated response
+        serializer = self.get_serializer(queryset, many=True)
+        serialized_data = serializer.data
+
+        # Cache the serialized data using version-based caching
+        try:
+            ProductListService.set_cached_list(request, serialized_data)
+            logger.info(f"Cached serialized product data: {len(serialized_data)} items")
+        except Exception as e:
+            logger.warning(f"Failed to cache product list: {str(e)}")
+
+        return self.success_response(data=serialized_data)
+
     @action(
         detail=False,
         url_path="my-products",
@@ -205,13 +248,6 @@ class ProductViewSet(BaseViewSet):
     def by_condition(self, request, condition_id=None):
         return ProductConditionService.by_condition(self, request, condition_id)
 
-    @extend_schema(
-        responses={
-            200: ManageMetadataSerializer,  # your “success” schema
-            403: OpenApiResponse(description="Not the owner of this product"),
-            404: OpenApiResponse(description="Product not found"),
-        }
-    )
     @action(detail=True, methods=["get", "put", "patch"], url_path="manage_metadata")
     def manage_metadata(self, request, pk=None):
         """
@@ -259,6 +295,40 @@ class ProductViewSet(BaseViewSet):
                 return self.error_response(
                     message=str(e), status_code=status.HTTP_400_BAD_REQUEST
                 )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="generate-seo-description",
+        throttle_classes=[ProductListRateThrottle],
+    )
+    def generate_seo_description(self, request, pk=None):
+        """
+        Generate an SEO description for a product.
+        This is a POST action that triggers the background task to generate the description.
+        """
+        instance = self.get_object()
+
+        if not is_product_owner(self, request):
+            return self.error_response(
+                message="You can't generate SEO descriptions for products that don't belong to you",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Trigger the background task
+        result = generate_seo_description_for_product.delay(instance.id)
+
+        if result.successful:
+            return self.success_response(
+                data={
+                    "message": "SEO description generation started",
+                    "task_id": result.task_id,
+                }
+            )
+        else:
+            return self.error_response(
+                message=result.error, status_code=status.HTTP_400_BAD_REQUEST
+            )
 
 
 # Product retrieval by short code for social media sharing
