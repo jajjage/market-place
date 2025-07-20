@@ -92,7 +92,9 @@ DEBUG_TOOLBAR_CONFIG = {
     "SHOW_TOOLBAR_CALLBACK": lambda request: True,
 }
 
-FRONTEND_DOMAIN = "http://localhost:3000"  # or whatever port you use for your frontend
+FRONTEND_BASE_URL = (
+    "http://localhost:3000"  # or whatever port you use for your frontend
+)
 
 RATELIMIT_ENABLE = True
 RATELIMIT_USE_CACHE = "default"

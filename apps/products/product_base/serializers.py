@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.conf import settings
 from rest_framework import serializers
 from django.utils.text import slugify
 from apps.categories.models import Category
@@ -16,7 +17,7 @@ from apps.products.product_condition.models import ProductCondition
 from .models import Product
 
 from apps.products.product_condition.serializers import ProductConditionDetailSerializer
-from apps.products.product_image.serializers import ProductImageSerializer
+# from apps.products.product_image.serializers import ProductImageSerializer
 
 from apps.products.product_variant.serializers import ProductVariantSerializer
 from apps.products.product_brand.serializers import (
@@ -26,10 +27,13 @@ from apps.products.product_brand.serializers import (
 from apps.products.product_watchlist.serializers import (
     ProductWatchlistItemListSerializer,
 )
-from apps.products.product_metadata.serializers import ProductMetaDetailSerializer
+# from apps.products.product_metadata.serializers import ProductMetaDetailSerializer
 from apps.products.product_detail.serializers import (
     ProductDetailSerializer as ProductExtraDetailSerializer,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ProductCreateSerializer(TimestampedModelSerializer):
@@ -228,6 +232,158 @@ class ProductListSerializer(serializers.ModelSerializer):
         return None
 
 
+class ProductSEOSerializer(serializers.Serializer):
+    """Separate serializer for SEO-specific data"""
+
+    def get_structured_data(self, obj):
+        """Generate JSON-LD structured data"""
+        base_url = settings.FRONTEND_BASE_URL  # e.g., 'https://yoursite.com'
+
+        structured_data = {
+            "@context": "https://schema.org/",
+            "@type": "Product",
+            "name": obj.title,
+            "description": obj.description or f"Authentic {obj.brand.name} {obj.title}",
+            "brand": {
+                "@type": "Brand",
+                "name": obj.brand.name,
+                "url": f"{base_url}/brands/{obj.brand.slug}",
+            },
+            "category": obj.category.name,
+            "condition": self._get_condition_text(obj.condition.name),
+            "url": f"{base_url}/products/{obj.short_code}",
+            "image": self._get_product_images(obj),
+            "sku": obj.short_code,
+        }
+
+        # Add pricing info if available
+        if obj.price and float(obj.price) > 0:
+            structured_data["offers"] = {
+                "@type": "Offer",
+                "price": str(obj.price),
+                "priceCurrency": obj.currency,
+                "availability": (
+                    "https://schema.org/InStock"
+                    if obj.is_active
+                    else "https://schema.org/OutOfStock"
+                ),
+                "url": f"{base_url}/products/{obj.short_code}",
+                "seller": {"@type": "Organization", "name": "TrustLock"},
+            }
+
+        # Add ratings if available using annotated fields
+        avg_rating = getattr(obj, "avg_rating_db", None)
+        ratings_count = getattr(obj, "ratings_count_db", 0)
+        if avg_rating:
+            structured_data["aggregateRating"] = {
+                "@type": "AggregateRating",
+                "ratingValue": str(avg_rating),
+                "reviewCount": str(ratings_count),
+            }
+
+        # Add breadcrumbs
+        breadcrumb_list = []
+        breadcrumbs = self._get_breadcrumbs(obj)
+        for i, breadcrumb in enumerate(breadcrumbs):
+            if breadcrumb["href"]:  # Skip items without URLs
+                breadcrumb_list.append(
+                    {
+                        "@type": "ListItem",
+                        "position": i + 1,
+                        "name": breadcrumb["name"],
+                        "item": f"{base_url}{breadcrumb['href']}",
+                    }
+                )
+
+        if breadcrumb_list:
+            structured_data["breadcrumb"] = {
+                "@type": "BreadcrumbList",
+                "itemListElement": breadcrumb_list,
+            }
+
+        return structured_data
+
+    def _get_condition_text(self, condition):
+        """Convert condition code to readable text"""
+        condition_map = {
+            "new": "NewCondition",
+            "open_box": "OpenBoxCondition",
+            "used_good": "UsedCondition",
+            "refurbished": "RefurbishedCondition",
+        }
+        return f"https://schema.org/{condition_map.get(condition, 'UsedCondition')}"
+
+    def _get_product_images(self, obj):
+        """Get product images for structured data"""
+        if obj.images:
+            return [img for img in obj.images.all()[:5]]  # Max 5 images
+        return []
+
+    def to_representation(self, obj):
+        base_url = settings.FRONTEND_BASE_URL
+
+        # Generate SEO title (60 chars max)
+        seo_title = f"{obj.title} | {obj.brand.name}"
+        if len(seo_title) > 60:
+            seo_title = f"{obj.title[:50]}... | {obj.brand.name}"
+
+        # Generate meta description (160 chars max)
+        meta_description = (
+            f"Shop authentic {obj.brand.name} {obj.title.lower()}. "
+            f"{obj.category.name} in {obj.condition.name} condition. "
+            f"Secure escrow payment and authenticity guaranteed."
+        )[:160]
+
+        # Generate keywords from your existing data
+        keywords = self._generate_seo_keywords(obj)
+        first_image = obj.images.first()
+
+        return {
+            "title": seo_title,
+            "meta_description": meta_description,
+            "canonical_url": f"{base_url}/products/{obj.slug}",
+            "keywords": keywords,
+            "structured_data": self.get_structured_data(obj),
+            "open_graph": {
+                "title": seo_title,
+                "description": meta_description,
+                "image": first_image.url if first_image else None,
+                "url": f"{base_url}/products/{obj.slug}",
+                "type": "product",
+            },
+        }
+
+    def _get_breadcrumbs(self, obj) -> list[dict]:
+        service = BreadcrumbService()
+        breadcrumb_data = service.for_product(obj, include_brand=True)
+        return BreadcrumbSerializer(breadcrumb_data, many=True).data
+
+    def _generate_seo_keywords(self, obj):
+        """Generate relevant SEO keywords"""
+        meta = getattr(obj, "meta", None)
+        if meta and meta.seo_keywords:
+            # Use existing keywords if available
+            return meta.seo_keywords
+
+        base_keywords = [
+            f"{obj.brand.name.lower()} {obj.title.lower()}",
+            f"authentic {obj.brand.name.lower()}",
+            f"{obj.brand.name.lower()} {obj.category.name.lower()}",
+            f"pre-owned {obj.brand.name.lower()}",
+            f"{obj.condition} {obj.brand.name.lower()}",
+            f"luxury {obj.category.name.lower()}",
+            f"{obj.brand.name.lower()} for sale",
+        ]
+
+        # Add specific product terms
+        title_words = obj.title.lower().split()
+        for word in title_words:
+            if len(word) > 3:  # Skip short words
+                base_keywords.append(f"{word} {obj.brand.name.lower()}")
+
+        return list(set(base_keywords))  # Remove duplicates
+
+
 class ProductDetailSerializer(TimestampedModelSerializer):
     """
     Detailed serializer for a single product.
@@ -277,13 +433,13 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
         min_value=Decimal("0.00"),
     )
-    images = ProductImageSerializer(many=True, read_only=True)
+    # images = ProductImageSerializer(many=True, read_only=True)
     seller = serializers.SerializerMethodField()
     # Use direct annotation fields for ratings
     ratings = serializers.SerializerMethodField()
     variants = serializers.SerializerMethodField()
     details = serializers.SerializerMethodField()
-    breadcrumbs = serializers.SerializerMethodField()
+    # breadcrumbs = serializers.SerializerMethodField()
     category = CategorySummarySerializer(read_only=True)
     total_views = serializers.IntegerField(
         source="meta.views_count",
@@ -297,7 +453,8 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     discount_percent = serializers.SerializerMethodField()
     watching_count = serializers.SerializerMethodField()
     brand = BrandListSerializer(read_only=True)
-    metadata = serializers.SerializerMethodField()
+    # metadata = serializers.SerializerMethodField()
+    seo = serializers.SerializerMethodField()
     watchlist_items = serializers.SerializerMethodField()
 
     class Meta:
@@ -322,7 +479,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "brand",
             "slug",
             "short_code",
-            "images",
+            # "images",
             "escrowFee",
             "location",
             "description",
@@ -333,7 +490,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "base_variant_price",
             "ratings",
             "details",
-            "breadcrumbs",
+            # "breadcrumbs",
             "discount_percent",
             "watching_count",
             "authenticity_guaranteed",
@@ -342,7 +499,8 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "negotiation_deadline",
             "max_negotiation_rounds",
             "brand",
-            "metadata",
+            # "metadata",
+            "seo",
             "watchlist_items",
             "total_views",
             "user_has_purchased",
@@ -366,6 +524,11 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     #         "variant_types": getattr(obj, "variant_types", []),
     #     }
 
+    def get_seo(self, obj):
+        """Add SEO data to the response"""
+        seo_serializer = ProductSEOSerializer()
+        return seo_serializer.to_representation(obj)
+
     def get_discount_percent(self, obj) -> float:
         if obj.original_price and obj.price < obj.original_price:
             discount = ((obj.original_price - obj.price) / obj.original_price) * 100
@@ -375,11 +538,6 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     def get_watching_count(self, obj) -> int:
         """Get the number of users watching this product"""
         return obj.watchers.count()
-
-    def get_breadcrumbs(self, obj) -> list[dict]:
-        service = BreadcrumbService()
-        breadcrumb_data = service.for_product(obj, include_brand=True)
-        return BreadcrumbSerializer(breadcrumb_data, many=True).data
 
     def get_watchlist_items(self, obj) -> list[dict]:
         items = getattr(obj, "prefetched_watchlist", [])
@@ -393,22 +551,16 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             BrandDetailSerializer(brand, context=self.context).data if brand else None
         )
 
-    def get_metadata(self, obj) -> dict | None:
-        meta = getattr(obj, "meta", None)
-        return (
-            ProductMetaDetailSerializer(meta, context=self.context).data
-            if meta
-            else None
-        )
-
     def get_details(self, obj) -> list[dict]:
         details = getattr(obj, "prefetched_details", [])
+        logger.info(f"detail: {details}")
         return ProductExtraDetailSerializer(
             details, many=True, context=self.context
         ).data
 
     def get_variants(self, obj) -> list[dict]:
         variants = getattr(obj, "prefetched_variants", [])
+        logger.info(f"variants: {variants}")
         out = []
         for v in variants:
             opts = [

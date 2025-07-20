@@ -13,6 +13,10 @@ from .models import (
 )
 from .services import ProductVariantService
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class ProductVariantTypeBulkCreateSerializer(serializers.Serializer):
     """Serializer for bulk creating variant types"""
@@ -195,33 +199,6 @@ class ProductVariantSerializer(TimestampedModelSerializer):
             "images",
             "option_summary",
         ]
-        list_serializer_class = ProductVariantListSerializer
-
-    def to_representation(self, instance):
-        """Optimize single instance representation"""
-        ret = super().to_representation(instance)
-
-        # Calculate final_price only if price exists
-        if instance.price is not None:
-            price_adjustments = sum(
-                opt.price_adjustment
-                for opt in instance.options.all()
-                if opt.variant_type.affects_price
-            )
-            ret["final_price"] = float(instance.price + price_adjustments)
-
-        # Calculate availability
-        ret["available_quantity"] = instance.stock_quantity - instance.reserved_quantity
-        ret["is_in_stock"] = ret["available_quantity"] > 0
-        ret["is_low_stock"] = instance.stock_quantity <= instance.low_stock_threshold
-
-        # Generate option summary
-        ret["option_summary"] = " - ".join(
-            f"{opt.variant_type.name}: {opt.display_value or opt.value}"
-            for opt in instance.options.all()[:3]
-        )
-
-        return ret
 
     def get_final_price(self, obj) -> str | None:
         """Get final price including option adjustments"""
@@ -230,6 +207,7 @@ class ProductVariantSerializer(TimestampedModelSerializer):
 
     def get_available_quantity(self, obj) -> int:
         """Get available quantity (stock - reserved)"""
+        logger.info(f"get_available_quantity: {obj.available_quantity}")
         return obj.available_quantity
 
     def get_is_in_stock(self, obj) -> bool:
@@ -259,6 +237,37 @@ class ProductVariantSerializer(TimestampedModelSerializer):
             }
         return None
 
+    def to_representation(self, instance):
+        """Optimize single instance representation"""
+        ret = super().to_representation(instance)
+
+        # Calculate final_price only if price exists
+        if instance.price is not None:
+            price_adjustments = sum(
+                opt.price_adjustment
+                for opt in instance.options.all()
+                if opt.variant_type.affects_price
+            )
+            ret["final_price"] = float(instance.final_price + price_adjustments)
+
+        # Calculate availability
+        logger.info(
+            f"Calculating final price for variant {instance.id}: {instance.price}"
+        )
+        ret["available_quantity"] = (
+            instance.available_quantity - instance.total_inventory
+        )
+        ret["is_in_stock"] = ret["available_quantity"] > 0
+        ret["is_low_stock"] = instance.total_inventory <= instance.low_stock_threshold
+
+        # Generate option summary
+        ret["option_summary"] = " - ".join(
+            f"{opt.variant_type.name}: {opt.display_value or opt.value}"
+            for opt in instance.options.all()[:3]
+        )
+
+        return ret
+
 
 class ProductVariantCreateSerializer(TimestampedModelSerializer):
     """Serializer for creating product variants"""
@@ -281,6 +290,7 @@ class ProductVariantCreateSerializer(TimestampedModelSerializer):
             "low_stock_threshold",
             "is_active",
             "weight",
+            "total_inventory",
             "dimensions_length",
             "dimensions_width",
             "dimensions_height",
