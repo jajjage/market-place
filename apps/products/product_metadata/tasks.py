@@ -1,5 +1,5 @@
 import logging
-from django.db import transaction, IntegrityError
+from django.db import transaction
 from celery import shared_task
 from apps.core.tasks import BaseTaskWithRetry
 from .utils.keywords_context import (
@@ -12,9 +12,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task(bind=True, base=BaseTaskWithRetry)
 def generate_seo_keywords_for_product(self, product_id):
-    """
-    Generate SEO keywords for a product using Google GenAI.
-    """
+    """Generate SEO keywords for a product using Google GenAI."""
     try:
         from .models import ProductMeta
         from apps.products.product_base.models import Product
@@ -22,7 +20,7 @@ def generate_seo_keywords_for_product(self, product_id):
             GoogleGenAISEOKeywordService,
         )
 
-        # Get the product
+        # Get the product first (outside transaction)
         try:
             product = Product.objects.select_related(
                 "brand", "category", "condition"
@@ -31,40 +29,33 @@ def generate_seo_keywords_for_product(self, product_id):
             logger.error(f"Product with ID {product_id} not found")
             return {"error": f"Product {product_id} not found"}
 
-        # Extract product information to build seed term and context
+        # Generate keywords (outside transaction to avoid long-running transaction)
         seed_term, context_info = extract_product_keywords_and_context(product)
 
         if not seed_term:
             logger.warning(f"No seed term could be generated for product {product_id}")
-            seed_term = "product"  # Fallback
+            seed_term = "product"
 
-        # Initialize the GenAI service
+        # Generate keywords
+        keywords = []
         try:
             service = GoogleGenAISEOKeywordService()
-
-            # Generate keywords using AI with product context
             keywords = service.generate_keywords(
                 seed_term=seed_term,
-                count=25,  # Generate more keywords for better selection
-                intent_filter="commercial",  # Focus on commercial intent for products
+                count=25,
+                intent_filter="commercial",
                 target_audience=context_info.get("target_audience"),
                 business_type="e-commerce",
             )
-
-            # If AI generation fails, use fallback method
-            if not keywords:
-                logger.warning(
-                    f"AI keyword generation failed for product {product_id}, using fallback"
-                )
-                keywords = generate_fallback_keywords(product, seed_term)
-
         except Exception as e:
             logger.error(
                 f"Error with GoogleGenAISEOKeywordService for product {product_id}: {str(e)}"
             )
+
+        # Fallback if needed
+        if not keywords:
             keywords = generate_fallback_keywords(product, seed_term)
 
-        # Ensure we have at least some keywords
         if not keywords:
             keywords = [
                 f"buy {product.title}",
@@ -74,27 +65,32 @@ def generate_seo_keywords_for_product(self, product_id):
                 f"cheap {product.title}",
             ]
 
-        # Save to database
-        with transaction.atomic():
-            try:
-                # Try to create first since it's the common case
-                pm = ProductMeta.objects.create(
+        # Now save to database in a single atomic operation
+        try:
+            with transaction.atomic():
+                pm, created = ProductMeta.objects.update_or_create(
                     product_id=product_id,
-                    seo_keywords=", ".join(keywords[:50]),
-                    seo_generation_queued=True,
+                    defaults={
+                        "seo_keywords": keywords[:50],
+                        "seo_generation_queued": False,  # Mark as completed
+                    },
                 )
-                action = "created"
-            except IntegrityError:
-                # Handle the rare case where it already exists
-                pm = ProductMeta.objects.select_for_update().get(product_id=product_id)
-                pm.seo_keywords = ", ".join(keywords[:50])
-                pm.seo_generation_queued = True
-                pm.save(update_fields=["seo_keywords", "seo_generation_queued"])
-                action = "updated"
 
-            logger.info(
-                f"SEO keywords {action} for product {product_id}: {len(keywords)} keywords"
-            )
+                action = "created" if created else "updated"
+                logger.info(
+                    f"SEO keywords {action} for product {product_id}: {len(keywords)} keywords"
+                )
+
+        except Exception as db_error:
+            logger.error(f"Database error for product {product_id}: {str(db_error)}")
+            # Reset the queued flag so it can be retried
+            try:
+                ProductMeta.objects.filter(product_id=product_id).update(
+                    seo_generation_queued=False
+                )
+            except Exception:
+                pass  # If this fails, the task will retry anyway
+            raise
 
         return {
             "success": True,
@@ -107,4 +103,19 @@ def generate_seo_keywords_for_product(self, product_id):
         logger.error(
             f"Error generating SEO keywords for product {product_id}: {str(exc)}"
         )
+
+        # Reset queued flag on error so task can be retried
+        try:
+            ProductMeta.objects.filter(product_id=product_id).update(
+                seo_generation_queued=False
+            )
+        except Exception:
+            pass
+
+        # Retry the task if we have retries left
+        if self.request.retries < self.max_retries:
+            raise self.retry(
+                countdown=60 * (2**self.request.retries)
+            )  # Exponential backoff
+
         return {"error": str(exc)}

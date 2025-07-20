@@ -4,10 +4,10 @@ from django.db import transaction, models
 from django.db.models import Case, When
 from django.core.cache import cache
 from django.shortcuts import get_object_or_404
-from django.core.exceptions import PermissionDenied
 
 from apps.core.utils.cache_manager import CacheManager
 from apps.products.product_base.models import Product
+from apps.products.product_metadata.tasks import generate_seo_keywords_for_product
 from .models import ProductMeta
 from apps.core.utils.cache_key_manager import CacheKeyManager
 
@@ -26,19 +26,6 @@ class ProductMetaService:
             use_cache_buffer,
         )
 
-        # 1) Existence check
-        try:
-            exists = Product.objects.filter(pk=product_id, is_active=True).exists()
-        except Exception:
-            logger.exception("Failed during existence check for Product %s", product_id)
-            raise
-        if not exists:
-            logger.error("Product %s does not exist or is inactive", product_id)
-            raise ValueError(
-                f"Product with ID {product_id} does not exist or is inactive"
-            )
-
-        # 2) get_or_create ProductMeta
         try:
             product_meta, created = ProductMeta.objects.get_or_create(
                 product_id=product_id,
@@ -49,21 +36,13 @@ class ProductMetaService:
             logger.exception("Failed to get_or_create ProductMeta for %s", product_id)
             raise
         # We may use this in the future if there is need
-        # with transaction.atomic():
-        #     print("inside the meta")
-        #     pm_locked = ProductMeta.objects.select_for_update().get(
-        #         product_id=product_id
-        #     )
+        if not product_meta.seo_keywords and not product_meta.seo_generation_queued:
+            with transaction.atomic():
 
-        #     # only queue if neither keywords nor a queued flag exist
-        #     logger.info(
-        #         f"{not pm_locked.seo_keywords} : {not pm_locked.seo_generation_queued}"
-        #     )
-        #     if not pm_locked.seo_keywords and not pm_locked.seo_generation_queued:
-        #         logger.info(f"Queueing SEO generation for product {product_id}")
-        #         transaction.on_commit(
-        #             lambda: generate_seo_keywords_for_product.delay(product_id)
-        #         )
+                logger.info(f"Queueing SEO generation for product {product_id}")
+                transaction.on_commit(
+                    lambda: generate_seo_keywords_for_product.delay(product_id)
+                )
 
         if use_cache_buffer:
             # 3) Build cache key
@@ -135,19 +114,11 @@ class ProductMetaService:
 
     @staticmethod
     @transaction.atomic
-    def get_or_create_product_meta(product_id: int, user, data: dict):
+    def get_or_create_product_meta(product: Product, user, data: dict):
         """
         Update ProductMeta for a product owned by the user.
         This enforces ownership rules for metadata management.
         """
-        from apps.products.product_base.models import Product
-
-        product = get_object_or_404(Product, pk=product_id, is_active=True)
-
-        # Check ownership
-        if hasattr(product, "owner") and product.owner != user:
-            raise PermissionDenied("You can only update metadata for your own products")
-
         # Get or create the metadata
         product_meta, created = ProductMeta.objects.get_or_create(
             product=product,
@@ -376,7 +347,7 @@ class ProductMetaService:
 
         # Find products without metadata
         products_without_meta = Product.objects.filter(
-            is_active=True, productmeta__isnull=True
+            is_active=True, meta__isnull=True
         )
 
         meta_objects = []

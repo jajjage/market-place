@@ -111,24 +111,42 @@ class ProductViewSet(BaseViewSet):
 
     def get_queryset(self):
         """
-        CLEAN VERSION: Only handle QuerySet logic, no caching.
-        Always returns a proper QuerySet for DRF to work with.
+        Optimized QuerySet that uses select_related and prefetch_related
+        to avoid N+1 problems in detail views.
         """
-        # Start with the base queryset
         base_queryset = super().get_queryset()
 
-        # Apply permission-based filtering
-        if self.action == "list" and not self.request.user.is_staff:
-            base_queryset = base_queryset.filter(is_active=True)
-        elif self.action in ["retrieve", "update", "partial_update", "destroy"]:
-            if not self.request.user.is_staff:
-                base_queryset = base_queryset.filter(seller=self.request.user)
+        # Optimize for any action that retrieves a single instance
+        detail_actions = [
+            "retrieve",
+            "update",
+            "partial_update",
+            "destroy",
+            "my_products",
+            "featured",
+            "stats",
+            "get_share_links",
+            "toggle_negotiation",
+            "toggle_active",
+            "toggle_featured",
+            "generate_seo_description",
+            "by_condition",
+            "manage_metadata",
+        ]
 
-        # For list action, return optimized queryset
+        # Optimize for any action that retrieves a single instance
+        if self.action in detail_actions:
+            # Check for staff status inside the action if needed, not in the queryset
+            return base_queryset.select_related(
+                "seller", "category", "brand", "condition"
+            ).prefetch_related("ratings", "product_details", "meta")
+
+        # Keep list view optimization separate
         if self.action == "list":
+            if not self.request.user.is_staff:
+                base_queryset = base_queryset.filter(is_active=True)
             return ProductListService.get_optimized_product_queryset(base_queryset)
 
-        # For other actions, use your existing service
         return base_queryset
 
     def list(self, request, *args, **kwargs):
@@ -207,30 +225,51 @@ class ProductViewSet(BaseViewSet):
 
     @action(detail=True, url_path="toggle-active", methods=["post"])
     def toggle_active(self, request, pk=None):
-        if not is_product_owner(self, request):
+        # 1. Get the object ONCE using the optimized queryset
+        product = self.get_object()
+
+        # 2. Pass the fetched object to the permission check
+        if not is_product_owner(self, request, product):
             return self.error_response(
-                message="You can't update items that doesn't belong to you",
-                status_code=status.HTTP_404_NOT_FOUND,
+                message="You can't update items that don't belong to you.",
+                status_code=status.HTTP_403_FORBIDDEN,  # 403 is more appropriate
             )
-        return ProductToggleService.toggle_active(self, request, pk)
+        is_active = ProductToggleService.toggle_active(product)
+
+        return self.success_response(data=is_active)
 
     @action(detail=True, url_path="toggle-featured", methods=["post"])
     def toggle_featured(self, request, pk=None):
-        if not is_product_owner(self, request):
+        # 1. Get the object ONCE using the optimized queryset
+        product = self.get_object()
+
+        # 2. Pass the fetched object to the permission check
+        if not is_product_owner(self, request, product):
             return self.error_response(
-                message="You can't update items that doesn't belong to you",
-                status_code=status.HTTP_404_NOT_FOUND,
+                message="You can't update items that don't belong to you.",
+                status_code=status.HTTP_403_FORBIDDEN,  # 403 is more appropriate
             )
-        return ProductToggleService.toggle_featured(self, request, pk)
+
+        # 3. Pass the fetched object to the service
+        is_featured = ProductToggleService.toggle_featured(product)
+        return self.success_response(data=is_featured)
 
     @action(detail=True, url_path="toggle-negotiation", methods=["post"])
     def toggle_negotiation(self, request, pk=None):
-        if not is_product_owner(self, request):
+        # 1. Get the object ONCE using the optimized queryset
+        product = self.get_object()
+
+        # 2. Pass the fetched object to the permission check
+        if not is_product_owner(self, request, product):
             return self.error_response(
-                message="You can't update items that doesn't belong to you",
-                status_code=status.HTTP_404_NOT_FOUND,
+                message="You can't update items that don't belong to you.",
+                status_code=status.HTTP_403_FORBIDDEN,  # 403 is more appropriate
             )
-        return ProductToggleService.toggle_negotiation(self, request, pk)
+
+        # 3. Pass the fetched object to the service
+        is_negotiable = ProductToggleService.toggle_negotiation(product)
+
+        return self.success_response(data=is_negotiable)
 
     @action(detail=True, methods=["get"])
     def watchers(self, request, pk=None):
@@ -255,10 +294,10 @@ class ProductViewSet(BaseViewSet):
         GET: Retrieve current metadata (creates if doesn't exist)
         PATCH/PUT: Update metadata
         """
-        instance = self.get_object()
+        product = self.get_object()
 
         # Check ownership (assuming your Product model has an 'owner' field)
-        if hasattr(instance, "owner") and instance.owner != request.user:
+        if not is_product_owner(self, request, product):
             return self.error_response(
                 message="You can only manage metadata for your own products",
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -268,7 +307,7 @@ class ProductViewSet(BaseViewSet):
             # Get or create metadata
             try:
                 meta, created = meta_services.get_or_create_product_meta(
-                    product_id=instance.id, user=request.user, data=self.request.data
+                    product=product, user=request.user, data=self.request.data
                 )
                 serializer = ProductMetaDetailSerializer(
                     meta, context={"request": request}
@@ -285,7 +324,7 @@ class ProductViewSet(BaseViewSet):
                 # You might want to create a separate serializer for metadata updates
                 # For now, assuming you have the data in request.data
                 meta, create = meta_services.get_or_create_product_meta(
-                    product_id=instance.id, user=request.user, data=request.data
+                    product_id=product.id, user=request.user, data=request.data
                 )
                 serializer = ProductMetaWriteSerializer(
                     meta, context={"request": request}
@@ -307,16 +346,16 @@ class ProductViewSet(BaseViewSet):
         Generate an SEO description for a product.
         This is a POST action that triggers the background task to generate the description.
         """
-        instance = self.get_object()
+        product = self.get_object()
 
-        if not is_product_owner(self, request):
+        if not is_product_owner(self, request, product):
             return self.error_response(
                 message="You can't generate SEO descriptions for products that don't belong to you",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
         # Trigger the background task
-        result = generate_seo_description_for_product.delay(instance.id)
+        result = generate_seo_description_for_product.delay(product.id)
 
         if result.successful:
             return self.success_response(
@@ -348,18 +387,26 @@ class ProductDetailByShortCode(generics.RetrieveAPIView, BaseAPIView):
     permission_classes = [permissions.AllowAny]
 
     def retrieve(self, request, *args, **kwargs):
-        product = ProductDetailService.retrieve_by_shortcode(
-            self, request, *args, **kwargs
+        short_code = self.kwargs.get("short_code")
+        serialized_product_data = ProductDetailService.retrieve_by_shortcode(
+            self, request, short_code
         )
+        logger.info(
+            f"Product Id: {serialized_product_data["id"]} retrieved by shortcode: {short_code}"
+        )
+        if not serialized_product_data:
+            return self.error_response(status_code=status.HTTP_404_NOT_FOUND)
 
-        if product:
-            instance = self.get_object()
-            try:
-                ProductMetaService.increment_product_view_count(
-                    product_id=instance.id, use_cache_buffer=True
-                )
-            except Exception as e:
-                logger.error(
-                    f"Error incrementing view count for product {instance.id}: {e}"
-                )
-        return product
+        # 2. Increment the view count as a separate, atomic operation
+        # This service handles the necessary FOR UPDATE query internally.
+        try:
+            # Pass the identifier, not the whole object
+            ProductMetaService.increment_product_view_count(
+                product_id=serialized_product_data["id"],
+                use_cache_buffer=True,
+            )
+        except Exception as e:
+            logger.error(f"Error incrementing view count for product {short_code}: {e}")
+
+        # 3. Return the cached data
+        return self.success_response(data=serialized_product_data)

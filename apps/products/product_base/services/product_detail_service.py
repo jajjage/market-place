@@ -25,8 +25,7 @@ User = get_user_model()
 
 class ProductDetailService:
     @staticmethod
-    def retrieve_by_shortcode(view, request, *args, **kwargs):
-        short_code = kwargs.get("short_code")
+    def retrieve_by_shortcode(view, request, short_code):
         if CacheManager.cache_exists(
             "product_base", "detail_by_shortcode", short_code=short_code
         ):
@@ -36,10 +35,7 @@ class ProductDetailService:
             )
             cached_data = cache.get(cache_key)
             logger.info(f"Cache HIT for product detail by shortcode: {cache_key}")
-            return view.success_response(
-                data=cached_data,
-                message="product retrieved from cache successfully",
-            )
+            return cached_data
 
         try:
             # Use the optimized queryset instead of simple get()
@@ -62,10 +58,7 @@ class ProductDetailService:
         logger.info(f"Cache MISS for product detail by shortcode: {cache_key}")
         cache.set(cache_key, serialized_data, view.CACHE_TTL)
         logger.info(f"Cached product detail by shortcode: {cache_key}")
-        return view.success_response(
-            data=serialized_data,
-            message="product retrieved successfully",
-        )
+        return serialized_data
 
     @staticmethod
     def invalidate_product_cache(short_code):
