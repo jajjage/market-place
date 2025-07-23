@@ -1,10 +1,16 @@
 import logging
-from django.db.models import Prefetch, Avg, Count, Q, F, Exists, OuterRef, Value
+from django.db.models import Prefetch, Avg, Count, Q, Exists, OuterRef, Value
 from apps.products.product_base.models import Product
+from apps.products.product_metadata.models import ProductMeta
 from apps.products.product_rating.models import ProductRating
 from apps.products.product_detail.models import ProductDetail  # your “detail” model
 from apps.products.product_image.models import ProductImage
-from apps.products.product_variant.models import ProductVariant
+from apps.products.product_variant.models import (
+    ProductVariant,
+    ProductVariantImage,
+    ProductVariantOption,
+    ProductVariantType,
+)
 from apps.products.product_watchlist.models import ProductWatchlistItem
 from apps.transactions.models import EscrowTransaction
 from django.contrib.auth import get_user_model
@@ -76,7 +82,6 @@ class ProductDetailService:
             "condition",
             "seller",
             "seller__profile",
-            "meta",
         )
 
     @staticmethod
@@ -93,24 +98,6 @@ class ProductDetailService:
             to_attr="approved_ratings",
         )
 
-        # This user's own rating
-        user_rating = None
-        watch_prefetch = None
-        annotations = {}
-        # Watchlist items for this user
-        if request.user.is_authenticated:
-            watch_prefetch = Prefetch(
-                "watchers",
-                queryset=ProductWatchlistItem.objects.filter(user=request.user),
-                to_attr="prefetched_watchlist",
-            )
-
-            user_rating = Prefetch(
-                "ratings",
-                queryset=ratings_qs.filter(user=request.user),
-                to_attr="user_rating",
-            )
-
         # ProductDetail extras
         details_prefetch = Prefetch(
             "product_details",
@@ -118,37 +105,88 @@ class ProductDetailService:
             to_attr="prefetched_details",
         )
 
-        # Primary image only
+        meta_prefetch = Prefetch(
+            "meta",
+            queryset=ProductMeta.objects.all(),
+            to_attr="prefetched_meta",
+        )
+
+        # Images - be more specific about ordering to avoid repeated queries
         primary_image = Prefetch(
             "images",
-            queryset=ProductImage.objects.filter(is_active=True, is_primary=True),
+            queryset=ProductImage.objects.filter(
+                is_active=True, is_primary=True
+            ).order_by("display_order"),
             to_attr="primary_images",
         )
 
-        # Variants + their options/images
-        variant_opts = Prefetch("options", to_attr="prefetched_variant_options")
-        variant_imgs = Prefetch("images", to_attr="prefetched_variant_images")
+        all_images_prefetch = Prefetch(
+            "images",
+            queryset=ProductImage.objects.filter(is_active=True).order_by(
+                "display_order"
+            ),
+            to_attr="prefetched_images",
+        )
+
+        # First set up variant type prefetch to avoid duplicate queries
+        variant_types_qs = ProductVariantType.objects.all()
+
+        # Set up variant options with optimized type loading
+        options_prefetch = Prefetch(
+            "options",
+            queryset=(
+                ProductVariantOption.objects.select_related("variant_type").order_by(
+                    "sort_order", "value"
+                )
+            ),
+            to_attr="prefetched_variant_options",
+        )
+
+        # Set up variant images prefetch
+        variant_imgs_prefetch = Prefetch(
+            "images",
+            queryset=ProductVariantImage.objects.order_by("sort_order"),
+            to_attr="prefetched_variant_images",
+        )
+
+        # Main variant prefetch with optimized related data loading
         variant_prefetch = Prefetch(
             "variants",
-            queryset=ProductVariant.objects.prefetch_related(
-                variant_opts, variant_imgs
+            queryset=(
+                ProductVariant.objects.select_related(
+                    "product"
+                )  # Add this to optimize the reverse lookup
+                .prefetch_related(options_prefetch, variant_imgs_prefetch)
+                .order_by("id")
             ),
             to_attr="prefetched_variants",
         )
+
         prefetches = [
             detailed_ratings,
             details_prefetch,
             primary_image,
+            all_images_prefetch,
             variant_prefetch,
+            meta_prefetch,
         ]
 
-        if user_rating:
-            prefetches.append(user_rating)
-        if watch_prefetch:
-            prefetches.append(watch_prefetch)
+        if request.user.is_authenticated:
+            watch_prefetch = Prefetch(
+                "watchers",
+                queryset=ProductWatchlistItem.objects.filter(user=request.user),
+                to_attr="prefetched_watchlist",
+            )
+            user_rating = Prefetch(
+                "ratings",
+                queryset=ratings_qs.filter(user=request.user),
+                to_attr="user_rating",
+            )
+            prefetches.extend([watch_prefetch, user_rating])
 
         base = base.prefetch_related(*prefetches)
 
+        # Your existing annotations
         annotations = {
             "avg_rating_db": Avg(
                 "ratings__rating", filter=Q(ratings__is_approved=True)
@@ -159,7 +197,6 @@ class ProductDetailService:
                 filter=Q(ratings__is_approved=True, ratings__is_verified_purchase=True),
             ),
             "watchers_count": Count("watchers", distinct=True),
-            "total_views": F("meta__views_count"),
         }
 
         if request.user.is_authenticated:

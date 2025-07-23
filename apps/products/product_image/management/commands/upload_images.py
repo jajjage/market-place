@@ -81,7 +81,7 @@ class Command(BaseCommand):
                 "variant_name": entry.get("variant_name"),
                 "created_by_user": not user.is_staff,
             }
-
+            # self.stdout.write(f"args: {task_kwargs}")
             try:
                 # 3. Enqueue Celery task
                 async_result = upload_product_image_task.delay(**task_kwargs)

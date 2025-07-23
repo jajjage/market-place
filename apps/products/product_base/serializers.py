@@ -7,13 +7,21 @@ from apps.categories.api.serializers import (
     CategorySummarySerializer,
 )
 from apps.core.serializers import (
-    BreadcrumbSerializer,
     TimestampedModelSerializer,
     UserShortSerializer,
 )
-from apps.core.utils.breadcrumbs import BreadcrumbService
+
+from apps.products.product_base.utils.seo_serializer_helper import get_structured_data
+from apps.products.product_base.utils.utils import (
+    clean_description,
+    generate_enhanced_keywords,
+    generate_meta_description,
+    generate_seo_title,
+    safe_get_variant_options,
+)
 from apps.products.product_brand.models import Brand
 from apps.products.product_condition.models import ProductCondition
+from apps.products.product_image.serializers import ProductImageSerializer
 from .models import Product
 
 from apps.products.product_condition.serializers import ProductConditionDetailSerializer
@@ -29,7 +37,7 @@ from apps.products.product_watchlist.serializers import (
 )
 # from apps.products.product_metadata.serializers import ProductMetaDetailSerializer
 from apps.products.product_detail.serializers import (
-    ProductDetailSerializer as ProductExtraDetailSerializer,
+    ProductExtraDetailSerializer,
 )
 import logging
 
@@ -148,6 +156,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     discount_percent = serializers.SerializerMethodField()
     ratings = serializers.SerializerMethodField()
     seller = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -155,6 +164,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "price",
+            "description",
             "originalPrice",
             "currency",
             "category_name",
@@ -169,27 +179,34 @@ class ProductListSerializer(serializers.ModelSerializer):
             "seller",
             "escrowFee",
             "location",
-            "description",
             "discount_percent",
             "brand_name",
             "image_url",
         ]
+
+    def get_description(self, obj):
+        """
+        Use the clean_description utility to format the description.
+        This avoids additional queries and uses pre-fetched data.
+        """
+        return clean_description(obj.description)
 
     def get_image_url(self, obj):
         """
         Use prefetched images to avoid additional queries.
         Uses the custom to_attr names from prefetch.
         """
+        request = self.context.get("request")
         if hasattr(obj, "cached_primary_images") and obj.cached_primary_images:
             return (
-                obj.cached_primary_images[0].image.url
-                if obj.cached_primary_images[0].image
+                request.build_absolute_uri(obj.cached_primary_images[0].image_url)
+                if request and obj.cached_primary_images[0].image_url
                 else None
             )
         elif hasattr(obj, "cached_all_images") and obj.cached_all_images:
             return (
-                obj.cached_all_images[0].image.url
-                if obj.cached_all_images[0].image
+                obj.cached_all_images[0].image_url
+                if obj.cached_all_images[0].image_url
                 else None
             )
         return None
@@ -230,158 +247,6 @@ class ProductListSerializer(serializers.ModelSerializer):
                 ),
             }
         return None
-
-
-class ProductSEOSerializer(serializers.Serializer):
-    """Separate serializer for SEO-specific data"""
-
-    def get_structured_data(self, obj):
-        """Generate JSON-LD structured data"""
-        base_url = settings.FRONTEND_BASE_URL  # e.g., 'https://yoursite.com'
-
-        structured_data = {
-            "@context": "https://schema.org/",
-            "@type": "Product",
-            "name": obj.title,
-            "description": obj.description or f"Authentic {obj.brand.name} {obj.title}",
-            "brand": {
-                "@type": "Brand",
-                "name": obj.brand.name,
-                "url": f"{base_url}/brands/{obj.brand.slug}",
-            },
-            "category": obj.category.name,
-            "condition": self._get_condition_text(obj.condition.name),
-            "url": f"{base_url}/products/{obj.short_code}",
-            "image": self._get_product_images(obj),
-            "sku": obj.short_code,
-        }
-
-        # Add pricing info if available
-        if obj.price and float(obj.price) > 0:
-            structured_data["offers"] = {
-                "@type": "Offer",
-                "price": str(obj.price),
-                "priceCurrency": obj.currency,
-                "availability": (
-                    "https://schema.org/InStock"
-                    if obj.is_active
-                    else "https://schema.org/OutOfStock"
-                ),
-                "url": f"{base_url}/products/{obj.short_code}",
-                "seller": {"@type": "Organization", "name": "TrustLock"},
-            }
-
-        # Add ratings if available using annotated fields
-        avg_rating = getattr(obj, "avg_rating_db", None)
-        ratings_count = getattr(obj, "ratings_count_db", 0)
-        if avg_rating:
-            structured_data["aggregateRating"] = {
-                "@type": "AggregateRating",
-                "ratingValue": str(avg_rating),
-                "reviewCount": str(ratings_count),
-            }
-
-        # Add breadcrumbs
-        breadcrumb_list = []
-        breadcrumbs = self._get_breadcrumbs(obj)
-        for i, breadcrumb in enumerate(breadcrumbs):
-            if breadcrumb["href"]:  # Skip items without URLs
-                breadcrumb_list.append(
-                    {
-                        "@type": "ListItem",
-                        "position": i + 1,
-                        "name": breadcrumb["name"],
-                        "item": f"{base_url}{breadcrumb['href']}",
-                    }
-                )
-
-        if breadcrumb_list:
-            structured_data["breadcrumb"] = {
-                "@type": "BreadcrumbList",
-                "itemListElement": breadcrumb_list,
-            }
-
-        return structured_data
-
-    def _get_condition_text(self, condition):
-        """Convert condition code to readable text"""
-        condition_map = {
-            "new": "NewCondition",
-            "open_box": "OpenBoxCondition",
-            "used_good": "UsedCondition",
-            "refurbished": "RefurbishedCondition",
-        }
-        return f"https://schema.org/{condition_map.get(condition, 'UsedCondition')}"
-
-    def _get_product_images(self, obj):
-        """Get product images for structured data"""
-        if obj.images:
-            return [img for img in obj.images.all()[:5]]  # Max 5 images
-        return []
-
-    def to_representation(self, obj):
-        base_url = settings.FRONTEND_BASE_URL
-
-        # Generate SEO title (60 chars max)
-        seo_title = f"{obj.title} | {obj.brand.name}"
-        if len(seo_title) > 60:
-            seo_title = f"{obj.title[:50]}... | {obj.brand.name}"
-
-        # Generate meta description (160 chars max)
-        meta_description = (
-            f"Shop authentic {obj.brand.name} {obj.title.lower()}. "
-            f"{obj.category.name} in {obj.condition.name} condition. "
-            f"Secure escrow payment and authenticity guaranteed."
-        )[:160]
-
-        # Generate keywords from your existing data
-        keywords = self._generate_seo_keywords(obj)
-        first_image = obj.images.first()
-
-        return {
-            "title": seo_title,
-            "meta_description": meta_description,
-            "canonical_url": f"{base_url}/products/{obj.slug}",
-            "keywords": keywords,
-            "structured_data": self.get_structured_data(obj),
-            "open_graph": {
-                "title": seo_title,
-                "description": meta_description,
-                "image": first_image.url if first_image else None,
-                "url": f"{base_url}/products/{obj.slug}",
-                "type": "product",
-            },
-        }
-
-    def _get_breadcrumbs(self, obj) -> list[dict]:
-        service = BreadcrumbService()
-        breadcrumb_data = service.for_product(obj, include_brand=True)
-        return BreadcrumbSerializer(breadcrumb_data, many=True).data
-
-    def _generate_seo_keywords(self, obj):
-        """Generate relevant SEO keywords"""
-        meta = getattr(obj, "meta", None)
-        if meta and meta.seo_keywords:
-            # Use existing keywords if available
-            return meta.seo_keywords
-
-        base_keywords = [
-            f"{obj.brand.name.lower()} {obj.title.lower()}",
-            f"authentic {obj.brand.name.lower()}",
-            f"{obj.brand.name.lower()} {obj.category.name.lower()}",
-            f"pre-owned {obj.brand.name.lower()}",
-            f"{obj.condition} {obj.brand.name.lower()}",
-            f"luxury {obj.category.name.lower()}",
-            f"{obj.brand.name.lower()} for sale",
-        ]
-
-        # Add specific product terms
-        title_words = obj.title.lower().split()
-        for word in title_words:
-            if len(word) > 3:  # Skip short words
-                base_keywords.append(f"{word} {obj.brand.name.lower()}")
-
-        return list(set(base_keywords))  # Remove duplicates
 
 
 class ProductDetailSerializer(TimestampedModelSerializer):
@@ -433,13 +298,12 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         max_value=Decimal("9999999.99"),  # Use Decimal for decimal fields
         min_value=Decimal("0.00"),
     )
-    # images = ProductImageSerializer(many=True, read_only=True)
+    media = serializers.SerializerMethodField()
     seller = serializers.SerializerMethodField()
     # Use direct annotation fields for ratings
     ratings = serializers.SerializerMethodField()
     variants = serializers.SerializerMethodField()
     details = serializers.SerializerMethodField()
-    # breadcrumbs = serializers.SerializerMethodField()
     category = CategorySummarySerializer(read_only=True)
     total_views = serializers.IntegerField(
         source="meta.views_count",
@@ -453,9 +317,9 @@ class ProductDetailSerializer(TimestampedModelSerializer):
     discount_percent = serializers.SerializerMethodField()
     watching_count = serializers.SerializerMethodField()
     brand = BrandListSerializer(read_only=True)
-    # metadata = serializers.SerializerMethodField()
     seo = serializers.SerializerMethodField()
     watchlist_items = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -479,7 +343,7 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "brand",
             "slug",
             "short_code",
-            # "images",
+            "media",
             "escrowFee",
             "location",
             "description",
@@ -505,29 +369,55 @@ class ProductDetailSerializer(TimestampedModelSerializer):
             "total_views",
             "user_has_purchased",
         ]
+        read_only_fields = ("seo",)
+
+    def get_description(self, obj):
+        """
+        Use the clean_description utility to format the description.
+        This avoids additional queries and uses pre-fetched data.
+        """
+        return clean_description(obj.description)
 
     def get_seller(self, obj) -> dict | None:
         profile_obj = obj.seller
         return UserShortSerializer(profile_obj, context=self.context).data
 
-    # def get_variant_summary(self, obj):
-    #     """Get variant summary with statistics"""
-    #     return {
-    #         "total_variants": getattr(obj, "total_variants", 0),
-    #         "available_variants": getattr(obj, "available_variants", 0),
-    #         "price_range": {
-    #             "min": getattr(obj, "min_variant_price", None),
-    #             "max": getattr(obj, "max_variant_price", None),
-    #             "avg": getattr(obj, "avg_variant_price", None),
-    #         },
-    #         "total_stock": getattr(obj, "total_stock", 0),
-    #         "variant_types": getattr(obj, "variant_types", []),
-    #     }
+    def get_seo(self, obj) -> dict:
+        """
+        Generate all SEO data in one place, using the fully prefetched 'obj'.
+        Cache computations to avoid repeated processing.
+        """
+        base_url = settings.FRONTEND_BASE_URL
 
-    def get_seo(self, obj):
-        """Add SEO data to the response"""
-        seo_serializer = ProductSEOSerializer()
-        return seo_serializer.to_representation(obj)
+        # Cache the variant options computation since it's used multiple times
+        if not hasattr(obj, "_cached_variant_options"):
+            obj._cached_variant_options = {}
+            variants = getattr(obj, "prefetched_variants", [])
+            for variant in variants:
+                obj._cached_variant_options[variant.id] = safe_get_variant_options(
+                    variant
+                )
+
+        # Generate SEO data
+        title = generate_seo_title(obj)
+        meta_desc = generate_meta_description(obj)
+        keywords = generate_enhanced_keywords(obj)
+        structured_data = get_structured_data(obj)
+
+        return {
+            "title": title,
+            "meta_description": meta_desc,
+            "canonical_url": f"{base_url}/products/{obj.slug}",
+            "keywords": keywords,
+            "structured_data": structured_data,
+            "open_graph": {
+                "title": title,
+                "description": meta_desc,
+                # "image": get_first_image(obj),
+                "url": f"{base_url}/products/{obj.slug}",
+                "type": "product",
+            },
+        }
 
     def get_discount_percent(self, obj) -> float:
         if obj.original_price and obj.price < obj.original_price:
@@ -536,8 +426,9 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         return 0
 
     def get_watching_count(self, obj) -> int:
-        """Get the number of users watching this product"""
-        return obj.watchers.count()
+        """Get the number of users watching this product from the annotation."""
+        # This now reads the value that was calculated in the initial query.
+        return getattr(obj, "watchers_count", 0)
 
     def get_watchlist_items(self, obj) -> list[dict]:
         items = getattr(obj, "prefetched_watchlist", [])
@@ -557,6 +448,23 @@ class ProductDetailSerializer(TimestampedModelSerializer):
         return ProductExtraDetailSerializer(
             details, many=True, context=self.context
         ).data
+
+    def get_media(self, obj) -> list[dict]:
+        """
+        Use prefetched images to avoid additional queries.
+        Uses the custom to_attr names from prefetch.
+        """
+        if hasattr(obj, "prefetched_images") and obj.prefetched_images:
+            return {
+                "images": ProductImageSerializer(
+                    obj.prefetched_images, many=True, context=self.context
+                ).data,
+                "videos": [],  # Assuming no video support yet
+            }
+        return {
+            "images": [],
+            "videos": [],
+        }
 
     def get_variants(self, obj) -> list[dict]:
         variants = getattr(obj, "prefetched_variants", [])

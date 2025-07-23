@@ -42,6 +42,7 @@ twisted = {extras = ["http2", "tls"], version = "^25.5.0"}
 elasticsearch-dsl = {extras = ["async"], version = "^8.18.0"}
 django-elasticsearch-dsl = "^8.2"
 google-genai = "^1.24.0"
+boto3 = "^1.39.10"
 
 
 [tool.poetry.group.dev.dependencies]

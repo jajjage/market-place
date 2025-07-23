@@ -72,6 +72,17 @@ class ProductDetailTemplateSerializer(TimestampedModelSerializer):
         return attrs
 
 
+class ProductExtraDetailSerializer(serializers.ModelSerializer):
+    """Serializer for ProductDetail with basic fields"""
+
+    class Meta:
+        model = ProductDetail
+        fields = [
+            "label",
+            "formatted_value",
+        ]
+
+
 class ProductDetailSerializer(serializers.ModelSerializer):
     formatted_value = serializers.ReadOnlyField()
     detail_type_display = serializers.CharField(

@@ -87,6 +87,7 @@ class GoogleGenAISEOKeywordService:
         business_type: Optional[str],
     ) -> str:
         """Build the prompt for Google GenAI."""
+        variants = []
 
         prompt = f"""You are an expert SEO keyword researcher. Generate {count} high-value SEO keywords based on the seed term: "{seed_term}"
 
@@ -96,6 +97,7 @@ class GoogleGenAISEOKeywordService:
         - Focus on keywords that real users would search for
         - Include both short-tail and long-tail keywords
         - Consider commercial viability and search volume potential
+        - Add variant-specific keywords: {', '.join(variants)}
 
         """
 

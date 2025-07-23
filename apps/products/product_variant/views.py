@@ -375,7 +375,7 @@ class ProductVariantViewSet(BaseViewSet):
 
         try:
             # Get variant matrix and types in parallel using asyncio or Promise.all
-            matrix = ProductVariantService.get_variant_matrix(int(product_id))
+            matrix = ProductVariantService.get_variant_matrix(product_id)
 
             # Get only the variant types that are actually used in the matrix
             used_type_ids = {

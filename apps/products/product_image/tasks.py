@@ -1,6 +1,5 @@
-# apps/products/product_image/tasks.py
-
 import os
+import uuid
 from celery import shared_task
 from django.core.files import File as DjangoFile
 from django.core.files.storage import default_storage
@@ -11,12 +10,13 @@ from .services import ProductImageService
 
 @shared_task(bind=True, base=BaseTaskWithRetry)
 def upload_product_image_task(
-    product_id,
-    file_path,
-    alt_text="",
-    is_primary=False,
-    display_order=0,
-    variant_name=None,
+    self,
+    product_id: uuid.UUID = None,
+    file_path: str = None,
+    alt_text: str = "",
+    is_primary: bool = False,
+    display_order: int = 0,
+    variant_name: str = None,
     created_by_user=False,
 ):
     """

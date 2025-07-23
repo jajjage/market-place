@@ -15,7 +15,9 @@ from PIL import Image
 import mimetypes
 from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.utils.cache_manager import CacheManager
-from apps.products.product_base.services.product_list_service import ProductListService
+from apps.products.product_base.services.product_list_service import (
+    ProductCacheInvalidationService,
+)
 from apps.products.product_image.models import ProductImageVariant, ProductImage
 
 logger = logging.getLogger("images_performance")
@@ -417,7 +419,7 @@ class ProductImageService:
                 ProductDetailService,
             )
 
-            ProductListService.invalidate_product_list_caches()
+            ProductCacheInvalidationService.invalidate_all_product_caches()
             ProductDetailService.invalidate_product_cache(product.short_code)
 
             duration = (time.time() - start_time) * 1000
