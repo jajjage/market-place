@@ -120,19 +120,9 @@ class EscrowTransactionViewSet(BaseViewSet):
             ordering=None,
             offset=int(offset),
             limit=int(limit),
+            request=request,
         )
-
-        # Handle pagination if needed
-        if not result["from_cache"]:
-            # If data is not from cache, apply pagination
-            page = self.paginate_queryset(result["data"])
-            if page is not None:
-                return self.get_paginated_response(page)
-
-        return self.success_response(
-            data=result["data"],
-            # meta={'from_cache': result['from_cache']}
-        )
+        return Response(result)
 
     @action(
         detail=False,
@@ -144,21 +134,18 @@ class EscrowTransactionViewSet(BaseViewSet):
         """Return only the current user's sales transactions using service"""
         queryset = self.get_queryset()
         status_filter = request.query_params.get("status")
+        offset = request.query_params.get("offset", 0)
+        limit = request.query_params.get("limit", 25)
 
         result = TransactionListService.get_user_sales(
-            user=request.user, queryset=queryset, status_filter=status_filter
+            user=request.user,
+            queryset=queryset,
+            status_filter=status_filter,
+            offset=int(offset),
+            limit=int(limit),
+            request=request,
         )
-
-        # Handle pagination
-        if not result["from_cache"]:
-            page = self.paginate_queryset(result["data"])
-            if page is not None:
-                return self.get_paginated_response(page)
-
-        return self.success_response(
-            data=result["data"],
-            # meta={'from_cache': result['from_cache']}
-        )
+        return Response(result)
 
     @action(
         detail=False,
@@ -171,21 +158,18 @@ class EscrowTransactionViewSet(BaseViewSet):
         """Return only the current user's purchase transactions using service"""
         queryset = self.get_queryset()
         status_filter = request.query_params.get("status")
+        offset = request.query_params.get("offset", 0)
+        limit = request.query_params.get("limit", 25)
 
         result = TransactionListService.get_user_purchases(
-            user=request.user, queryset=queryset, status_filter=status_filter
+            user=request.user,
+            queryset=queryset,
+            status_filter=status_filter,
+            offset=int(offset),
+            limit=int(limit),
+            request=request,
         )
-
-        # Handle pagination
-        if not result["from_cache"]:
-            page = self.paginate_queryset(result["data"])
-            if page is not None:
-                return self.get_paginated_response(page)
-
-        return self.success_response(
-            data=result["data"],
-            # meta={'from_cache': result['from_cache']}
-        )
+        return Response(result)
 
     @action(
         detail=False,
@@ -199,7 +183,7 @@ class EscrowTransactionViewSet(BaseViewSet):
         This endpoint is accessible to both buyers and sellers involved in the transaction.
         """
         try:
-            data, from_cache = TransactionListService.get_tracking(
+            data = TransactionListService.get_tracking(
                 tracking_id, request.user
             )
         except PermissionDenied as e:
@@ -236,9 +220,11 @@ class EscrowTransactionViewSet(BaseViewSet):
             tracking_number = request.data.get("tracking_number")  # Fixed field name
             shipping_carrier = request.data.get("shipping_carrier")
 
-            # Update transaction using the service
+            from apps.transactions.services.transition_service import EscrowTransitionService
+
+            # Update transaction using the transition service (deep module)
             updated_transaction = (
-                EscrowTransactionService.update_escrow_transaction_status(
+                EscrowTransitionService.transition_with_scheduling(
                     escrow_transaction=transaction,
                     new_status=new_status,
                     user=request.user,
@@ -252,9 +238,6 @@ class EscrowTransactionViewSet(BaseViewSet):
             serializer = self.get_serializer(
                 updated_transaction, context={"request": request}
             )
-
-            # Invalidate caches
-            TransactionListService.invalidate_transaction_caches(transaction)
 
             return self.success_response(
                 data=serializer.data,

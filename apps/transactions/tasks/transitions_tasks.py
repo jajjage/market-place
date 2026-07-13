@@ -5,7 +5,7 @@ from django.utils import timezone
 
 
 from apps.core.tasks import BaseTaskWithRetry
-from apps.products.product_inventory.services import InventoryService
+from apps.products.services.inventory_service import InventoryService
 
 from apps.transactions.models import (
     EscrowTransaction,
@@ -85,15 +85,18 @@ class TransitionTaskMixin:
         try:
             # Import here to avoid circular imports
             from django.contrib.auth import get_user_model
-            from apps.transactions.services.escrow_services import (
-                EscrowTransactionService,
+            from apps.transactions.services.transition_service import (
+                EscrowTransitionService,
             )
 
             User = get_user_model()
             admin_user = User.objects.filter(is_staff=True).first()
 
-            # Perform the transition
-            EscrowTransactionService.update_escrow_transaction_status(
+            # Mark timeout as executed first so it won't be cancelled by the transition service
+            timeout_record.execute(f"Automatically transitioning to {to_status}")
+
+            # Perform the transition using the transition service deep module
+            EscrowTransitionService.transition_with_scheduling(
                 escrow_transaction=transaction_obj,
                 new_status=to_status,
                 notes=notes,
@@ -101,9 +104,6 @@ class TransitionTaskMixin:
                 # Mark this as an automatic transition
                 auto_transition=True,
             )
-
-            # Mark timeout as executed
-            timeout_record.execute(f"Automatically transitioned to {to_status}")
 
             logger.info(
                 f"Successfully executed automatic transition for transaction {transaction_obj.id} to {to_status}"
@@ -145,20 +145,37 @@ def schedule_auto_inspection(self, transaction_id):
             if not is_valid:
                 return f"Task {task_id} is no longer valid for transaction {transaction_id}"
 
+            from django.contrib.auth import get_user_model
+            from apps.transactions.services.transition_service import (
+                EscrowTransitionService,
+            )
+
+            User = get_user_model()
+            admin_user = User.objects.filter(is_staff=True).first()
+
             # Release from escrow and mark as completed
             if not escrow_txn.product.requires_inspection:
-                previous_status = escrow_txn.status
-                product = InventoryService.release_from_escrow(
-                    product=escrow_txn.product,
-                    escrow_transaction=escrow_txn,
-                    previous_status=previous_status,
-                    release_type="deduct",  # Item is sold, remove from total inventory
-                    notes="Transaction automatically completed after inspection period expired.",
-                )
-
-                # Mark timeout as executed
+                # Mark timeout as executed first so it won't be cancelled by the transition service
                 timeout_record.execute(
                     "Automatically completed after delivered no inspection period expired"
+                )
+
+                # Perform status transition via transition service
+                EscrowTransitionService.transition_with_scheduling(
+                    escrow_transaction=escrow_txn,
+                    new_status="completed",
+                    notes="Transaction automatically completed after delivery (no inspection required).",
+                    user=admin_user,
+                    auto_transition=True,
+                )
+
+                # Update product inventory
+                InventoryService.release_from_escrow(
+                    variant=escrow_txn.variant or escrow_txn.product,
+                    quantity=escrow_txn.quantity,
+                    release_type="deduct",
+                    user=admin_user,
+                    notes="Transaction automatically completed after delivered no inspection period expired.",
                 )
 
                 logger.info(
@@ -220,19 +237,35 @@ def schedule_auto_completion(self, transaction_id):
                     f"Inspection period for transaction {transaction_id} has not ended"
                 )
 
-            # Release from escrow and mark as completed
-            previous_status = escrow_txn.status
-            product = InventoryService.release_from_escrow(
-                product=escrow_txn.product,
-                escrow_transaction=escrow_txn,
-                previous_status=previous_status,
-                release_type="deduct",  # Item is sold, remove from total inventory
-                notes="Transaction automatically completed after inspection period expired.",
+            from django.contrib.auth import get_user_model
+            from apps.transactions.services.transition_service import (
+                EscrowTransitionService,
             )
 
-            # Mark timeout as executed
+            User = get_user_model()
+            admin_user = User.objects.filter(is_staff=True).first()
+
+            # Mark timeout as executed first so it won't be cancelled by the transition service
             timeout_record.execute(
                 "Automatically completed after inspection period expired"
+            )
+
+            # Perform status transition via transition service
+            EscrowTransitionService.transition_with_scheduling(
+                escrow_transaction=escrow_txn,
+                new_status="completed",
+                notes="Transaction automatically completed after inspection period expired.",
+                user=admin_user,
+                auto_transition=True,
+            )
+
+            # Release from escrow inventory
+            InventoryService.release_from_escrow(
+                variant=escrow_txn.variant or escrow_txn.product,
+                quantity=escrow_txn.quantity,
+                release_type="deduct",
+                user=admin_user,
+                notes="Transaction automatically completed after inspection period expired.",
             )
 
             logger.info(
@@ -267,17 +300,35 @@ def auto_refund_disputed_transaction(self, transaction_id):
             if not is_valid:
                 return f"Task {task_id} is no longer valid for transaction {transaction_id}"
 
-            # Return inventory to available and mark as refunded
-            product = InventoryService.release_from_escrow(
-                product=escrow_txn.product,
-                escrow_transaction=escrow_txn,
-                release_type="return",  # Return to available inventory
-                notes="Transaction automatically refunded after extended dispute period with no resolution.",
+            from django.contrib.auth import get_user_model
+            from apps.transactions.services.transition_service import (
+                EscrowTransitionService,
             )
 
-            # Mark timeout as executed
+            User = get_user_model()
+            admin_user = User.objects.filter(is_staff=True).first()
+
+            # Mark timeout as executed first so it won't be cancelled by the transition service
             timeout_record.execute(
                 "Automatically refunded after extended dispute period"
+            )
+
+            # Perform status transition via transition service
+            EscrowTransitionService.transition_with_scheduling(
+                escrow_transaction=escrow_txn,
+                new_status="refunded",
+                notes="Transaction automatically refunded after extended dispute period with no resolution.",
+                user=admin_user,
+                auto_transition=True,
+            )
+
+            # Return inventory to available
+            InventoryService.release_from_escrow(
+                variant=escrow_txn.variant or escrow_txn.product,
+                quantity=escrow_txn.quantity,
+                release_type="return",
+                user=admin_user,
+                notes="Transaction automatically refunded after extended dispute period with no resolution.",
             )
 
             # In a real system, this would also process the refund with your payment processor
@@ -326,11 +377,16 @@ def schedule_shipping_timeout(self, transaction_id):
             )
 
             if success:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                admin_user = User.objects.filter(is_staff=True).first()
+
                 # Return inventory to available
                 InventoryService.release_from_escrow(
-                    product=escrow_txn.product,
-                    escrow_transaction=escrow_txn,
+                    variant=escrow_txn.variant or escrow_txn.product,
+                    quantity=escrow_txn.quantity,
                     release_type="return",
+                    user=admin_user,
                     notes="Returned to inventory due to shipping timeout",
                 )
 

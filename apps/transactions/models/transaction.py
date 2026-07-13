@@ -36,7 +36,7 @@ class EscrowTransaction(BaseModel):
 
     # Existing fields shown for context
     product = models.ForeignKey(
-        "product_base.Product",
+        "products.Product",
         on_delete=models.PROTECT,
         related_name="escrow_transactions",
     )
@@ -51,7 +51,7 @@ class EscrowTransaction(BaseModel):
         on_delete=models.PROTECT,
     )
     variant = models.ForeignKey(
-        "product_variant.ProductVariant",
+        "products.ProductVariant",
         on_delete=models.CASCADE,
         related_name="escrow_transactions",
         null=True,

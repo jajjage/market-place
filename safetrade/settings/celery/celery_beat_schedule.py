@@ -111,36 +111,36 @@ CELERY_BEAT_SCHEDULE = {
     # ============================================
     # Expire old negotiations daily at 2 AM
     "expire-old-negotiations": {
-        "task": "apps.products.product_negotiation.tasks.expire_old_negotiations",
+        "task": "apps.products.tasks.expire_old_negotiations",
         "schedule": crontab(minute=0, hour=2),  # Run daily at 2 AM
     },
     # =============================================
     # Send negotiation reminders every 6 hours
     # =============================================
     "send-negotiation-reminders": {
-        "task": "apps.products.product_negotiation.tasks.send_negotiation_reminders",
+        "task": "apps.products.tasks.send_negotiation_reminders",
         "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
     },
     # ============================================
     # Cleanup negotiation cache daily at 3:30 AM
     # ============================================
     "cleanup-negotiation-cache": {
-        "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
+        "task": "apps.products.tasks.cleanup_negotiation_cache",
         "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
     },
     # ============================================
     # Update product popularity score every hour and Cleanup search logs daily at 3:30 AM
     # ============================================
     "update-product-popularity-scores": {
-        "task": "apps.products.product_search.tasks.update_popularity_scores",
+        "task": "apps.products.tasks.update_popularity_scores",
         "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
     },
     "update-generate-seo-keywords": {
-        "task": "apps.products.product_search.tasks.bulk_update_seo_keywords",
+        "task": "apps.products.tasks.bulk_update_seo_keywords",
         "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
     },
     "cleanup-old-search-logs": {
-        "task": "apps.products.product_search.tasks.cleanup_search_logs",
+        "task": "apps.products.tasks.cleanup_search_logs",
         "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
     },
 }
@@ -235,27 +235,27 @@ CELERY_BEAT_SCHEDULE_DEV = {
     },
     # Development negotiation tasks (more frequent)
     "expire-old-negotiations-dev": {
-        "task": "apps.products.product_negotiation.tasks.expire_old_negotiations",
+        "task": "apps.products.tasks.expire_old_negotiations",
         "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours in dev
     },
     "send-negotiation-reminders-dev": {
-        "task": "apps.products.product_negotiation.tasks.send_negotiation_reminders",
+        "task": "apps.products.tasks.send_negotiation_reminders",
         "schedule": crontab(minute=0, hour="*/3"),  # Every 3 hours in dev
     },
     "cleanup-negotiation-cache-dev": {
-        "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
+        "task": "apps.products.tasks.cleanup_negotiation_cache",
         "schedule": crontab(minute=0, hour="*/12"),  # Every 12 hours in dev
     },
     "update-product-popularity-scores": {
-        "task": "apps.products.product_search.tasks.update_popularity_scores",
+        "task": "apps.products.tasks.update_popularity_scores",
         "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
     },
     "update-generate-seo-keywords": {
-        "task": "apps.products.product_search.tasks.bulk_update_seo_keywords",
+        "task": "apps.products.tasks.bulk_update_seo_keywords",
         "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
     },
     "cleanup-old-search-logs": {
-        "task": "apps.products.product_search.tasks.cleanup_search_logs",
+        "task": "apps.products.tasks.cleanup_search_logs",
         "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
     },
 }
@@ -324,23 +324,23 @@ CELERY_BEAT_SCHEDULE_TEST = {
         },
     },
     "expire-old-negotiations-test": {
-        "task": "apps.products.product_negotiation.tasks.expire_old_negotiations",
+        "task": "apps.products.tasks.expire_old_negotiations",
         "schedule": crontab(minute=0, hour="*/3"),  # Every 3 hours in test
     },
     "send-negotiation-reminders-test": {
-        "task": "apps.products.product_negotiation.tasks.send_negotiation_reminders",
+        "task": "apps.products.tasks.send_negotiation_reminders",
         "schedule": crontab(minute=0, hour="*/2"),  # Every 2 hours in test
     },
     "cleanup-negotiation-cache-test": {
-        "task": "apps.products.product_negotiation.tasks.cleanup_negotiation_cache",
+        "task": "apps.products.tasks.cleanup_negotiation_cache",
         "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours in test
     },
     # "update-product-popularity-scores": {
-    #     "task": "apps.products.product_search.tasks.update_popularity_scores",
+    #     "task": "apps.products.tasks.update_popularity_scores",
     #     "schedule": crontab(minute=0, hour="*/1"),  # Every 1 hours
     # },
     # "cleanup-old-search-logs": {
-    #     "task": "apps.products.product_search.tasks.cleanup_search_logs",
+    #     "task": "apps.products.tasks.cleanup_search_logs",
     #     "schedule": crontab(minute=30, hour=3),  # Daily at 3:30 AM
     # },
 }

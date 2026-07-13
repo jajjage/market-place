@@ -2,8 +2,8 @@ from rest_framework import serializers
 from apps.core.serializers import TimestampedModelSerializer
 from apps.core.utils.breadcrumbs import BreadcrumbService
 from apps.core.serializers import BreadcrumbSerializer
-from apps.products.product_base.models import Product
-from apps.products.product_image.services import ProductImageService
+from apps.products.models import Product
+from apps.products.services import ProductImageService
 from apps.transactions.models import EscrowTransaction, TransactionHistory
 
 

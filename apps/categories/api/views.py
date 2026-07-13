@@ -138,7 +138,7 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet, BaseResponseMixin):
     @action(detail=True, methods=["get"])
     def products(self, request, pk=None):
         """Get products belonging to this category."""
-        from apps.products.product_base.serializers import ProductListSerializer
+        from apps.products.serializers import ProductListSerializer
 
         # Parse filters
         filters = {}

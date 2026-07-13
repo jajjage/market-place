@@ -80,19 +80,7 @@ INSTALLED_APPS = [
     "apps.monitoring.apps.MonitoringConfig",
     "apps.search.apps.SearchConfig",
     "apps.chat.apps.ChatConfig",
-    "apps.products.product_base.apps.ProductBaseConfig",
-    "apps.products.product_brand.apps.ProductBrandConfig",
-    "apps.products.product_common.apps.ProductCommonConfig",
-    "apps.products.product_condition.apps.ProductConditionConfig",
-    "apps.products.product_detail.apps.ProductDetailConfig",
-    "apps.products.product_image.apps.ProductImageConfig",
-    "apps.products.product_inventory.apps.ProductInventoryConfig",
-    "apps.products.product_metadata.apps.ProductMetadataConfig",
-    "apps.products.product_negotiation.apps.ProductPriceNegotiationConfig",
-    "apps.products.product_rating.apps.ProductRatingConfig",
-    "apps.products.product_variant.apps.ProductVariantConfig",
-    "apps.products.product_watchlist.apps.ProductWatchlistConfig",
-    "apps.products.product_search.apps.ProductSearchConfig",
+    "apps.products.apps.ProductsConfig",
 ]
 
 MIDDLEWARE = [
@@ -318,11 +306,11 @@ SPECTACULAR_SETTINGS = {
         "EscrowTransactionStatusEnum": "apps.transactions.models.transaction.EscrowTransaction.STATUS_CHOICES",
         "DisputeStatusEnum": "apps.disputes.models.DisputeStatus",
         "DisputeReasonEnum": "apps.disputes.models.DisputeReason",
-        "ProductStatusEnum": "apps.products.product_base.models.Product.ProductsStatus",
-        "BrandRequestStatusEnum": "apps.products.product_brand.models.BrandRequest.Status",
-        "ProductDetailStatusEnum": "apps.products.product_detail.models.ProductDetail.DetailType",
-        "ProductDetailTemplateStatusEnum": "apps.products.product_detail.models.ProductDetailTemplate.DetailType",
-        "PriceNegotiationStatusEnum": "apps.products.product_negotiation.models.PriceNegotiation.STATUS_CHOICES",
+        "ProductStatusEnum": "apps.products.models.Product.ProductsStatus",
+        "BrandRequestStatusEnum": "apps.products.models.BrandRequest.Status",
+        "ProductDetailStatusEnum": "apps.products.models.ProductDetail.DetailType",
+        "ProductDetailTemplateStatusEnum": "apps.products.models.ProductDetailTemplate.DetailType",
+        "PriceNegotiationStatusEnum": "apps.products.models.PriceNegotiation.STATUS_CHOICES",
     },
 }
 
@@ -399,11 +387,11 @@ CELERY_TASK_ROUTES = {
         "queue": "high_priority",
         "routing_key": "high_priority",
     },
-    "apps.products.product_search.tasks.bulk_update_seo_keywords": {
+    "apps.products.tasks.bulk_update_seo_keywords": {
         "queue": "high_priority",
         "routing_key": "high_priority",
     },
-    "apps.products.product_search.tasks.update_popularity_scores": {
+    "apps.products.tasks.update_popularity_scores": {
         "queue": "high_priority",
         "routing_key": "high_priority",
     },
@@ -430,7 +418,7 @@ CELERY_TASK_ROUTES = {
         "queue": "default",
         "routing_key": "default",
     },
-    "apps.products.product_negotiation.tasks.*": {
+    "apps.products.tasks.*": {
         "queue": "default",
         "routing_key": "default",
     },

@@ -399,10 +399,10 @@ class MyView(APIView):
         
         # For your specific case with ProductListSerializer:
         try:
-            ProductListSerializer = resolver.get_serializer('apps.products.product_base', 'ProductListSerializer')
+            ProductListSerializer = resolver.get_serializer('apps.products.serializers', 'ProductListSerializer')
         except ImproperlyConfigured:
             # Fallback approach using lazy import
-            ProductListSerializer = resolver.get_class_lazy('apps.products.product_base.serializers', 'ProductListSerializer')()
+            ProductListSerializer = resolver.get_class_lazy('apps.products.serializers', 'ProductListSerializer')()
         
         # Use them here
         users = User.objects.all()
@@ -414,7 +414,7 @@ from utils.import_resolver import circular_handler
 def my_function():
     # This won't raise an exception, returns None if circular import
     ProductListSerializer = circular_handler.get_serializer_safe(
-        'apps.products.product_base', 
+        'apps.products.serializers',
         'ProductListSerializer'
     )
     
@@ -431,17 +431,16 @@ from utils.import_resolver import resolver
 # Method 1: With fallback modules
 try:
     ProductListSerializer = resolver.get_serializer(
-        'apps.products.product_base', 
+        'apps.products.serializers',
         'ProductListSerializer',
         fallback_modules=[
-            'apps.products.product_base.api.serializers',
             'apps.products.serializers'
         ]
     )
 except ImproperlyConfigured:
     # Method 2: Lazy loading
     ProductListSerializer = resolver.get_class_lazy(
-        'apps.products.product_base.serializers', 
+        'apps.products.serializers',
         'ProductListSerializer'
     )
 
@@ -455,7 +454,7 @@ class MySerializer(serializers.ModelSerializer):
             ProductListSerializer = self._ProductListSerializer
         else:
             ProductListSerializer = resolver.get_class(
-                'apps.products.product_base.serializers', 
+                'apps.products.serializers',
                 'ProductListSerializer'
             )
             self._ProductListSerializer = ProductListSerializer
@@ -470,7 +469,7 @@ from utils.import_resolver import resolver
 def get_product_serializer():
     \"\"\"Factory function to get the serializer when needed.\"\"\"
     return resolver.get_class(
-        'apps.products.product_base.serializers', 
+        'apps.products.serializers',
         'ProductListSerializer'
     )
 

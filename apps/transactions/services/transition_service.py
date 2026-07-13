@@ -59,7 +59,7 @@ class EscrowTransitionService:
             updated_transaction = (
                 EscrowTransactionService.update_escrow_transaction_status(
                     escrow_transaction=escrow_transaction,
-                    status=new_status,
+                    new_status=new_status,
                     user=user,
                     notes=notes,
                     tracking_number=tracking_number,

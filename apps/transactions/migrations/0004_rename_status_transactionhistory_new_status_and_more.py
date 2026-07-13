@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("product_base", "0004_initial"),
+        ("products", "0002_initial"),
         (
             "transactions",
             "0003_escrowtransaction_escrow_tran_trackin_28262c_idx_and_more",
@@ -46,7 +46,7 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 on_delete=django.db.models.deletion.PROTECT,
                 related_name="escrow_transactions",
-                to="product_base.product",
+                to="products.product",
             ),
         ),
     ]

@@ -201,7 +201,7 @@ class EscrowTransactionService:
 
             # 8. Handle post-update actions (notifications, etc.)
             EscrowTransactionService._handle_post_update_actions(
-                escrow_transaction, previous_status, new_status, user
+                escrow_transaction, previous_status, new_status, user, **kwargs
             )
 
             logger.info(
@@ -269,21 +269,22 @@ class EscrowTransactionService:
 
     @staticmethod
     def _handle_post_update_actions(
-        escrow_transaction, previous_status, new_status, user
+        escrow_transaction, previous_status, new_status, user, **kwargs
     ):
         """Handle actions that should happen after status update"""
+        from apps.notifications.tasks import send_status_change_notification
+        from apps.transactions.services.transaction_list_service import TransactionListService
 
-        # Update analytics/metrics
-        # EscrowAnalyticsService.track_status_change(
-        #     escrow_transaction, previous_status, new_status
-        # )
+        # Invalidate all transaction and tracking caches
+        TransactionListService.invalidate_all_caches_for_transaction(escrow_transaction)
 
-        # Handle automatic transitions if needed
-        # if new_status == "payment_received":
-        #     # Maybe automatically notify seller to ship
-        #     pass
-
-        pass
+        # Determine if this was an automatic change
+        is_automatic = kwargs.get("auto_transition", False)
+        
+        # Send status change notification asynchronously
+        send_status_change_notification.apply_async(
+            args=[escrow_transaction.id, previous_status, new_status, is_automatic]
+        )
 
 
 class EscrowTransactionUtility:

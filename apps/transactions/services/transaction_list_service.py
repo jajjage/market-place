@@ -35,9 +35,10 @@ class TransactionListService:
         offset: int = 0,
         limit: int = 20,
         cache_key_suffix="list",
+        request=None,
     ):
         """
-        Get optimized transaction list with caching
+        Get optimized transaction list with caching and internal pagination
 
         Args:
             user: The requesting user
@@ -46,9 +47,10 @@ class TransactionListService:
             search_query: Optional search query
             ordering: Optional ordering
             cache_key_suffix: Suffix for cache key (list, purchases, sales)
+            request: Optional request for pagination context
 
         Returns:
-            dict: Contains 'data' and 'from_cache' boolean
+            dict: Paginated transaction response
         """
         start_time = time.time()
 
@@ -81,7 +83,7 @@ class TransactionListService:
             logger.info(
                 f"Cache hit for user {user.id} transactions ({cache_key_suffix}) in {elapsed:.2f}ms"
             )
-            return {"data": cached_data, "from_cache": True}
+            return cached_data
 
         # Build optimized queryset
         optimized_queryset = cls._build_optimized_queryset(queryset)
@@ -99,20 +101,29 @@ class TransactionListService:
         if ordering:
             optimized_queryset = optimized_queryset.order_by(*ordering)
 
-        # Execute query and serialize
-        transactions = list(optimized_queryset)
-        serializer = EscrowTransactionListSerializer(transactions, many=True)
-        serialized_data = serializer.data
+        # Use LimitOffsetPagination internally to paginate optimized queryset
+        from rest_framework.pagination import LimitOffsetPagination
+        paginator = LimitOffsetPagination()
+        paginator.default_limit = 25
+        paginator.max_limit = 100
+
+        page = paginator.paginate_queryset(optimized_queryset, request)
+        if page is not None:
+            serializer = EscrowTransactionListSerializer(page, many=True)
+            response_data = paginator.get_paginated_response(serializer.data).data
+        else:
+            serializer = EscrowTransactionListSerializer(optimized_queryset, many=True)
+            response_data = serializer.data
 
         # Cache the result
-        cache.set(cache_key, serialized_data, cls.CACHE_TTL)
+        cache.set(cache_key, response_data, cls.CACHE_TTL)
 
         elapsed = (time.time() - start_time) * 1000
         logger.info(
-            f"Fetched {len(serialized_data)} transactions ({cache_key_suffix}) for user {user.id} in {elapsed:.2f}ms"
+            f"Fetched and paginated transactions ({cache_key_suffix}) for user {user.id} in {elapsed:.2f}ms"
         )
 
-        return {"data": serialized_data, "from_cache": False}
+        return response_data
 
     @classmethod
     def get_user_purchases(
@@ -124,6 +135,7 @@ class TransactionListService:
         ordering=None,
         offset=0,
         limit=20,
+        request=None,
     ):
         """Get user's purchase transactions"""
         purchase_queryset = queryset.filter(buyer=user)
@@ -136,6 +148,7 @@ class TransactionListService:
             offset=int(offset),
             limit=int(limit),
             cache_key_suffix="purchases",
+            request=request,
         )
 
     @classmethod
@@ -148,6 +161,7 @@ class TransactionListService:
         ordering=None,
         offset=0,
         limit=20,
+        request=None,
     ):
         """Get user's sales transactions"""
         sales_queryset = queryset.filter(seller=user)
@@ -160,6 +174,7 @@ class TransactionListService:
             offset=int(offset),
             limit=int(limit),
             cache_key_suffix="sales",
+            request=request,
         )
 
     @classmethod
@@ -172,6 +187,7 @@ class TransactionListService:
         ordering=None,
         offset=0,
         limit=20,
+        request=None,
     ):
         """Get all transactions where user is involved (buyer or seller)"""
         user_queryset = queryset.filter(Q(buyer=user) | Q(seller=user))
@@ -184,6 +200,7 @@ class TransactionListService:
             offset=int(offset),
             limit=int(limit),
             cache_key_suffix="all",
+            request=request,
         )
 
     @classmethod
@@ -232,7 +249,7 @@ class TransactionListService:
             logger.info(
                 f"Track cache HIT for {tracking_id} in {(time.time() - start) * 1000:.1f}ms"
             )
-            return payload, True
+            return payload
 
         # miss → load from DB
         tx = get_object_or_404(EscrowTransaction, tracking_id=tracking_id)
@@ -267,7 +284,7 @@ class TransactionListService:
         logger.info(
             f"Track cache MISS for {tracking_id} in {(time.time() - start) * 1000:.1f}ms"
         )
-        return tx_data, False
+        return tx_data
 
     @classmethod
     def _store_cache_key(cls, cache_key):
@@ -345,6 +362,12 @@ class TransactionListService:
             user_id=transaction.seller.id,
             tracking_id=tracking_id,
         )
+
+    @classmethod
+    def invalidate_all_caches_for_transaction(cls, transaction):
+        """Invalidate all user list caches and tracking caches for a transaction"""
+        cls.invalidate_transaction_caches(transaction)
+        cls.invalidate_tracking_cache(transaction=transaction, tracking_id=transaction.tracking_id)
         # redis_conn = get_redis_connection("default")
         # keys = redis_conn.smembers("safetrade:escrow_tracking:keys")
         # for raw in keys:

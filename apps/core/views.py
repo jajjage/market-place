@@ -4,8 +4,7 @@ from django.http import Http404
 # from elasticsearch.dsl import Q
 
 # Import all your documents
-from apps.products.product_search.documents import ProductDocument
-from apps.products.product_brand.documents import BrandDocument
+from apps.products.documents import BrandDocument, ProductDocument
 from apps.categories.documents import CategoryDocument  # Adjust path if needed
 
 from rest_framework.exceptions import ValidationError

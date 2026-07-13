@@ -8,8 +8,8 @@ class Migration(migrations.Migration):
 
     dependencies = [
         (
-            "product_variant",
-            "0002_productvariantimage_productvariant_cost_price_and_more",
+            "products",
+            "0002_initial",
         ),
         ("transactions", "0007_remove_escrowtransaction_amount_and_more"),
     ]
@@ -28,7 +28,7 @@ class Migration(migrations.Migration):
                 null=True,
                 on_delete=django.db.models.deletion.CASCADE,
                 related_name="escrow_transactions",
-                to="product_variant.productvariant",
+                to="products.productvariant",
             ),
         ),
     ]

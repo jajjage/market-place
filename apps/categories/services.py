@@ -10,7 +10,7 @@ from django.utils.text import slugify
 from apps.categories.models import Category
 from apps.core.utils.cache_key_manager import CacheKeyManager
 from apps.core.utils.cache_manager import CacheManager
-from apps.products.product_base.models import Product
+from apps.products.models import Product
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,6 @@
 import socket
 import tempfile
+import ast
 from .base import *  # noqa
 from .base import REST_FRAMEWORK, MIDDLEWARE, INSTALLED_APPS
 
@@ -37,10 +38,36 @@ EMAIL_HOST_PASSWORD = env.get("EMAIL_HOST_PASSWORD", default="")
 # -----------------------------------------------------------------------------
 # CORS Settings - Development
 # -----------------------------------------------------------------------------
-CORS_ALLOWED_ORIGINS = env.get(
-    "CORS_ALLOWED_ORIGINS",
-    default=["http://localhost:3000", "http://127.0.0.1:3000"],
-).split(",")
+def parse_cors_origins(value):
+    if isinstance(value, (list, tuple)):
+        return [str(origin).strip() for origin in value if str(origin).strip()]
+
+    raw_value = str(value).strip()
+    if raw_value.startswith("[") and raw_value.endswith("]"):
+        try:
+            parsed_value = ast.literal_eval(raw_value)
+        except (SyntaxError, ValueError):
+            parsed_value = None
+        if isinstance(parsed_value, (list, tuple)):
+            return [
+                str(origin).strip().strip("'\"")
+                for origin in parsed_value
+                if str(origin).strip()
+            ]
+
+    return [
+        origin.strip().strip("'\"")
+        for origin in raw_value.split(",")
+        if origin.strip().strip("'\"")
+    ]
+
+
+CORS_ALLOWED_ORIGINS = parse_cors_origins(
+    env.get(
+        "CORS_ALLOWED_ORIGINS",
+        default="http://localhost:3000,http://127.0.0.1:3000",
+    )
+)
 
 # -----------------------------------------------------------------------------
 # Cache - Development
