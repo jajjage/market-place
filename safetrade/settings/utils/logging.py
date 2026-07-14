@@ -144,13 +144,12 @@ if os.environ.get("GITHUB_ACTIONS"):
         if h.endswith("_file"):
             LOGGING["handlers"].pop(h, None)
 
-    # set all loggers to use only console handler:
-    LOGGING["loggers"][""]["handlers"] = ["console"]
-    if "monitoring" in LOGGING["loggers"]:
-        LOGGING["loggers"]["monitoring"]["handlers"] = ["console"]
-    for short_name in PERFORMANCE_API_PREFIXES.values():
-        logger_name = f"{short_name}_performance"
-        if logger_name in LOGGING["loggers"]:
-            LOGGING["loggers"][logger_name]["handlers"] = ["console"]
-    LOGGING["loggers"]["apps.users.views"]["handlers"] = ["console"]
-    LOGGING["loggers"]["utils.rate_limiting"]["handlers"] = ["console"]
+    # Automatically adjust all loggers to use valid remaining handlers (e.g. console)
+    for logger_name, logger_config in LOGGING["loggers"].items():
+        handlers = logger_config.get("handlers", [])
+        valid_handlers = [h for h in handlers if h in LOGGING["handlers"]]
+        if not valid_handlers:
+            valid_handlers = ["console"]
+        # Remove duplicates while preserving order
+        seen = set()
+        logger_config["handlers"] = [h for h in valid_handlers if not (h in seen or seen.add(h))]

@@ -1,53 +1,103 @@
 # Backend Design & Architecture Specification
 
-## 1. Overview
-This document outlines the backend architecture and design patterns for the escrow-based marketplace platform. It facilitates secure transactions between buyers and sellers, providing trust in social commerce transactions. The platform handles user management, product listings, escrow payments, order fulfillment, and logistics integration.
+This document outlines the domain-modular backend architecture, installed apps registry, database structures, and design patterns for the SafeTrade platform.
 
 ---
 
-## 2. System Architecture
+## 1. Modular Directory Structure & App Registry
 
-### 2.1 High-Level Architecture
-The backend follows a microservices / domain-modular architecture with the following core modules:
-- **User Module**: Manages authentication, authorization, profiles, and address book.
-- **Product Module**: Handles product listings, categories, variant options, inventory, and search indexes.
-- **Transaction Module**: Manages escrow payments, payouts, timeouts, and state transitions.
-- **Dispute Module**: Handles buyer-seller disputes, mediation comments, and resolution states.
-- **Messaging Module**: Facilitates websocket-based real-time communication.
-- **Notification Module**: Handles push, email, and SMS triggers.
+The platform's features are organized inside domain-specific Django apps under the `apps/` directory.
 
-### 2.2 Domain Organization
-All services are organized in `apps/` with clean separation of layers:
-- `api/`: Views, ViewSets, routers, and Serializers.
-- `models/`: Models, managers, and QuerySets.
-- `services/`: Encapsulates transaction state-transitions, listing caches, and business calculations.
-- `tasks/`: Asynchronous celery jobs (e.g. timeout triggers, cache cleanups).
-- `signals/`: Model triggers for invalidations.
+### Local Django Apps Registry
 
----
-
-## 3. Technology Stack & Core Technologies
-- **Framework**: Django & Django REST Framework (DRF)
-- **Database**: PostgreSQL (relational storage)
-- **Caching**: Redis (caching and sessions)
-- **Task Queue**: Celery (async background tasks)
-- **Search**: Elasticsearch (product search DSL)
-- **Authentication**: JWT (JSON Web Tokens)
-- **Containerization**: Docker (local compose environment)
+| App Name | Config Class | Core Responsibility |
+| :--- | :--- | :--- |
+| **`apps.users`** | `UsersConfig` | Custom user models (`CustomUser`), profiles (`UserProfile`), addresses, and verification state. |
+| **`apps.products`** | `ProductsConfig` | Unified product catalog: listing, categories, variants, search indexing, reviews, inventory, and watchlists. (See section 2). |
+| **`apps.transactions`** | `TransactionsConfig` | Escrow transaction engine, state transitions, inspection period timers, and automated timeouts. |
+| **`apps.disputes`** | `DisputesConfig` | Dispute resolution system for transactions that require platform mediator intervention. |
+| **`apps.chat`** | `ChatConfig` | WebSocket-based real-time communication between buyers and sellers. |
+| **`apps.notifications`** | `NotificationsConfig` | Unified notification dispatcher (email, SMS, and in-app alerts). |
+| **`apps.flutterwave`** | `FlutterwaveConfig` | Payment processing gateway integration. |
+| **`apps.comments`** | `CommentsConfig` | Public comments/questions on product listings. |
+| **`apps.store`** | `StoreConfig` | Merchant store profiles and seller settings. |
+| **`apps.categories`** | `CategoriesConfig` | Hierarchical catalog categories. |
+| **`apps.monitoring`** | `MonitoringConfig` | API performance logging and system request tracking middleware. |
+| **`apps.search`** | `SearchConfig` | Elasticsearch index query execution API endpoints. |
+| **`apps.core`** | `CoreConfig` | Abstract base models (`BaseModel`), shared utilities, and cache managers. |
 
 ---
 
-## 4. Key Business Logic Components
+## 2. Product App Consolidation
 
-### 4.1 Escrow Payment Flow
-1. Buyer places an order and pays (monies held on gateway).
-2. Platform transitions status to `payment_received`.
-3. Seller is notified and ships the product.
-4. Buyer confirms receipt or the inspection timeout expires.
-5. Platform transitions status to `completed` and transfers funds to the seller.
-6. If an issue is reported, a `Dispute` is opened, pausing all timers.
+To prevent circular dependencies and boilerplates, 13 previously fragmented sub-apps were collapsed into a single unified `apps.products` module:
 
-### 4.2 Application Layer Design Patterns
-- **Repository / QuerySet Seams**: Custom querysets on model managers for optimized prefetching and filtering.
-- **Service Layer Pattern**: All core workflows (such as escrow transitions and caching) live inside service classes, shielding views from database queries.
-- **State Machine Pattern**: Transaction states are strictly validated during transit inside the transition service.
+```
+apps/products/
+├── admin.py                # Combined admin panel registrations
+├── apps.py                 # App configuration & signal registrations
+├── documents.py            # Elasticsearch index mappings and document classes
+├── middleware.py           # Search log tracking and analytics middlewares
+├── schema.py               # API schema documentation rules
+├── urls.py                 # Combined viewset routers
+├── models/                 # Database schema files
+│   ├── base.py             # Product model
+│   ├── brand.py            # Brand & BrandRequest models
+│   ├── common.py           # Shared helper functions
+│   ├── managers.py         # BrandQuerySet & BrandManager optimization helpers
+│   ├── rating.py           # Product reviews & ratings
+│   └── variant.py          # Variant options & pricing matrices
+├── serializers/            # DRF serializer classes (base, brand, rating, variant)
+├── views/                  # API endpoints (base, brand, search, watchlist, etc.)
+├── services/               # Eager loading & cached list query logic
+├── tasks/                  # Celery tasks (popularity scores, SEO updates)
+├── signals/                # Model signal triggers for search index syncing
+└── utils/                  # Shared product utilities (social share slug generators)
+```
+
+### Database Preservation Seam
+Every model inside `apps/products/models/` retains its original legacy database table mapping using explicit `db_table` meta options:
+*   Product ➔ `product`
+*   Brand ➔ `product_brand`
+*   ProductCondition ➔ `product_condition`
+*   ProductVariant ➔ `product_variant`
+*   ProductImage ➔ `product_image`
+*   ProductWatchlistItem ➔ `product_watchlist_item`
+
+---
+
+## 3. Escrow Transaction State Machine
+
+The core transaction lifecycle is governed by a state machine inside `apps.transactions`:
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated : Buyer Places Order
+    initiated --> payment_received : Buyer Pays (Webhook)
+    payment_received --> shipped : Seller Ships
+    shipped --> delivered : Carrier Confirms
+    delivered --> inspection : Inspection Timer Starts
+    inspection --> completed : Buyer Confirms / Timer Expires
+    inspection --> disputed : Buyer Raises Issue
+    disputed --> resolved_buyer : Mediator Rules for Buyer
+    disputed --> resolved_seller : Mediator Rules for Seller
+    resolved_buyer --> refunded
+    resolved_seller --> completed
+    completed --> funds_released : Payout Transferred
+    funds_released --> [*]
+    refunded --> [*]
+    initiated --> cancelled : Buyer Cancels / Payment Timeout
+```
+
+### Validations & Timers
+- **`EscrowTransitionService`**: Centralizes all transitions, checking transition eligibility, logging transition history (`TransactionHistory`), scheduling celery expiration timers (`Timeout`), and updating Elasticsearch index status.
+- **Inspection Period**: Buyers get an inspection window (default 3 days). If no dispute is raised, Celery Beat automatically completes the transaction.
+
+---
+
+## 4. Transaction Caching & Query Seam
+
+To isolate caching and pagination, [TransactionListService](file:///c:/Users/musta/fasu-marketplace/market-place/apps/transactions/services/transaction_list_service.py) hides database queries behind a transaction query seam:
+- **Internalized Slicing**: Queries slice the database at the SQL level before serialization.
+- **Cached Payloads**: The serialized list dictionary is cached directly inside Redis using parameter-derived cache keys.
+- **Automatic Invalidation**: `invalidate_all_caches_for_transaction` automatically clears the cache upon transaction state changes or save signals, keeping lists in-sync transparently.

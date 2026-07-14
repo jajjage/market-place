@@ -3,11 +3,12 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
-from apps.users.models.user_rating import UserRating
-from apps.users.models.user_store import UserStore
+from apps.comments.models import UserRating
+from apps.store.models import UserStore
 from apps.users.models.user_address import UserAddress
 from apps.transactions.models import EscrowTransaction
-from apps.products.models import Product, Category, ProductCondition
+from apps.products.models import Product, ProductCondition
+from apps.categories.models import Category
 
 
 @pytest.fixture
