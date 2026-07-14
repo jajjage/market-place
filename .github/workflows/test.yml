@@ -1,4 +1,4 @@
-name: Test
+name: CI/CD Pipeline
 
 on:
   push:
@@ -7,10 +7,42 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: "Python ${{ matrix.python-version }}"
+  validate:
+    name: Code Validation
     runs-on: ubuntu-latest
+    env:
+      DJANGO_SETTINGS_MODULE: safetrade.test_settings
+      DJANGO_SECRET_KEY: "django-insecure-wlgjuo53y49%-4y5(!%ksylle_ud%b=7%__@9hh+@$d%_^y3s!"
+      DATABASE_URL: "sqlite:///:memory:"
+      REDIS_URL: "redis://localhost:6379/1"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
+      - name: Install Poetry
+        run: pipx install poetry==1.8.4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "poetry"
+
+      - name: Install Dependencies
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --no-interaction
+
+      - name: Check Poetry Lock Consistency
+        run: poetry check --lock
+
+      - name: Check for Missing Migrations
+        run: poetry run python manage.py makemigrations --check --dry-run
+
+  test:
+    name: Run Test Suite
+    needs: validate
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17
@@ -35,34 +67,31 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    strategy:
-      matrix:
-        python-version: ["3.13"]
-        os: [ubuntu-latest]
-
     env:
       DEBUG: "True"
+      DJANGO_SETTINGS_MODULE: safetrade.test_settings
       DJANGO_SECRET_KEY: django-insecure-wlgjuo53y49%-4y5(!%ksylle_ud%b=7%__@9hh+@$d%_^y3s!
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
       REDIS_URL: redis://localhost:6379/1
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Install Poetry
         run: pipx install poetry==1.8.4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "${{ matrix.python-version }}"
+          python-version: "3.13"
           cache: "poetry"
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           poetry config virtualenvs.in-project true
           poetry install --no-interaction
 
-      - name: Run Tests
+      - name: Run Pytest
         run: poetry run pytest
