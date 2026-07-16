@@ -99,13 +99,14 @@ class RatingViewSet(BaseViewSet):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            transaction_id = uuid.UUID(transaction_id)
-        except (ValueError, TypeError):
-            return self.error_response(
-                message="transaction_id must be a valid UUID",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        if not isinstance(transaction_id, uuid.UUID):
+            try:
+                transaction_id = uuid.UUID(str(transaction_id))
+            except (ValueError, TypeError):
+                return self.error_response(
+                    message="transaction_id must be a valid UUID",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -122,9 +123,7 @@ class RatingViewSet(BaseViewSet):
             )
 
         response_serializer = RatingDetailSerializer(rating)
-        return self.success_response(
-            data=response_serializer.data, status_code=status.HTTP_201_CREATED
-        )
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
     @RATING_LIST_SCHEMA
     def list(self, request, *args, **kwargs):
@@ -141,7 +140,7 @@ class RatingViewSet(BaseViewSet):
 
     @action(detail=False, methods=["get"])
     @RATING_ELIGIBILITY_SCHEMA
-    def eligibility(self, request):
+    def eligibility(self, request, *args, **kwargs):
         """
         Check if user can rate a seller based on their transaction history
         Supports both approaches:
@@ -149,12 +148,12 @@ class RatingViewSet(BaseViewSet):
         2. Legacy: ?transaction_id=123 (backward compatibility)
         """
         seller_id = request.query_params.get("seller_id")
-        transaction_id = request.query_params.get("transaction_id")
+        transaction_id = kwargs.get("transaction_id") or request.query_params.get("transaction_id")
 
         if seller_id:
             # New robust approach: Check buyer-seller relationship
             try:
-                seller_id = uuid.UUID(seller_id)
+                seller_id = uuid.UUID(str(seller_id))
             except (ValueError, TypeError):
                 return self.error_response(
                     message="seller_id must be a valid UUID",
@@ -165,23 +164,24 @@ class RatingViewSet(BaseViewSet):
                 buyer_id=request.user.id, seller_id=seller_id
             )
             serializer = BuyerSellerEligibilitySerializer(eligibility_result)
-            return self.success_response(data=serializer.data)
+            return Response(serializer.data)
 
         elif transaction_id:
             # Legacy approach: Check specific transaction
-            try:
-                transaction_id = uuid.UUID(transaction_id)
-            except (ValueError, TypeError):
-                return self.error_response(
-                    message="transaction_id must be a valid UUID",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
+            if not isinstance(transaction_id, uuid.UUID):
+                try:
+                    transaction_id = uuid.UUID(str(transaction_id))
+                except (ValueError, TypeError):
+                    return self.error_response(
+                        message="transaction_id must be a valid UUID",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
 
             eligibility_result = RatingService.check_rating_eligibility(
                 transaction_id, request.user
             )
             serializer = self.get_serializer(eligibility_result)
-            return self.success_response(data=serializer.data)
+            return Response(serializer.data)
 
         else:
             return self.error_response(

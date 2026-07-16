@@ -119,5 +119,7 @@ class IsProductOwnerOrStaff(permissions.BasePermission):
         if request.user.is_staff:
             return True
 
-        # Only the owner (seller) of this product may update or delete
-        return obj.seller_id == request.user.id
+        # Detail resources such as ProductImage and ProductDetail belong to a
+        # product, while Product itself exposes seller_id directly.
+        product = getattr(obj, "product", obj)
+        return product.seller_id == request.user.id

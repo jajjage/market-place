@@ -1,12 +1,13 @@
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from django.shortcuts import get_object_or_404
 
 from apps.core.views import BaseViewSet
+from apps.core.permissions import IsProductOwnerOrStaff
 
-from apps.products.models import ProductDetail, ProductDetailTemplate
+from apps.products.models import Product, ProductDetail, ProductDetailTemplate
 from apps.products.serializers import (
     ProductDetailFromTemplateSerializer,
     ProductDetailSerializer,
@@ -28,6 +29,27 @@ class ProductDetailViewSet(BaseViewSet):
 
     serializer_class = ProductDetailSerializer
     lookup_field = "id"
+
+    def get_permissions(self):
+        """Expose listing data publicly but restrict mutations to the product owner."""
+        if self.action in {
+            "list",
+            "retrieve",
+            "grouped",
+            "available_templates",
+            "highlighted",
+        }:
+            return [AllowAny()]
+        return [IsAuthenticated(), IsProductOwnerOrStaff()]
+
+    def get_product_for_write(self):
+        """Resolve the nested product and verify that the caller can edit it."""
+        product_id = self.kwargs.get("product_pk")
+        if not product_id:
+            return None
+        product = get_object_or_404(Product, id=product_id)
+        self.check_object_permissions(self.request, product)
+        return product
 
     def get_throttles(self):
         """Apply custom throttles for list, retrieve, create, update, and partial_update actions."""
@@ -107,8 +129,6 @@ class ProductDetailViewSet(BaseViewSet):
                 {"error": "Product ID is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        from apps.products.models import Product
-
         product = get_object_or_404(Product, id=product_id)
         category = getattr(product, "category", None)
 
@@ -145,9 +165,7 @@ class ProductDetailViewSet(BaseViewSet):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        from apps.products.models import Product
-
-        product = get_object_or_404(Product, id=product_id)
+        product = self.get_product_for_write()
 
         serializer = ProductDetailFromTemplateSerializer(data=request.data)
         if serializer.is_valid():
@@ -188,7 +206,7 @@ class ProductDetailViewSet(BaseViewSet):
         product_id = self.kwargs.get("product_pk")
 
         if not product_id:
-            return self.error_reponse(
+            return self.error_response(
                 message="Product ID is required",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
@@ -208,9 +226,7 @@ class ProductDetailViewSet(BaseViewSet):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        from apps.products.models import Product
-
-        product = get_object_or_404(Product, id=product_id)
+        product = self.get_product_for_write()
 
         serializer = ProductDetailBulkCreateSerializer(data=request.data)
         if serializer.is_valid():

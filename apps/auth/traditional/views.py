@@ -6,6 +6,7 @@ from django.contrib.auth.models import update_last_login
 from django.core.cache import cache
 from jsonschema import ValidationError
 from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -40,6 +41,7 @@ class CookieTokenObtainPairView(TokenObtainPairView, CookieSet, BaseAPIView):
     """
 
     throttle_classes = [UserLoginRateThrottle]
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         """
@@ -91,6 +93,8 @@ class CookieTokenRefreshView(TokenRefreshView, CookieSet, BaseAPIView):
     Custom TokenRefreshView to handle refresh tokens in cookies.
     Handles rate limiting and blacklist checks for refresh tokens.
     """
+
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         """
@@ -185,6 +189,8 @@ class CookieTokenVerifyView(TokenVerifyView, BaseAPIView):
     Verifies the access token from the cookie.
     """
 
+    permission_classes = [AllowAny]
+
     def post(self, request, *args, **kwargs):
         """
         Handles the POST request to verify the token.
@@ -218,6 +224,7 @@ class LogoutView(BaseAPIView):
     """
 
     serializer_class = LogoutSerializer
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         """
@@ -242,6 +249,8 @@ class TestAuthView(BaseAPIView):
     """
     A view to test if the user is authenticated.
     """
+
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         """

@@ -1,6 +1,7 @@
 from django.db import connections
 from elasticsearch import NotFoundError
 from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
@@ -29,6 +30,8 @@ class ProductSearchView(APIView):
     Main product search endpoint with SEO optimization
     Supports full-text search, filters, sorting, and autocomplete
     """
+
+    permission_classes = [AllowAny]
 
     def get(self, request):
         try:
@@ -314,6 +317,8 @@ class ProductSearchView(APIView):
 class ElasticsearchDebugView(APIView):
     """Debug view to test Elasticsearch connection and index status"""
 
+    permission_classes = [IsAdminUser]
+
     def get(self, request):
         try:
             # Test basic connection
@@ -372,6 +377,8 @@ class ProductRelatedSearchView(APIView):
     Find related/similar products based on a reference product using Elasticsearch.
     Enhanced version with debugging capabilities.
     """
+
+    permission_classes = [AllowAny]
 
     def get(self, request, product_id):
         try:
@@ -550,7 +557,7 @@ class ProductRelatedSearchView(APIView):
         except Exception as e:
             logger.exception(f"Error fetching related products for ID {product_id}")
             return Response(
-                {"error": "Failed to retrieve related products", "details": str(e)},
+                {"error": "Failed to retrieve related products"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -619,6 +626,8 @@ class ProductAutocompleteView(APIView):
     Autocomplete endpoint for search suggestions
     Fixed version that works with basic text fields
     """
+
+    permission_classes = [AllowAny]
 
     def get(self, request):
         query = request.query_params.get("q", "").strip()
@@ -750,6 +759,8 @@ class ProductSEOSearchView(APIView):
     Designed for search engines and SEO-friendly URLs
     """
 
+    permission_classes = [AllowAny]
+
     def get(self, request):
         # Extract SEO parameters
         category_slug = request.query_params.get("category")
@@ -822,7 +833,7 @@ class ProductSEOSearchView(APIView):
         except Exception as e:
             logger.error(f"SEO search failed: {str(e)}", exc_info=True)
             return Response(
-                {"error": "SEO search failed", "details": str(e)},
+                {"error": "SEO search failed"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -859,6 +870,8 @@ class ProductSearchStatsView(APIView):
     """
     Search statistics endpoint for analytics
     """
+
+    permission_classes = [AllowAny]
 
     def get(self, request):
         try:
@@ -974,6 +987,6 @@ class ProductSearchStatsView(APIView):
         except Exception as e:
             logger.error(f"Stats retrieval failed: {str(e)}", exc_info=True)
             return Response(
-                {"error": "Stats retrieval failed", "details": str(e)},
+                {"error": "Stats retrieval failed"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

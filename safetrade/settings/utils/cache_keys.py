@@ -176,6 +176,7 @@ CACHE_KEY_TEMPLATES = {
         "aggregate": "ratings:aggregate:{product_id}",
         "can_rate": "ratings:can_rate:{product_id}",
         "recent": "ratings:recent:limit:{limit}",
+        "stats": "ratings:stats:user_id:{user_id}",
     },
     "dispute": {
         "detail": "dispute:detail:{id}",

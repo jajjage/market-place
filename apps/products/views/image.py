@@ -1,14 +1,17 @@
 # views.py with proper caching and rate limiting
-from rest_framework import status
+from rest_framework import status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.shortcuts import get_object_or_404
 from apps.core.views import BaseViewSet
+from apps.core.permissions import IsProductOwnerOrStaff
 from apps.core.utils.cache_manager import CacheManager
-from apps.products.models import ProductImage, ProductImageVariant
+from apps.products.models import Product, ProductImage, ProductImageVariant
 from apps.products.permissions import IsAdminOrStaff
 from apps.products.serializers import (
     ProductImageBulkUploadSerializer,
+    ProductImageCreateSerializer,
     ProductImageSerializer,
     ProductImageUploadSerializer,
     ProductImageVariantSerializer,
@@ -25,6 +28,28 @@ from apps.products.utils.rate_limiting import (
 class ProductImageViewSet(BaseViewSet):
     serializer_class = ProductImageSerializer
     parser_classes = [MultiPartParser, FormParser]
+
+    def get_permissions(self):
+        """Keep storefront images public, but restrict every mutation to its seller."""
+        if self.action in {"list", "retrieve", "primary", "variants"}:
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated(), IsProductOwnerOrStaff()]
+
+    def get_product_for_write(self, product_id):
+        """Resolve a product and apply the view's owner-or-staff permission."""
+        product = get_object_or_404(Product, id=product_id)
+        self.check_object_permissions(self.request, product)
+        return product
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return ProductImageCreateSerializer
+        return ProductImageSerializer
+
+    def perform_create(self, serializer):
+        product = serializer.validated_data["product"]
+        self.check_object_permissions(self.request, product)
+        serializer.save()
 
     def get_queryset(self):
         product_id = self.request.query_params.get("product_id")
@@ -49,6 +74,7 @@ class ProductImageViewSet(BaseViewSet):
 
         uploaded_file = request.FILES["image"]
         product_id = serializer.validated_data["product_id"]
+        self.get_product_for_write(product_id)
         alt_text = serializer.validated_data.get("alt_text", "")
         is_primary = serializer.validated_data.get("is_primary", False)
         display_order = serializer.validated_data.get("display_order", 0)
@@ -83,6 +109,8 @@ class ProductImageViewSet(BaseViewSet):
         product_id = request.data.get("product_id")
         if not product_id:
             return Response({"error": "product_id required"}, 400)
+
+        self.get_product_for_write(product_id)
 
         uploaded_files = request.FILES.getlist("images")
         if not uploaded_files:
@@ -166,6 +194,8 @@ class ProductImageViewSet(BaseViewSet):
         product_id = request.data.get("product_id")
         if not product_id:
             return Response({"error": "product_id required"}, status=400)
+
+        self.get_product_for_write(product_id)
 
         created_images = []
         for image_data in serializer.validated_data["images"]:

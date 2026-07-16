@@ -55,14 +55,15 @@ def ensure_tracking_id(sender, instance, **kwargs):
 @receiver(post_save, sender=EscrowTransaction)
 def update_product_inventory(sender, instance, created, **kwargs):
     """
-    Signal to update product inventory when a transaction is created or cancelled
+    Signal to update product inventory when a transaction is created, cancelled, or completed
     """
-    if created:
-        # When a new transaction is created, decrease the product's quantity
-        instance.product.quantity -= instance.quantity
-        instance.product.save(update_fields=["quantity"])
+    if not instance.variant:
+        return
 
+    if created:
+        instance.variant.reserve_stock(instance.quantity)
     elif instance.status == "cancelled":
-        # When a transaction is cancelled, restore the product's quantity
-        instance.product.quantity += instance.quantity
-        instance.product.save(update_fields=["quantity"])
+        instance.variant.release_stock(instance.quantity)
+    elif instance.status == "completed":
+        instance.variant.reduce_stock(instance.quantity)
+

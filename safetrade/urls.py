@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/v1/", include("apps.disputes.api.urls")),
     path("api/v1/", include("apps.categories.api.urls")),
     path("api/v1/", include("apps.products.urls")),
+    path("api/v1/", include("apps.core.urls")),
     path("", include("apps.chat.urls")),
 ]
 

@@ -15,6 +15,9 @@ class RatingCreateSerializer(serializers.Serializer):
     transaction_id = serializers.CharField(
         max_length=1000, required=False, allow_blank=True
     )
+    transaction = serializers.CharField(
+        max_length=1000, required=False, allow_blank=True
+    )
 
     def validate_rating(self, value):
         if value not in range(1, 6):
@@ -22,10 +25,29 @@ class RatingCreateSerializer(serializers.Serializer):
         return value
 
     def validate(self, data):
+        # Extract transaction_id from data or context
+        transaction_id = data.get("transaction_id") or data.get("transaction")
+
+        if not transaction_id and "request" in self.context:
+            request = self.context["request"]
+            # Try to get from URL kwargs via view
+            view = self.context.get("view")
+            if view and hasattr(view, "kwargs"):
+                transaction_id = view.kwargs.get("transaction_id")
+            
+            # Try to get from query params
+            if not transaction_id:
+                transaction_id = request.query_params.get("transaction_id")
+
+        if not transaction_id:
+            raise serializers.ValidationError(
+                {"transaction_id": "transaction_id is required."}
+            )
+
         # 1. Fetch the transaction
         try:
-            tx = EscrowTransaction.objects.get(pk=data["transaction_id"])
-        except EscrowTransaction.DoesNotExist:
+            tx = EscrowTransaction.objects.get(pk=transaction_id)
+        except (EscrowTransaction.DoesNotExist, ValueError, TypeError):
             raise serializers.ValidationError(
                 {"transaction_id": "Invalid transaction ID."}
             )
@@ -45,7 +67,7 @@ class RatingCreateSerializer(serializers.Serializer):
             )
 
         # 4. (Optional) Prevent double‑rating
-        if hasattr(tx, "ratings") and tx.ratings.exists():
+        if hasattr(tx, "rating"):
             raise serializers.ValidationError(
                 {"non_field_errors": "This transaction has already been rated."}
             )

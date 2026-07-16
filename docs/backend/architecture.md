@@ -101,3 +101,13 @@ To isolate caching and pagination, [TransactionListService](file:///c:/Users/mus
 - **Internalized Slicing**: Queries slice the database at the SQL level before serialization.
 - **Cached Payloads**: The serialized list dictionary is cached directly inside Redis using parameter-derived cache keys.
 - **Automatic Invalidation**: `invalidate_all_caches_for_transaction` automatically clears the cache upon transaction state changes or save signals, keeping lists in-sync transparently.
+
+---
+
+## 5. API Authorization Baseline
+
+DRF uses `IsAuthenticated` as its default permission class. Public catalogue,
+search, and authentication endpoints must declare `AllowAny` explicitly. Product
+condition administration is staff-only, and product-image and product-detail
+write operations require the listing seller (or staff) through object-level
+ownership checks.

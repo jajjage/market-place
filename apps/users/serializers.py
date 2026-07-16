@@ -215,3 +215,64 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             data["avatar_url"] = None
 
         return data
+
+
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+class CustomUserSerializer(serializers.ModelSerializer):
+    profile = UserProfileSerializer(required=False)
+    addresses = UserAddressSerializer(many=True, required=False)
+    store = serializers.SerializerMethodField(read_only=True)
+    verification_status = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "profile",
+            "addresses",
+            "store",
+            "verification_status",
+        ]
+        read_only_fields = ["id"]
+
+    def get_store(self, obj):
+        store = getattr(obj, "store", None)
+        if store:
+            from apps.store.serializers import UserStoreSerializer
+            return UserStoreSerializer(store).data
+        return None
+
+    def get_verification_status(self, obj):
+        profile = getattr(obj, "profile", None)
+        return profile.verified_status if profile else "Unverified"
+
+    def update(self, instance, validated_data):
+        profile_data = validated_data.pop("profile", None)
+        addresses_data = validated_data.pop("addresses", None)
+
+        # Update User fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Update Profile
+        if profile_data:
+            profile = getattr(instance, "profile", None)
+            if profile:
+                for attr, value in profile_data.items():
+                    setattr(profile, attr, value)
+                profile.save()
+
+        # Update Addresses
+        if addresses_data is not None:
+            instance.addresses.all().delete()
+            for addr_data in addresses_data:
+                UserAddress.objects.create(user=instance, **addr_data)
+
+        return instance
+

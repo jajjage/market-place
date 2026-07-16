@@ -16,7 +16,6 @@ def user_data():
         "email": "testuser@test.com",
         "first_name": "Test",
         "last_name": "User",
-        "user_type": "BUYER",
         "password": "StrongTestPass123!",
         "re_password": "StrongTestPass123!",
     }
@@ -28,7 +27,6 @@ def create_user(user_data):
         email=user_data["email"],
         first_name=user_data["first_name"],
         last_name=user_data["last_name"],
-        user_type=user_data["user_type"],
         password=user_data["password"],
         is_active=True,
     )
@@ -41,7 +39,6 @@ def inactive_user(user_data):
         email="inactive@example.com",
         first_name="Inactive",
         last_name="User",
-        user_type="BUYER",
         password=user_data["password"],
         is_active=False,
     )
@@ -74,14 +71,10 @@ class TestCookieTokenObtainPairView:
 
         # now you can run your assertions against payload
         assert "email" in payload
-        assert "user_type" in payload
-        assert "verification_status" in payload
         assert "first_name" in payload
         assert "last_name" in payload
 
         assert payload["email"] == "testuser@test.com"
-        assert payload["user_type"] is not None
-        assert payload["verification_status"] is not None
 
         # and make sure you didn't accidentally leak the raw tokens
         assert "access" not in response.data
@@ -111,7 +104,7 @@ class TestCookieTokenObtainPairView:
         assert settings.JWT_AUTH_COOKIE not in response.cookies
         assert settings.JWT_AUTH_REFRESH_COOKIE not in response.cookies
 
-    @patch("apps.users.views.TokenObtainPairView.post")
+    @patch("apps.auth.traditional.views.TokenObtainPairView.post")
     def test_login_token_error(self, mock_post, api_client, user_data):
         from rest_framework_simplejwt.exceptions import TokenError
 
@@ -125,7 +118,7 @@ class TestCookieTokenObtainPairView:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.data["message"] == "Authentication failed"
 
-    @patch("apps.users.views.update_last_login")
+    @patch("apps.auth.traditional.views.update_last_login")
     def test_login_updates_last_login(
         self, mock_update_last_login, api_client, user_data, create_user
     ):

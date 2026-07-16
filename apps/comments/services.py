@@ -405,6 +405,8 @@ class RatingService:
             )
 
         # Create rating
+        rating_data.pop("transaction", None)
+        rating_data.pop("transaction_id", None)
         try:
             rating = UserRating.objects.create(
                 transaction=transaction,
@@ -430,8 +432,8 @@ class RatingService:
 
             update_rating_stats.delay(rating.to_user.id)
             send_rating_notifications.delay(rating.id)
-        except ImportError:
-            logger.warning("Rating tasks not available")
+        except Exception as e:
+            logger.warning(f"Rating tasks not available or failed: {e}")
 
         logger.info(
             f"Rating created: {rating.id} by user {user.id} for transaction {transaction_id}"
@@ -491,11 +493,11 @@ class RatingService:
     def get_transaction_id_from_request(request):
         """Extract transaction_id from request data, query params, or URL"""
         # Check request data first
-        transaction_id = request.data.get("transaction_id")
+        transaction_id = request.data.get("transaction_id") or request.data.get("transaction")
 
         if not transaction_id:
             # Check query parameters
-            transaction_id = request.query_params.get("transaction_id")
+            transaction_id = request.query_params.get("transaction_id") or request.query_params.get("transaction")
 
         if not transaction_id:
             # Check URL kwargs (if transaction_id is in URL)

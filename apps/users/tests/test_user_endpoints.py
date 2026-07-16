@@ -58,7 +58,7 @@ def create_transaction(create_user, create_rate_user):
         product=product,
         buyer=create_rate_user,
         seller=create_user,
-        amount=100.00,
+        price=100.00,
         currency="USD",
         status="completed",
         shipping_address={
@@ -73,7 +73,7 @@ class TestUserRatingEndpoints:
     @pytest.mark.django_db
     def test_list_ratings(self, api_client, create_user):
         api_client.force_authenticate(user=create_user)
-        url = reverse("user-rating-list")
+        url = reverse("ratings-list")
         response = api_client.get(url)
         assert response.status_code == status.HTTP_200_OK
 
@@ -82,7 +82,7 @@ class TestUserRatingEndpoints:
         self, api_client, create_user, create_rate_user, create_transaction
     ):
         api_client.force_authenticate(user=create_rate_user)
-        url = reverse("user-rating-list")
+        url = reverse("ratings-list")
 
         data = {
             "to_user": create_user.id,
@@ -97,10 +97,10 @@ class TestUserRatingEndpoints:
 
     @pytest.mark.django_db
     def test_create_rating_invalid_score(
-        self, api_client, create_user, create_transaction
+        self, api_client, create_user, create_rate_user, create_transaction
     ):
-        api_client.force_authenticate(user=create_user)
-        url = reverse("user-rating-list")
+        api_client.force_authenticate(user=create_rate_user)
+        url = reverse("ratings-list")
 
         data = {
             "to_user": create_user.id,
@@ -115,7 +115,7 @@ class TestUserRatingEndpoints:
     def test_create_rating_unauthenticated(
         self, api_client, create_user, create_transaction
     ):
-        url = reverse("user-rating-list")
+        url = reverse("ratings-list")
         data = {
             "to_user": create_user.id,
             "rating": 5,
@@ -196,9 +196,10 @@ class TestUserAddressEndpoints:
             "phone": "1234567890",
             "is_default": True,
         }
+        initial_count = UserAddress.objects.count()
         response = api_client.post(url, data)
         assert response.status_code == status.HTTP_201_CREATED
-        assert UserAddress.objects.count() == 1
+        assert UserAddress.objects.count() == initial_count + 1
         assert UserAddress.objects.first().street_address == "123 Test St"
 
     @pytest.mark.django_db

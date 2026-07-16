@@ -2,7 +2,7 @@ import logging
 from django.core.cache import cache
 from rest_framework.response import Response
 from rest_framework import status, viewsets
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.decorators import action
 from drf_spectacular.utils import extend_schema
 
@@ -398,6 +398,8 @@ class CategorySearchView(APIView):
     A view for listing and finding categories.
     Can filter by parent_id to build hierarchies.
     """
+
+    permission_classes = [AllowAny]
 
     def get(self, request):
         query = request.query_params.get("q", "").strip()

@@ -9,16 +9,35 @@ class CanRateTransactionPermission(permissions.BasePermission):
         if not request.user.is_authenticated:
             return False
 
-        # Extract transaction_id from query parameters
+        # Check transaction-based rating
+        transaction_id = RatingService.get_transaction_id_from_request(request)
+        if transaction_id:
+            try:
+                import uuid
+                transaction_id = uuid.UUID(str(transaction_id))
+            except (ValueError, TypeError):
+                return False
+
+            eligibility = RatingService.check_rating_eligibility(
+                transaction_id, request.user
+            )
+            return eligibility["can_rate"]
+
+        # Fallback to seller_id query parameter
         seller_id = request.query_params.get("seller_id")
-        # Alternative: transaction_id = request.GET.get('transaction_id')
+        if seller_id:
+            try:
+                import uuid
+                seller_id = uuid.UUID(str(seller_id))
+            except (ValueError, TypeError):
+                return False
 
-        if not seller_id:
-            return False
+            eligibility = RatingService.check_buyer_seller_rating_eligibility(
+                buyer_id=request.user.id, seller_id=seller_id
+            )
+            return eligibility["can_rate"]
 
-        eligibility = RatingService.check_buyer_seller_rating_eligibility(
-            buyer_id=request.user.id, seller_id=seller_id
-        )
-        return eligibility["can_rate"]
+        return False
 
     message = "You don't have permission to rate this transaction."
+

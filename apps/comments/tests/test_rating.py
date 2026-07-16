@@ -6,6 +6,8 @@ from rest_framework import status
 from apps.comments.models import UserRating
 from apps.comments.services import RatingService
 from apps.transactions.models import EscrowTransaction
+from apps.products.models import Product, ProductCondition
+from apps.categories.models import Category
 
 
 User = get_user_model()
@@ -19,11 +21,21 @@ class RatingModelTest(TestCase):
         self.seller = User.objects.create_user(
             email="seller@test.com", password="testpass123"
         )
+        self.condition = ProductCondition.objects.create(name="New", slug="new")
+        self.category = Category.objects.create(name="Test Category", slug="test-cat")
+        self.product = Product.objects.create(
+            title="Test Product",
+            seller=self.seller,
+            condition=self.condition,
+            category=self.category,
+            price=100.00,
+        )
         self.transaction = EscrowTransaction.objects.create(
+            product=self.product,
             buyer=self.buyer,
             seller=self.seller,
-            title="Test Product",
-            amount=100.00,
+            tracking_id="TRK-TEST-001",
+            price=100.00,
             status="completed",
             status_changed_at=timezone.now(),
         )
@@ -63,11 +75,21 @@ class RatingServiceTest(TestCase):
         self.seller = User.objects.create_user(
             email="seller@test.com", password="testpass123"
         )
+        self.condition = ProductCondition.objects.create(name="New", slug="new")
+        self.category = Category.objects.create(name="Test Category", slug="test-cat")
+        self.product = Product.objects.create(
+            title="Test Product",
+            seller=self.seller,
+            condition=self.condition,
+            category=self.category,
+            price=100.00,
+        )
         self.transaction = EscrowTransaction.objects.create(
+            product=self.product,
             buyer=self.buyer,
             seller=self.seller,
-            title="Test Product",
-            amount=100.00,
+            tracking_id="TRK-TEST-002",
+            price=100.00,
             status="completed",
             status_changed_at=timezone.now(),
         )
@@ -80,8 +102,17 @@ class RatingServiceTest(TestCase):
     def test_rating_stats_calculation(self):
         # Create some ratings
         for i in range(3):
+            tx = EscrowTransaction.objects.create(
+                product=self.product,
+                buyer=self.buyer,
+                seller=self.seller,
+                tracking_id=f"TRK-TEST-STATS-{i}",
+                price=100.00,
+                status="completed",
+                status_changed_at=timezone.now(),
+            )
             UserRating.objects.create(
-                transaction=self.transaction,
+                transaction=tx,
                 from_user=self.buyer,
                 to_user=self.seller,
                 rating=4 + (i % 2),  # Mix of 4 and 5 star ratings
@@ -101,11 +132,21 @@ class RatingAPITest(APITestCase):
         self.seller = User.objects.create_user(
             email="seller@test.com", password="testpass123"
         )
+        self.condition = ProductCondition.objects.create(name="New", slug="new")
+        self.category = Category.objects.create(name="Test Category", slug="test-cat")
+        self.product = Product.objects.create(
+            title="Test Product",
+            seller=self.seller,
+            condition=self.condition,
+            category=self.category,
+            price=100.00,
+        )
         self.transaction = EscrowTransaction.objects.create(
+            product=self.product,
             buyer=self.buyer,
             seller=self.seller,
-            title="Test Product",
-            amount=100.00,
+            tracking_id="TRK-TEST-003",
+            price=100.00,
             status="completed",
             status_changed_at=timezone.now(),
         )
@@ -116,10 +157,10 @@ class RatingAPITest(APITestCase):
         data = {"rating": 5, "comment": "Excellent service!"}
 
         response = self.client.post(
-            f"/api/ratings/transactions/{self.transaction.id}/rating/", data
+            f"/api/v1/ratings/transactions/{self.transaction.id}/rating/", data
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertTrue(
             UserRating.objects.filter(transaction=self.transaction).exists()
         )
@@ -128,7 +169,7 @@ class RatingAPITest(APITestCase):
         self.client.force_authenticate(user=self.buyer)
 
         response = self.client.get(
-            f"/api/ratings/transactions/{self.transaction.id}/rating-eligibility/"
+            f"/api/v1/ratings/transactions/{self.transaction.id}/rating-eligibility/"
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -140,7 +181,8 @@ class RatingAPITest(APITestCase):
         data = {"rating": 5, "comment": "Self rating attempt"}
 
         response = self.client.post(
-            f"/api/ratings/transactions/{self.transaction.id}/rating/", data
+            f"/api/v1/ratings/transactions/{self.transaction.id}/rating/", data
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+

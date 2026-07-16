@@ -34,6 +34,10 @@ Welcome to the central documentation workspace for SafeTrade. This repository us
 *   [docs/research/nigerian_escrow_mvp_roadmap.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/research/nigerian_escrow_mvp_roadmap.md)
     *   *Purpose:* Analysis of global escrow leaders (eBay, Etsy, Mercari), trust gap mitigation in the Nigerian e-commerce market, and codebase gap analysis for payment/KYC integrations.
 
+### 5. Architectural Decision Records (ADRs)
+*   [docs/adr/0001-consolidate-search-in-products-app.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/adr/0001-consolidate-search-in-products-app.md)
+    *   *Purpose:* Decision to keep all search views, endpoints, and Elasticsearch index document mappings inside the products app and remove the empty search app.
+
 ---
 
 ## Monorepo & Deployment Layout

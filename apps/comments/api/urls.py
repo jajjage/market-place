@@ -7,6 +7,16 @@ router = SimpleRouter()
 router.register(r"ratings", RatingViewSet, basename="ratings")
 
 urlpatterns = [
+    path(
+        "ratings/transactions/<uuid:transaction_id>/rating/",
+        RatingViewSet.as_view({"post": "create"}),
+        name="transaction-rating-create",
+    ),
+    path(
+        "ratings/transactions/<uuid:transaction_id>/rating-eligibility/",
+        RatingViewSet.as_view({"get": "eligibility"}),
+        name="transaction-rating-eligibility",
+    ),
     # Include router URLs with a different prefix or namespace
     path("ratings/", include(router.urls)),
     # User-specific rating endpoints

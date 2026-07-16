@@ -1,4 +1,4 @@
-from rest_framework import status, filters
+from rest_framework import status, filters, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from apps.core.views import BaseViewSet
@@ -24,11 +24,23 @@ class ProductConditionViewSet(BaseViewSet):
     """
 
     queryset = ProductCondition.objects.filter(is_active=True)
-    permission_classes = []
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["name", "description"]
     ordering_fields = ["name", "quality_score", "display_order", "created_at"]
     ordering = ["display_order", "name"]
+
+    def get_permissions(self):
+        """Allow public reads while restricting condition administration to staff."""
+        if self.action in {
+            "create",
+            "update",
+            "partial_update",
+            "destroy",
+            "bulk_create",
+            "bulk_order",
+        }:
+            return [permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""

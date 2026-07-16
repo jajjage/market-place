@@ -4,6 +4,7 @@ from urllib.parse import quote_plus
 from django.shortcuts import redirect
 from jsonschema import ValidationError
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.exceptions import TokenError
 from django.contrib.auth.models import update_last_login
 from djoser.social.views import ProviderAuthView
@@ -19,6 +20,8 @@ class CustomSocialProviderView(ProviderAuthView, CookieSet, BaseAPIView):
     Custom social provider view to handle authentication with social providers.
     Extends ProviderAuthView and adds cookie support for tokens.
     """
+
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         """
