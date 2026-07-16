@@ -102,7 +102,7 @@ class Command(BaseCommand):
                 "is_negotiable": True,
                 "requires_shipping": True,
                 "authenticity_guaranteed": True,
-                "seo_keywords": "laptop, hp, pavilion, oled, computer, windows",
+                "seo_keywords": ["laptop", "hp", "pavilion", "oled", "computer", "windows"],
                 "details": [
                     ("RAM", "16", "GB"),
                     ("Storage", "512", "GB"),
@@ -122,7 +122,7 @@ class Command(BaseCommand):
                 "is_negotiable": False,
                 "requires_shipping": True,
                 "authenticity_guaranteed": True,
-                "seo_keywords": "samsung, galaxy, ultra, smartphone, android, camera",
+                "seo_keywords": ["samsung", "galaxy", "ultra", "smartphone", "android", "camera"],
                 "details": [
                     ("RAM", "12", "GB"),
                     ("Storage", "256", "GB"),
@@ -142,7 +142,7 @@ class Command(BaseCommand):
                 "is_negotiable": True,
                 "requires_shipping": True,
                 "authenticity_guaranteed": True,
-                "seo_keywords": "bag, gucci, leather, shoulder, purse, luxury",
+                "seo_keywords": ["bag", "gucci", "leather", "shoulder", "purse", "luxury"],
                 "details": [
                     ("Material", "Quilted Leather", ""),
                     ("Color", "Black", ""),
@@ -161,7 +161,7 @@ class Command(BaseCommand):
                 "is_negotiable": True,
                 "requires_shipping": True,
                 "authenticity_guaranteed": False,
-                "seo_keywords": "riga, traditional, northern, embroidery, native",
+                "seo_keywords": ["riga", "traditional", "northern", "embroidery", "native"],
                 "details": [
                     ("Fabric", "Premium Brocade", ""),
                     ("Embroidery", "Handmade", ""),
@@ -180,7 +180,7 @@ class Command(BaseCommand):
                 "is_negotiable": True,
                 "requires_shipping": False,
                 "authenticity_guaranteed": False,
-                "seo_keywords": "printer, hp, vintage, office",
+                "seo_keywords": ["printer", "hp", "vintage", "office"],
                 "details": [
                     ("Status", "Untested", ""),
                 ]
@@ -212,13 +212,10 @@ class Command(BaseCommand):
             )
 
             # Create or update related metadata (where seo_keywords lives)
-            ProductMeta.objects.get_or_create(
-                product=p,
-                defaults={
-                    "seo_keywords": seo_kw,
-                    "seo_generation_queued": False,
-                }
-            )
+            meta, _ = ProductMeta.objects.get_or_create(product=p)
+            meta.seo_keywords = seo_kw
+            meta.seo_generation_queued = False
+            meta.save()
 
             if created:
                 self.stdout.write(f"Created product: {p.title}")
