@@ -78,7 +78,6 @@ INSTALLED_APPS = [
     "apps.auth.google.apps.GoogleAuthConfig",
     "apps.auth.traditional.apps.TraditionalAuthConfig",
     "apps.monitoring.apps.MonitoringConfig",
-    "apps.search.apps.SearchConfig",
     "apps.chat.apps.ChatConfig",
     "apps.products.apps.ProductsConfig",
 ]

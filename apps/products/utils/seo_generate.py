@@ -63,7 +63,7 @@ class GoogleGenAISEOKeywordService:
             )
 
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt
+                model="gemini-3.5-flash", contents=prompt
             )
 
             keywords = self._parse_response(response.text)

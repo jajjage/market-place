@@ -25,6 +25,8 @@ Welcome to the central documentation workspace for SafeTrade. This repository us
     *   *Purpose:* Elasticsearch index mapping, indexing workflow, and custom edge-ngram analyzer configurations.
 *   [docs/backend/celery.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/backend/celery.md)
     *   *Purpose:* Celery worker settings, queue configurations (high/medium/low priority routing), and production deployment scripts.
+*   [docs/backend/kibana-setup.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/backend/kibana-setup.md)
+    *   *Purpose:* Kibana dashboard setup, data views creation, and search metrics configuration.
 
 ### 3. Frontend Specifications
 *   [docs/frontend/landing-spec.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/frontend/landing-spec.md)

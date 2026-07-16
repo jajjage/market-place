@@ -65,7 +65,7 @@ class GoogleGenAISEODescriptionService:
             )
 
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt
+                model="gemini-3.5-flash", contents=prompt
             )
             description = self._clean_description(
                 response.text, description_type, max_length
@@ -278,7 +278,7 @@ class GoogleGenAISEODescriptionService:
 
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt
+                model="gemini-3.5-flash", contents=prompt
             )
             return self._clean_description(response.text, "detailed", None)
         except Exception as e:
@@ -308,7 +308,7 @@ class GoogleGenAISEODescriptionService:
 
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt
+                model="gemini-3.5-flash", contents=prompt
             )
             return self._parse_quality_analysis(response.text)
         except Exception as e:
@@ -374,7 +374,7 @@ class GoogleGenAISEODescriptionService:
 
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt
+                model="gemini-3.5-flash", contents=prompt
             )
             bullets = [
                 line.strip()
