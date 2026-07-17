@@ -1,6 +1,7 @@
 from .base import *  # noqa: F401, F403
 
 DEBUG = False
+TESTING = True
 
 # Override Celery settings for testing
 CELERY_TASK_ALWAYS_EAGER = True  # Synchronous execution for tests

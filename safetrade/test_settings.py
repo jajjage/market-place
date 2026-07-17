@@ -1,5 +1,8 @@
 from .settings.dev import *  # noqa
 
+# Flag to identify testing environment
+TESTING = True
+
 # Disable Elasticsearch signal processor (use no-op base) to prevent ES calls in tests
 ELASTICSEARCH_DSL_SIGNAL_PROCESSOR = "django_elasticsearch_dsl.signals.BaseSignalProcessor"
 ELASTICSEARCH_DSL = {"default": {"hosts": []}}

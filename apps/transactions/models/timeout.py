@@ -98,10 +98,12 @@ class EscrowTimeout(BaseModel):
     def cancel(self, notes=""):
         """Cancel this timeout and its associated Celery task"""
         from celery import current_app
+        from django.conf import settings
 
         if self.is_active:
-            # Cancel the Celery task
-            current_app.control.revoke(self.celery_task_id, terminate=True)
+            # Cancel the Celery task (only if not in testing/eager mode)
+            if not getattr(settings, "TESTING", False) and not getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
+                current_app.control.revoke(self.celery_task_id, terminate=True)
 
             # Mark as cancelled
             self.is_cancelled = True
