@@ -1,3 +1,4 @@
+from rest_framework import serializers
 from apps.core.serializers import TimestampedModelSerializer, get_timestamp_fields
 from apps.store.models import UserStore
 
@@ -18,3 +19,9 @@ class UserStoreSerializer(TimestampedModelSerializer):
             "is_active",
         ] + get_timestamp_fields(UserStore)
         read_only_fields = ["id", "slug"] + get_timestamp_fields(UserStore)
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        if not self.instance and UserStore.objects.filter(user=user).exists():
+            raise serializers.ValidationError("You already have an active store.")
+        return attrs

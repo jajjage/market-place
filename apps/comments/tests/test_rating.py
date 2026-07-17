@@ -186,3 +186,52 @@ class RatingAPITest(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+
+from apps.comments.tasks import update_rating_stats
+
+class RatingStatsTaskTest(TestCase):
+    def setUp(self):
+        self.buyer = User.objects.create_user(
+            email="buyer@test.com", password="testpass123", first_name="Buyer"
+        )
+        self.seller = User.objects.create_user(
+            email="seller@test.com", password="testpass123", first_name="Seller"
+        )
+        from apps.users.models import UserProfile
+        self.profile = UserProfile.objects.get(user=self.seller)
+
+        self.condition = ProductCondition.objects.create(name="New", slug="new")
+        self.category = Category.objects.create(name="Test Category", slug="test-cat")
+        self.product = Product.objects.create(
+            title="Test Product",
+            seller=self.seller,
+            condition=self.condition,
+            category=self.category,
+            price=100.00,
+        )
+        self.transaction = EscrowTransaction.objects.create(
+            product=self.product,
+            buyer=self.buyer,
+            seller=self.seller,
+            tracking_id="TRK-TEST-TASK",
+            price=100.00,
+            status="completed",
+            status_changed_at=timezone.now(),
+        )
+
+    def test_update_rating_stats_task(self):
+        UserRating.objects.create(
+            transaction=self.transaction,
+            from_user=self.buyer,
+            to_user=self.seller,
+            rating=5,
+            comment="Awesome!",
+            is_verified=True,
+        )
+
+        update_rating_stats(self.seller.id)
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.total_ratings, 1)
+        self.assertEqual(float(self.profile.average_rating), 5.0)
+

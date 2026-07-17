@@ -57,7 +57,7 @@ class EscrowTransitionService:
 
             # 3. Perform the status transition using existing service
             updated_transaction = (
-                EscrowTransactionService.update_escrow_transaction_status(
+                EscrowTransactionService._update_escrow_transaction_status(
                     escrow_transaction=escrow_transaction,
                     new_status=new_status,
                     user=user,

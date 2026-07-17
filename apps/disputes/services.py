@@ -17,6 +17,7 @@ class DisputeService:
         Create a new dispute for a transaction.
         """
         from apps.transactions.models import EscrowTransaction
+        from apps.transactions.services.transition_service import EscrowTransitionService
 
         try:
             txn = EscrowTransaction.objects.get(id=transaction_id)
@@ -36,6 +37,15 @@ class DisputeService:
             description=description,
             status=DisputeStatus.OPENED,
         )
+
+        # Transition the transaction to disputed status atomically
+        EscrowTransitionService.transition_with_scheduling(
+            escrow_transaction=txn,
+            new_status="disputed",
+            user=user,
+            notes=description,
+        )
+
         return dispute
 
     @staticmethod
@@ -44,6 +54,8 @@ class DisputeService:
         """
         Resolve a dispute.
         """
+        from apps.transactions.services.transition_service import EscrowTransitionService
+
         try:
             dispute = Dispute.objects.get(id=dispute_id)
         except Dispute.DoesNotExist:
@@ -56,6 +68,20 @@ class DisputeService:
         dispute.resolution_note = resolution_note
         dispute.resolved_by = resolver_user
         dispute.save()
+
+        # Map dispute resolution to transaction state transition
+        if status == DisputeStatus.RESOLVED_BUYER:
+            new_txn_status = "refunded"
+        else:  # RESOLVED_SELLER or CLOSED
+            new_txn_status = "completed"
+
+        EscrowTransitionService.transition_with_scheduling(
+            escrow_transaction=dispute.transaction,
+            new_status=new_txn_status,
+            user=resolver_user,
+            notes=resolution_note,
+        )
+
         return dispute
 
     @staticmethod

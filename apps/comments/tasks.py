@@ -67,11 +67,12 @@ def update_rating_stats(self, user_id):
     """Update rating statistics for a user"""
     try:
         stats = RatingService.get_user_rating_stats(user_id, use_cache=False)
-        from apps.users.models import User
-        user = User.objects.get(id=user_id)
-        user.average_rating = stats["average_rating"]
-        user.total_ratings = stats["total_ratings"]
-        user.save(update_fields=["average_rating", "total_ratings"])
+        from apps.users.models import CustomUser
+        user = CustomUser.objects.get(id=user_id)
+        profile = user.profile
+        profile.average_rating = stats["average_rating"]
+        profile.total_ratings = stats["total_ratings"]
+        profile.save(update_fields=["average_rating", "total_ratings"])
         logger.info(f"Rating stats updated for user {user_id}")
     except Exception as exc:
         logger.error(f"Error updating rating stats for user {user_id}: {exc}")

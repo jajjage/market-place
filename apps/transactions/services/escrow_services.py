@@ -20,9 +20,9 @@ class EscrowTransactionService:
     VALID_TRANSITIONS = {
         "BUYER": {
             "initiated": ["cancelled"],
-            "payment_received": [],
-            "shipped": ["delivered"],
-            "delivered": ["inspection"],
+            "payment_received": ["disputed"],
+            "shipped": ["delivered", "disputed"],
+            "delivered": ["inspection", "disputed"],
             "inspection": ["completed", "disputed"],
             "disputed": [],
             "completed": [],
@@ -32,10 +32,10 @@ class EscrowTransactionService:
         },
         "SELLER": {
             "initiated": ["payment_received", "cancelled"],
-            "payment_received": ["shipped"],
-            "shipped": [],
-            "delivered": [],
-            "inspection": [],
+            "payment_received": ["shipped", "disputed"],
+            "shipped": ["disputed"],
+            "delivered": ["disputed"],
+            "inspection": ["disputed"],
             "disputed": [],
             "completed": ["funds_released"],
             "funds_released": [],
@@ -129,7 +129,7 @@ class EscrowTransactionService:
 
     @staticmethod
     @transaction.atomic
-    def update_escrow_transaction_status(
+    def _update_escrow_transaction_status(
         escrow_transaction,
         new_status: str,
         user=None,
