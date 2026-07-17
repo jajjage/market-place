@@ -8,6 +8,11 @@ from apps.notifications.services.notification_service import NotificationService
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        # 1. Deny unauthenticated connections
+        if self.scope["user"].is_anonymous:
+            await self.close()
+            return
+
         self.room_name = "chat_room"
         self.room_group_name = f"chat_{self.room_name}"
 
@@ -18,48 +23,56 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         # Leave room group
-        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, "room_group_name"):
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     # Receive message from WebSocket
     async def receive(self, text_data):
+        if self.scope["user"].is_anonymous:
+            await self.close()
+            return
+
         text_data_json = json.loads(text_data)
         message = text_data_json["message"]
-        username = self.scope["user"].username
+        user = self.scope["user"]
+        email = user.email
 
-        # Save message to database
-        await self.save_message(username, message)
+        # Save message to database using user ID directly
+        await self.save_message(user.id, message)
 
         # Send message to room group
         await self.channel_layer.group_send(
             self.room_group_name,
-            {"type": "chat_message", "message": message, "username": username},
+            {"type": "chat_message", "message": message, "email": email},
         )
 
     # Receive message from room group
     async def chat_message(self, event):
         message = event["message"]
-        username = event["username"]
+        email = event["email"]
 
         # Send message to WebSocket
         await self.send(
-            text_data=json.dumps({"message": message, "username": username})
+            text_data=json.dumps({"message": message, "email": email})
         )
 
         # Send notification to all users except the sender
-        await self.send_notifications(username, message)
+        await self.send_notifications(email, message)
 
     @database_sync_to_async
-    def save_message(self, username, message):
-        user = CustomUser.objects.get(username=username)
-        ChatMessage.objects.create(user=user, message=message)
+    def save_message(self, user_id, message):
+        ChatMessage.objects.create(user_id=user_id, message=message)
 
     @database_sync_to_async
-    def send_notifications(self, sender_username, message):
-        sender = CustomUser.objects.get(username=sender_username)
-        recipients = CustomUser.objects.exclude(id=sender.id)
-        for recipient in recipients:
-            NotificationService.send_notification(
-                recipient=recipient,
-                notification_type="new_chat_message",
-                context={"message": message, "sender": sender_username},
-            )
+    def send_notifications(self, sender_email, message):
+        try:
+            sender = CustomUser.objects.get(email=sender_email)
+            recipients = CustomUser.objects.exclude(id=sender.id)
+            for recipient in recipients:
+                NotificationService.send_notification(
+                    recipient=recipient,
+                    notification_type="new_chat_message",
+                    context={"message": message, "sender": sender_email},
+                )
+        except CustomUser.DoesNotExist:
+            pass
