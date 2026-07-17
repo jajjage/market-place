@@ -18,3 +18,5 @@ from .negotiation_service import *  # noqa: F401, F403
 from .rating_service import *  # noqa: F401, F403
 from .variant_service import *  # noqa: F401, F403
 from .watchlist_service import *  # noqa: F401, F403
+from .search import *  # noqa: F401, F403
+
