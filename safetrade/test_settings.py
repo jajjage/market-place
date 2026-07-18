@@ -12,3 +12,10 @@ CELERY_TASK_ALWAYS_EAGER = True
 
 # Change the throttle rates for testing
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["user_login"] = "1000/minute"  # noqa
+
+# Use in-memory channel layer for testing to avoid Redis requirement
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}

@@ -11,3 +11,10 @@ CELERY_RESULT_BACKEND = "cache+memory://"
 
 # Disable beat scheduler for tests
 CELERY_BEAT_SCHEDULE = {}
+
+# Use in-memory channel layer for testing to avoid Redis requirement
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}

@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/v1/", include("apps.categories.api.urls")),
     path("api/v1/", include("apps.products.urls")),
     path("api/v1/", include("apps.core.urls")),
+    path("api/v1/paystack/", include("apps.paystack.urls")),
     path("", include("apps.chat.urls")),
 ]
 

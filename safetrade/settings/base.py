@@ -73,7 +73,7 @@ INSTALLED_APPS = [
     "apps.comments.apps.CommentsConfig",
     "apps.store.apps.StoreConfig",
     "apps.disputes.apps.DisputesConfig",
-    "apps.flutterwave.apps.FlutterwaveConfig",
+    "apps.paystack.apps.PaystackConfig",
     "apps.categories.apps.CategoriesConfig",
     "apps.auth.google.apps.GoogleAuthConfig",
     "apps.auth.traditional.apps.TraditionalAuthConfig",
@@ -471,3 +471,12 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+# -----------------------------------------------------------------------------
+# Paystack & KYC Integration Settings
+# -----------------------------------------------------------------------------
+PAYSTACK_SECRET_KEY = env.get("PAYSTACK_SECRET_KEY", default="sk_test_mock_secret_key_123456")
+PAYSTACK_PUBLIC_KEY = env.get("PAYSTACK_PUBLIC_KEY", default="pk_test_mock_public_key_123456")
+PAYSTACK_WEBHOOK_SECRET = env.get("PAYSTACK_WEBHOOK_SECRET", default="mock_webhook_secret_123456")
+KYC_PROVIDER = env.get("KYC_PROVIDER", default="mock")
+

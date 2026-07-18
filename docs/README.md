@@ -39,6 +39,10 @@ Welcome to the central documentation workspace for SafeTrade. This repository us
 ### 5. Architectural Decision Records (ADRs)
 *   [docs/adr/0001-consolidate-search-in-products-app.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/adr/0001-consolidate-search-in-products-app.md)
     *   *Purpose:* Decision to keep all search views, endpoints, and Elasticsearch index document mappings inside the products app and remove the empty search app.
+*   [docs/adr/0002-retain-django-framework.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/adr/0002-retain-django-framework.md)
+    *   *Purpose:* Decision to retain the Python/Django codebase rather than rewriting the application in Node.js/TypeScript.
+*   [docs/adr/0003-decouple-escrow-with-ledger-and-holds.md](file:///c:/Users/musta/fasu-marketplace/market-place/docs/adr/0003-decouple-escrow-with-ledger-and-holds.md)
+    *   *Purpose:* Decision to decouple transaction states from funds holding using dedicated FundHold and SellerBalanceLedger models.
 
 ---
 

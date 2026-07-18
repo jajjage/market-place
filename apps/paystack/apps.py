@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class FlutterwaveConfig(AppConfig):
+class PaystackConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "apps.flutterwave"
+    name = "apps.paystack"

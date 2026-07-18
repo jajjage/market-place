@@ -1,7 +1,9 @@
 import logging
+from decimal import Decimal
 from typing import Optional, Dict, Any
 from django.db import transaction
 from django.utils import timezone
+from django.conf import settings
 from datetime import timedelta
 from django.core.exceptions import ValidationError
 from rest_framework.response import Response
@@ -58,6 +60,10 @@ class EscrowTransactionService:
         Returns:
             tuple: (is_allowed: bool, reason: str)
         """
+        # System override (e.g. webhook or Celery task)
+        if user is None:
+            return True, "System override"
+
         # Staff can perform any transition
         if getattr(user, "is_staff", False):
             return True, "Staff override"
@@ -222,6 +228,8 @@ class EscrowTransactionService:
         escrow_transaction, status, tracking_number, shipping_carrier
     ):
         """Handle logic specific to certain status changes"""
+        from apps.transactions.models import FundHold, SellerBalanceLedger
+        from apps.transactions.services.ledger_service import SellerBalanceService
 
         # Update tracking info if provided
         if tracking_number:
@@ -242,6 +250,125 @@ class EscrowTransactionService:
         # Set fund release timestamp
         if status == "funds_released":
             escrow_transaction.funds_released_at = timezone.now()
+
+        # --- Holds and Ledger Integrations ---
+        if status == "payment_received":
+            # 1. Create standard transaction hold when payment received
+            FundHold.objects.create(
+                transaction=escrow_transaction,
+                seller=escrow_transaction.seller,
+                amount=escrow_transaction.total_amount,
+                hold_type=FundHold.HOLD_TYPE_TRANSACTION,
+                status=FundHold.STATUS_ACTIVE,
+                reason=f"Standard hold for order #{escrow_transaction.id}",
+            )
+
+        elif status in ["completed", "funds_released"]:
+            # 2. Release standard transaction holds and dispute holds
+            active_holds = FundHold.objects.filter(
+                transaction=escrow_transaction,
+                status=FundHold.STATUS_ACTIVE,
+                hold_type__in=[FundHold.HOLD_TYPE_TRANSACTION, FundHold.HOLD_TYPE_DISPUTE],
+            )
+            for hold in active_holds:
+                hold.status = FundHold.STATUS_RELEASED
+                hold.released_at = timezone.now()
+                hold.save()
+
+            # 3. Credit seller ledger if not already done for this transaction
+            already_credited = SellerBalanceLedger.objects.filter(
+                transaction=escrow_transaction,
+                entry_type=SellerBalanceLedger.ENTRY_SALE_CREDIT,
+            ).exists()
+
+            if not already_credited:
+                total_amount_dec = Decimal(str(escrow_transaction.total_amount))
+                # Credit the sale amount
+                SellerBalanceService.record_entry(
+                    seller=escrow_transaction.seller,
+                    amount=total_amount_dec,
+                    entry_type=SellerBalanceLedger.ENTRY_SALE_CREDIT,
+                    transaction_obj=escrow_transaction,
+                    description=f"Credit for completed transaction #{escrow_transaction.id}",
+                )
+
+                # Debit the platform fee (default to 5% or setting)
+                fee_percentage = Decimal(str(getattr(settings, "MARKETPLACE_FEE_PERCENTAGE", 0.05)))
+                fee_amount = (total_amount_dec * fee_percentage).quantize(Decimal("0.01"))
+                if fee_amount > 0:
+                    SellerBalanceService.record_entry(
+                        seller=escrow_transaction.seller,
+                        amount=-fee_amount,
+                        entry_type=SellerBalanceLedger.ENTRY_PLATFORM_FEE,
+                        transaction_obj=escrow_transaction,
+                        description=f"Platform fee ({fee_percentage * 100}%) for transaction #{escrow_transaction.id}",
+                    )
+
+        elif status == "disputed":
+            # 4. Transition active transaction holds to dispute holds
+            active_transaction_holds = FundHold.objects.filter(
+                transaction=escrow_transaction,
+                status=FundHold.STATUS_ACTIVE,
+                hold_type=FundHold.HOLD_TYPE_TRANSACTION,
+            )
+            for hold in active_transaction_holds:
+                hold.hold_type = FundHold.HOLD_TYPE_DISPUTE
+                hold.reason = f"Frozen due to active dispute on order #{escrow_transaction.id}"
+                hold.save()
+
+        elif status in ["refunded", "cancelled"]:
+            # 5. Void active holds
+            active_holds = FundHold.objects.filter(
+                transaction=escrow_transaction,
+                status=FundHold.STATUS_ACTIVE,
+            )
+            for hold in active_holds:
+                hold.status = FundHold.STATUS_VOIDED
+                hold.released_at = timezone.now()
+                hold.save()
+
+    @classmethod
+    @transaction.atomic
+    def register_late_chargeback(cls, transaction_id: int, reason: str = ""):
+        """
+        Record a post-release card chargeback or dispute.
+        Debits the seller's ledger balance and creates a dispute record.
+        """
+        from apps.transactions.models import EscrowTransaction, SellerBalanceLedger
+        from apps.transactions.services.ledger_service import SellerBalanceService
+        from apps.disputes.models import Dispute, DisputeStatus, DisputeReason
+
+        escrow_transaction = EscrowTransaction.objects.get(id=transaction_id)
+        
+        # 1. Debit the seller ledger to claw back the funds
+        SellerBalanceService.record_entry(
+            seller=escrow_transaction.seller,
+            amount=-Decimal(str(escrow_transaction.total_amount)),
+            entry_type=SellerBalanceLedger.ENTRY_CHARGEBACK_DEBIT,
+            transaction_obj=escrow_transaction,
+            description=f"Late chargeback debit for transaction #{escrow_transaction.id}. Reason: {reason}",
+        )
+
+        # 2. Open a dispute of type chargeback_review if not exists
+        dispute, created = Dispute.objects.get_or_create(
+            transaction=escrow_transaction,
+            defaults={
+                "opened_by": escrow_transaction.buyer,
+                "reason": DisputeReason.OTHER,
+                "description": f"Late chargeback filed: {reason}",
+                "status": DisputeStatus.OPENED,
+            }
+        )
+        if not created:
+            dispute.status = DisputeStatus.OPENED
+            dispute.description += f" | Additional chargeback: {reason}"
+            dispute.save()
+
+        # Update transaction status to disputed to track in the system
+        escrow_transaction.status = EscrowTransaction.STATUS_DISPUTED
+        escrow_transaction.save()
+
+        return dispute
 
     @staticmethod
     def _create_transaction_history(
@@ -285,6 +412,7 @@ class EscrowTransactionService:
         send_status_change_notification.apply_async(
             args=[escrow_transaction.id, previous_status, new_status, is_automatic]
         )
+
 
 
 class EscrowTransactionUtility:
